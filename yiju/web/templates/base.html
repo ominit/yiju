@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description"
+          content="Your Chinese vocabulary, one sentence at a time.">
+    <title>{% block title %}Yiju · 一句{% endblock %}</title>
+    <link rel="icon"
+          href="{{ url_for('static', filename='favicon.svg') }}"
+          type="image/svg+xml">
+    <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+    <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header">
+      <a class="brand" href="{{ url_for('pages.home') }}">
+        <span class="brand-seal" lang="zh-Hans">句</span> yiju<span class="brand-caption">Chinese, in context.</span>
+      </a>
+      <nav aria-label="Main navigation">
+        <a href="{{ url_for('pages.home') }}"
+           {% if request.endpoint == 'pages.home' %}aria-current="page"{% endif %}>Overview</a>
+        <a href="{{ url_for('pages.study') }}"
+           {% if request.endpoint == 'pages.study' %}aria-current="page"{% endif %}>Study</a>
+        <a href="{{ url_for('pages.sentences') }}"
+           {% if request.endpoint in ['pages.sentences','pages.sentence_detail'] %}aria-current="page"{% endif %}>Sentences</a>
+        <a href="{{ url_for('pages.library') }}"
+           {% if request.endpoint == 'pages.library' %}aria-current="page"{% endif %}>Words</a>
+        <a href="{{ url_for('pages.preferences') }}"
+           {% if request.endpoint == 'pages.preferences' %}aria-current="page"{% endif %}>Settings</a>
+      </nav>
+    </header>
+    <main id="main" class="page {% block page_class %} {% endblock %}">
+      {% for message in get_flashed_messages() %}
+        <div class="notice" role="status">{{ message }}</div>
+      {% endfor %}
+      {% block content %}{% endblock %}
+    </main>
+    <footer class="site-footer">
+      <span>一句 <span lang="zh-Hans">·</span> One sentence at a time.</span>
+      <a href="{{ url_for('pages.import_page') }}">Import vocabulary</a>
+    </footer>
+  </body>
+</html>

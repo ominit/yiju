@@ -1,0 +1,109 @@
+{% extends 'base.html' %}
+{% block title %}Study · Yiju{% endblock %}
+{% block page_class %}study-page{% endblock %}
+{% block content %}
+  <div class="study-toolbar">
+    <a class="back-link" href="{{ url_for('pages.home') }}">← Finish session</a>
+    {% if card %}
+      <span class="small muted">{{ count }} available now</span>
+    {% endif %}
+    {% if last_review %}
+      <form method="post" action="{{ url_for('actions.undo') }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="review_id" value="{{ last_review.id }}">
+        <button class="text-button" type="submit">↶ Undo last review</button>
+      </form>
+    {% endif %}
+  </div>
+  {% if card %}
+    <article class="study-card {% if answer %}revealed{% endif %}">
+      <div class="card-heading">
+        <span class="eyebrow">{% if card.sentence_id %}Read in context{% else %}Build your vocabulary{% endif %}</span>
+        <span class="badge">
+          {% if card.reviews %}Review{% else %}New{% endif %} · {% if card.sentence_id %}Sentence{% else %}Word{% endif %}
+        </span>
+      </div>
+      <div class="question">
+        <p class="chinese {% if card.sentence_id %}sentence-text{% endif %}"
+           lang="zh-Hans">{{ card.chinese or card.word }}</p>
+        <p class="prompt">
+          {% if card.sentence_id %}Read the sentence. What does <span lang="zh-Hans">{{ card.word }}</span> mean here?{% else %}Do you remember the meaning and pronunciation?{% endif %}
+        </p>
+      </div>
+      {% if answer %}
+        <div class="answer" id="answer">
+          <p class="pinyin">{{ card.sentence_pinyin if card.sentence_id else card.word_pinyin }}</p>
+          {% if card.sentence_id %}
+            <p class="translation">{{ card.translation }}</p>
+          {% endif %}
+          <div class="definition-block">
+            {% if card.sentence_id %}
+              <h2>
+                <span lang="zh-Hans">{{ card.word }}</span> <span class="pinyin small">{{ card.word_pinyin }}</span>
+              </h2>
+            {% endif %}
+            <p class="definition">{{ gloss or 'No definition was included in this export.' }}</p>
+            {% if card.definition != gloss %}
+              <details class="full-definition">
+                <summary>Full dictionary entry</summary>
+                <p class="definition">{{ card.definition }}</p>
+              </details>
+            {% endif %}
+          </div>
+          {% if analysis %}
+            <details class="token-details">
+              <summary>Sentence words · {{ analysis.unknown|length }} unfamiliar</summary>
+              <div class="tokens">
+                {% for token in analysis.tokens %}
+                  <span class="token {% if token in analysis.unknown %}unknown{% endif %}"
+                        lang="zh-Hans">{{ token }}</span>
+                {% endfor %}
+              </div>
+              <p class="small muted">Your rating updates the target word, {{ card.word }}. Other words are not marked as learned.</p>
+            </details>
+          {% endif %}
+        </div>
+      {% else %}
+        <div class="reveal-area">
+          <a class="button"
+             id="reveal-answer"
+             href="{{ url_for('pages.study', card=card.id, answer=1) }}">Show answer <kbd>Space</kbd>
+          </a>
+        </div>
+      {% endif %}
+    </article>
+    {% if answer %}
+      <section class="rating-area" aria-label="Rate your recall">
+        <p class="small muted">How well did you recall <span lang="zh-Hans">{{ card.word }}</span>?</p>
+        <form class="rating-buttons"
+              method="post"
+              action="{{ url_for('actions.rate', card_id=card.id) }}">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="version" value="{{ card.version }}">
+          {% for value, label, hint in [(1, 'Again', 'Forgot'), (2, 'Hard', 'With effort'), (3, 'Good', 'Remembered'), (4, 'Easy', 'Effortless')] %}
+            <button type="submit"
+                    name="rating"
+                    value="{{ value }}"
+                    class="rating rating-{{ value }}"
+                    data-rating="{{ value }}">
+              <span>
+                <kbd>{{ value }}</kbd> {{ label }}</span>
+              <small>{{ intervals[value] }} · {{ hint }}</small>
+            </button>
+          {% endfor %}
+        </form>
+      </section>
+    {% endif %}
+  {% else %}
+    <section class="empty-state panel">
+      <span class="empty-glyph" lang="zh-Hans">好</span>
+      <p class="eyebrow">A good place to pause</p>
+      <h1>Nothing due right now.</h1>
+      <p>New cards respect your daily limit. Reviewed cards return when they’re due.</p>
+      <div class="actions">
+        <a class="button" href="{{ url_for('pages.home') }}">Back to overview</a>
+        <a class="button secondary" href="{{ url_for('pages.sentences') }}">Check sentences</a>
+      </div>
+    </section>
+  {% endif %}
+{% endblock %}

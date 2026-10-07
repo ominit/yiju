@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+{% block title %}{{ title }} · Yiju{% endblock %}
+{% block page_class %}narrow{% endblock %}
+{% block content %}
+  <section class="empty-state panel">
+    <p class="eyebrow">Let’s try that again</p>
+    <h1>{{ title }}</h1>
+    <p>{{ message }}</p>
+    <a class="button" href="{{ url_for('pages.home') }}">Back to overview</a>
+  </section>
+{% endblock %}

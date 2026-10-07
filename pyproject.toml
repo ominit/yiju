@@ -1,0 +1,48 @@
+[build-system]
+build-backend = "hatchling.build"
+requires = ["hatchling==1.28.0"]
+
+[project]
+dependencies = [
+  "defusedxml==0.7.1",
+  "flask==3.1.3",
+  "fsrs==6.3.2",
+  "jieba==0.42.1",
+  "pypinyin==0.55.0",
+  "waitress==3.0.2",
+]
+description = "Private Chinese vocabulary and sentence study"
+name = "yiju"
+requires-python = ">=3.12"
+version = "0.1.0"
+
+[project.scripts]
+yiju = "yiju.cli:main"
+
+[dependency-groups]
+dev = ["pytest==9.1.1", "ruff==0.16.10", "ty==0.0.85"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["yiju"]
+
+[tool.pytest.ini_options]
+addopts = "--strict-config --strict-markers"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+ignore = ["D", "COM812", "CPY001"]
+select = ["ALL"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "PLR2004", "INP001", "RUF001"]
+"yiju/cli.py" = ["S104"]
+"yiju/core/extraction.py" = ["RUF001"]
+"yiju/core/scheduling.py" = ["PLR0913"]
+"yiju/storage/sentences.py" = ["PLR0913", "PLR0917"]
+"yiju/web/__init__.py" = ["PLC0415"]
+
+[tool.ty.rules]
+all = "error"

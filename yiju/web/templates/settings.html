@@ -1,0 +1,105 @@
+{% extends 'base.html' %}
+{% block title %}Settings · Yiju{% endblock %}
+{% block page_class %}narrow{% endblock %}
+{% block content %}
+  <p class="eyebrow">Make room for learning</p>
+  <h1>Your study rhythm.</h1>
+  <p class="muted">Start small. Adjust as you go.</p>
+  <form class="panel settings-form"
+        method="post"
+        action="{{ url_for('actions.save_settings') }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <h2>Daily study</h2>
+    <div class="setting-row">
+      <label for="new_per_day">
+        New cards per day<small>Reviews are always available when due. Days reset at midnight UTC.</small>
+      </label>
+      <input id="new_per_day"
+             name="new_per_day"
+             type="number"
+             min="0"
+             max="200"
+             value="{{ config.new_per_day }}"
+             required>
+    </div>
+    <div class="setting-row">
+      <label for="retention">
+        Desired retention<small>FSRS schedules reviews around this recall probability. Higher means more reviews.</small>
+      </label>
+      <input id="retention"
+             name="retention"
+             type="number"
+             min="0.7"
+             max="0.99"
+             step="0.01"
+             value="{{ config.retention }}"
+             required>
+    </div>
+    <h2>Sentence difficulty</h2>
+    <div class="setting-row">
+      <label for="max_unknown">
+        Maximum unfamiliar words<small>Repeated words count once. Numbers and Latin words count as words too.</small>
+      </label>
+      <input id="max_unknown"
+             name="max_unknown"
+             type="number"
+             min="1"
+             max="5"
+             value="{{ config.max_unknown }}"
+             required>
+    </div>
+    <label class="checkbox-row">
+    <input name="include_zero"
+           type="checkbox"
+           {% if config.include_zero %}checked{% endif %}> Include sentences where every word is familiar</label>
+    <h2>When a word becomes familiar</h2>
+    <p class="small muted">All three conditions must hold. “Again” resets successful days. A sentence review counts only toward its target word.</p>
+    <div class="setting-row">
+      <label for="known_days">
+        Successful review days<small>Good or Easy on distinct UTC dates.</small>
+      </label>
+      <input id="known_days"
+             name="known_days"
+             type="number"
+             min="1"
+             max="30"
+             value="{{ config.known_days }}"
+             required>
+    </div>
+    <div class="setting-row">
+      <label for="known_stability">
+        Minimum stability, in days<small>FSRS estimate of how long you retain the word.</small>
+      </label>
+      <input id="known_stability"
+             name="known_stability"
+             type="number"
+             min="1"
+             max="365"
+             value="{{ config.known_stability }}"
+             required>
+    </div>
+    <div class="setting-row">
+      <label for="known_retrievability">
+        Minimum recall probability<small>Words may become unfamiliar again as time passes.</small>
+      </label>
+      <input id="known_retrievability"
+             name="known_retrievability"
+             type="number"
+             min="0.5"
+             max="0.99"
+             step="0.01"
+             value="{{ config.known_retrievability }}"
+             required>
+    </div>
+    <button class="button">Save settings</button>
+  </form>
+  <section class="panel backup-panel">
+    <h2>Keep a copy.</h2>
+    <p>Download a consistent snapshot of your words, sentences, settings, and review history.</p>
+    <a class="button secondary" href="{{ url_for('actions.backup') }}">Download database backup ↓</a>
+    <details>
+      <summary>Restore a backup</summary>
+      <p class="small muted">Stop Yiju, keep a copy of its data directory, and replace <code>yiju.sqlite3</code> with the downloaded file. Remove any old <code>yiju.sqlite3-wal</code> and <code>yiju.sqlite3-shm</code> files while the service is stopped, then restart it.</p>
+    </details>
+  </section>
+{% endblock %}

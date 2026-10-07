@@ -1,0 +1,88 @@
+{% extends 'base.html' %}
+{% block title %}Sentences · Yiju{% endblock %}
+{% block content %}
+  <div class="page-heading">
+    <div>
+      <p class="eyebrow">A bridge from words to meaning</p>
+      <h1>Your sentences.</h1>
+      <p class="muted">Check each example before it enters your study queue.</p>
+    </div>
+  </div>
+  <nav class="tabs" aria-label="Sentence status">
+    {% for key, label in [('pending','To review'), ('accepted','Approved'), ('rejected','Skipped')] %}
+      <a href="{{ url_for('pages.sentences', status=key) }}"
+         {% if state == key %}aria-current="page"{% endif %}>{{ label }} <span>{{ counts.get(key, 0) }}</span>
+      </a>
+    {% endfor %}
+  </nav>
+  <form class="sort-form" method="get">
+    <input type="hidden" name="status" value="{{ state }}">
+    <label for="sort">Order by</label>
+    <select id="sort" name="sort">
+      {% for key, label in [('difficulty', 'Difficulty'), ('length', 'Length'), ('source', 'Import order')] %}
+        <option value="{{ key }}" {% if sort == key %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <button class="button secondary small-button">Apply</button>
+  </form>
+  {% if items %}
+    <p class="small muted">{{ 'Extracted automatically. Check that the translation and pinyin match.' if state == 'pending' else 'Approved examples unlock as you learn their words.' if state == 'accepted' else 'Skipped examples stay here if you change your mind.' }}</p>
+    <div class="sentence-grid">
+      {% for row, analysis in items %}
+        <article class="panel sentence-preview">
+          <div class="section-heading">
+            <span class="target-label">Target <strong lang="zh-Hans">{{ row.word }}</strong>
+            </span>
+            <span class="badge {% if analysis.eligible %}ready{% endif %}">{{ 'Ready to learn' if analysis.eligible else 'Waiting for vocabulary' }}</span>
+          </div>
+          <p class="sentence-chinese" lang="zh-Hans">{{ row.chinese }}</p>
+          <p class="pinyin">{{ row.pinyin }}</p>
+          <p class="translation">{{ row.translation }}</p>
+          <div class="tokens">
+            {% for token in analysis.tokens %}
+              <span class="token {% if token in analysis.unknown %}unknown{% endif %}"
+                    lang="zh-Hans">{{ token }}</span>
+            {% endfor %}
+          </div>
+          <p class="small muted">{{ analysis.unknown|length }} unfamiliar · {{ (analysis.coverage * 100)|round|int }}% familiar · {{ analysis.reason }}</p>
+          <div class="sentence-actions">
+            <a class="text-link"
+               href="{{ url_for('pages.sentence_detail', sentence_id=row.id) }}">Edit & inspect source ↗</a>
+            <form method="post"
+                  action="{{ url_for('actions.save_sentence', sentence_id=row.id) }}">
+              <input type="hidden" name="csrf" value="{{ csrf }}">
+              <input type="hidden" name="version" value="{{ row.version }}">
+              <input type="hidden" name="chinese" value="{{ row.chinese }}">
+              <input type="hidden" name="pinyin" value="{{ row.pinyin }}">
+              <input type="hidden" name="translation" value="{{ row.translation }}">
+              {% if state != 'rejected' %}
+                <button class="text-button" name="status" value="rejected">Skip</button>
+              {% endif %}
+              {% if state != 'accepted' %}
+                <button class="button small-button" name="status" value="accepted">Approve</button>
+              {% endif %}
+            </form>
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  {% else %}
+    <section class="empty-state panel">
+      <span class="empty-glyph" lang="zh-Hans">句</span>
+      <h2>{{ 'No sentences waiting.' if state == 'pending' else 'No sentences here yet.' }}</h2>
+      <p>Examples found in your Pleco definitions appear here for review.</p>
+      <a class="button secondary" href="{{ url_for('pages.import_page') }}">Import vocabulary</a>
+    </section>
+  {% endif %}
+  <div class="pagination">
+    {% if page > 1 %}
+      <a class="button secondary"
+         href="{{ url_for('pages.sentences', status=state, sort=sort, page=page-1) }}">← Previous</a>
+    {% endif %}
+    <span class="small muted">Page {{ page }}</span>
+    {% if more %}
+      <a class="button secondary"
+         href="{{ url_for('pages.sentences', status=state, sort=sort, page=page+1) }}">Next →</a>
+    {% endif %}
+  </div>
+{% endblock %}
