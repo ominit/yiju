@@ -2,18 +2,16 @@
 {% block title %}Settings · Yiju{% endblock %}
 {% block page_class %}narrow{% endblock %}
 {% block content %}
-  <p class="eyebrow">Make room for learning</p>
-  <h1>Your study rhythm.</h1>
-  <p class="muted">Start small. Adjust as you go.</p>
+  <div class="page-heading">
+    <h1>Settings</h1>
+  </div>
   <form class="panel settings-form"
         method="post"
         action="{{ url_for('actions.save_settings') }}">
     <input type="hidden" name="csrf" value="{{ csrf }}">
-    <h2>Daily study</h2>
+    <h2>Study</h2>
     <div class="setting-row">
-      <label for="new_per_day">
-        New cards per day<small>Reviews are always available when due. Days reset at midnight UTC.</small>
-      </label>
+      <label for="new_per_day">New cards per day</label>
       <input id="new_per_day"
              name="new_per_day"
              type="number"
@@ -23,9 +21,7 @@
              required>
     </div>
     <div class="setting-row">
-      <label for="retention">
-        Desired retention<small>FSRS schedules reviews around this recall probability. Higher means more reviews.</small>
-      </label>
+      <label for="retention">Desired retention</label>
       <input id="retention"
              name="retention"
              type="number"
@@ -35,11 +31,9 @@
              value="{{ config.retention }}"
              required>
     </div>
-    <h2>Sentence difficulty</h2>
+    <h2>Sentences</h2>
     <div class="setting-row">
-      <label for="max_unknown">
-        Maximum unfamiliar words<small>Repeated words count once. Numbers and Latin words count as words too.</small>
-      </label>
+      <label for="max_unknown">Maximum unfamiliar words</label>
       <input id="max_unknown"
              name="max_unknown"
              type="number"
@@ -48,16 +42,12 @@
              value="{{ config.max_unknown }}"
              required>
     </div>
-    <label class="checkbox-row">
-    <input name="include_zero"
-           type="checkbox"
-           {% if config.include_zero %}checked{% endif %}> Include sentences where every word is familiar</label>
-    <h2>When a word becomes familiar</h2>
-    <p class="small muted">All three conditions must hold. “Again” resets successful days. A sentence review counts only toward its target word.</p>
+    <label class="checkbox-row"><input name="include_zero"
+       type="checkbox"
+       {% if config.include_zero %}checked{% endif %}> Include fully familiar sentences</label>
+    <h2>Word familiarity</h2>
     <div class="setting-row">
-      <label for="known_days">
-        Successful review days<small>Good or Easy on distinct UTC dates.</small>
-      </label>
+      <label for="known_days">Successful review days</label>
       <input id="known_days"
              name="known_days"
              type="number"
@@ -67,9 +57,7 @@
              required>
     </div>
     <div class="setting-row">
-      <label for="known_stability">
-        Minimum stability, in days<small>FSRS estimate of how long you retain the word.</small>
-      </label>
+      <label for="known_stability">Minimum stability, days</label>
       <input id="known_stability"
              name="known_stability"
              type="number"
@@ -79,9 +67,7 @@
              required>
     </div>
     <div class="setting-row">
-      <label for="known_retrievability">
-        Minimum recall probability<small>Words may become unfamiliar again as time passes.</small>
-      </label>
+      <label for="known_retrievability">Minimum recall probability</label>
       <input id="known_retrievability"
              name="known_retrievability"
              type="number"
@@ -94,12 +80,7 @@
     <button class="button">Save settings</button>
   </form>
   <section class="panel backup-panel">
-    <h2>Keep a copy.</h2>
-    <p>Download a consistent snapshot of your words, sentences, settings, and review history.</p>
-    <a class="button secondary" href="{{ url_for('actions.backup') }}">Download database backup ↓</a>
-    <details>
-      <summary>Restore a backup</summary>
-      <p class="small muted">Stop Yiju, keep a copy of its data directory, and replace <code>yiju.sqlite3</code> with the downloaded file. Remove any old <code>yiju.sqlite3-wal</code> and <code>yiju.sqlite3-shm</code> files while the service is stopped, then restart it.</p>
-    </details>
+    <h2>Backup</h2>
+    <a class="button secondary" href="{{ url_for('actions.backup') }}">Download backup</a>
   </section>
 {% endblock %}

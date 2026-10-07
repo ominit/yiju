@@ -2,13 +2,12 @@ import json
 import sqlite3
 from datetime import datetime
 
-from yiju.core.scheduling import new_card
 from yiju.core.selection import Analysis, analyze
 from yiju.core.text import contains_han
 from yiju.core.tokenizer import tokenize
 
-from .database import settings, transaction
-from .importing import identity
+from .cards import create_sentence_card, identity
+from .database import settings, transaction, vocabulary_words
 from .learning import ConflictError, known_words
 
 MAX_CHINESE_LENGTH = 300
@@ -26,6 +25,7 @@ def sentence_analysis(
         sentence["word"],
         int(config["max_unknown"]),
         include_zero=bool(config["include_zero"]),
+        vocabulary=vocabulary_words(connection),
     )
 
 
@@ -39,7 +39,7 @@ def update_sentence(
     status: str,
     now: datetime,
 ) -> None:
-    if status not in {"pending", "accepted", "rejected"}:
+    if status not in {"accepted", "rejected"}:
         message = "Invalid sentence status."
         raise ValueError(message)
     if (
@@ -81,17 +81,8 @@ def update_sentence(
         )
         card_id = identity("sentence-card", sentence_id)
         if status == "accepted":
-            connection.execute(
-                "INSERT OR IGNORE INTO cards(id, entry_id, sentence_id, word, "
-                "scheduling, due) VALUES (?, ?, ?, ?, ?, ?)",
-                (
-                    card_id,
-                    row["entry_id"],
-                    sentence_id,
-                    row["word"],
-                    new_card(card_id, now).to_json(),
-                    now.isoformat(),
-                ),
+            create_sentence_card(
+                connection, sentence_id, row["entry_id"], row["word"], now
             )
         connection.execute(
             "UPDATE cards SET suspended = ?, version = version + 1 WHERE id = ?",

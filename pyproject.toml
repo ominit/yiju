@@ -41,6 +41,7 @@ select = ["ALL"]
 "yiju/cli.py" = ["S104"]
 "yiju/core/extraction.py" = ["RUF001"]
 "yiju/core/scheduling.py" = ["PLR0913"]
+"yiju/core/selection.py" = ["PLR0913"]
 "yiju/storage/sentences.py" = ["PLR0913", "PLR0917"]
 "yiju/web/__init__.py" = ["PLC0415"]
 

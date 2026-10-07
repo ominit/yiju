@@ -1,6 +1,6 @@
 import secrets
 
-from flask import Flask, Response, abort, render_template, request, session
+from flask import Flask, Response, abort, jsonify, render_template, request, session
 from werkzeug.exceptions import HTTPException
 
 from yiju.storage.learning import ConflictError
@@ -33,13 +33,17 @@ def response_headers(response: Response) -> Response:
     return response
 
 
-def http_error(error: HTTPException) -> tuple[str, int]:
+def http_error(error: HTTPException) -> tuple[str | Response, int]:
+    if request.headers.get("X-Yiju-Partial") == "study":
+        return jsonify(error=error.description), error.code or 500
     return render_template(
         "error.html", message=error.description, title=error.name
     ), error.code or 500
 
 
-def conflict(error: ConflictError) -> tuple[str, int]:
+def conflict(error: ConflictError) -> tuple[str | Response, int]:
+    if request.headers.get("X-Yiju-Partial") == "study":
+        return jsonify(error=str(error)), 409
     return render_template(
         "error.html", message=str(error), title="Something changed"
     ), 409

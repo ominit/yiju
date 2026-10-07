@@ -3,22 +3,20 @@ import json
 from flask import (
     Blueprint,
     abort,
-    redirect,
     render_template,
     request,
-    url_for,
 )
-from fsrs import Card
 from werkzeug.wrappers import Response
 
-from yiju.core.scheduling import intervals, now_utc
+from yiju.core.definitions import combine_definitions
+from yiju.core.scheduling import now_utc
 from yiju.core.selection import analyze
-from yiju.core.text import short_definition
-from yiju.storage.database import settings
-from yiju.storage.learning import known_words
-from yiju.storage.queue import overview, study_queue
+from yiju.storage.database import settings, vocabulary_words
+from yiju.storage.learning import known_sentences, known_words
+from yiju.storage.queue import overview
 
 from . import database
+from .studying import study_response
 
 pages = Blueprint("pages", __name__)
 PAGE_SIZE = 24
@@ -46,43 +44,7 @@ def home() -> str:
 
 @pages.get("/study")
 def study() -> str | Response:
-    connection = database()
-    now = now_utc()
-    queue = study_queue(connection, now)
-    last_review = connection.execute(
-        "SELECT id FROM reviews WHERE undone = 0 ORDER BY id DESC LIMIT 1"
-    ).fetchone()
-    if not queue:
-        return render_template(
-            "study.html",
-            card=None,
-            stats=overview(connection, now),
-            last_review=last_review,
-        )
-    card_id = request.args.get("card")
-    card = next((row for row in queue if row["id"] == card_id), queue[0])
-    if card_id is not None and card_id != card["id"]:
-        return redirect(url_for("pages.study"))
-    analysis = None
-    config = settings(connection)
-    if card["tokens"] is not None:
-        analysis = analyze(
-            tuple(json.loads(card["tokens"])),
-            known_words(connection, now),
-            card["word"],
-        )
-    return render_template(
-        "study.html",
-        card=card,
-        count=len(queue),
-        answer=request.args.get("answer") == "1",
-        intervals=intervals(
-            Card.from_json(card["scheduling"]), now, float(config["retention"])
-        ),
-        analysis=analysis,
-        gloss=short_definition(card["definition"]),
-        last_review=last_review,
-    )
+    return study_response()
 
 
 @pages.get("/import")
@@ -107,8 +69,8 @@ def import_result(import_id: int) -> str:
 @pages.get("/sentences")
 def sentences() -> str:
     connection = database()
-    state = request.args.get("status", "pending")
-    if state not in {"pending", "accepted", "rejected"}:
+    state = request.args.get("status", "accepted")
+    if state not in {"accepted", "rejected"}:
         abort(400)
     page = _page_number()
     sort = request.args.get("sort", "difficulty")
@@ -116,6 +78,7 @@ def sentences() -> str:
         abort(400)
     config = settings(connection)
     known = known_words(connection, now_utc())
+    vocabulary = vocabulary_words(connection)
     rows = connection.execute(
         "SELECT s.*, e.word FROM sentences s JOIN entries e ON s.entry_id = e.id "
         "WHERE s.status = ? ORDER BY s.rowid",
@@ -130,6 +93,7 @@ def sentences() -> str:
                 row["word"],
                 int(config["max_unknown"]),
                 include_zero=bool(config["include_zero"]),
+                vocabulary=vocabulary,
             ),
         )
         for row in rows
@@ -152,6 +116,7 @@ def sentences() -> str:
         sort=sort,
         page=page,
         more=page * PAGE_SIZE < counts.get(state, 0),
+        learned=known_sentences(connection, now_utc()),
     )
 
 
@@ -168,7 +133,9 @@ def sentence_detail(sentence_id: str) -> str:
     )
     if row is None:
         abort(404)
-    return render_template("sentence.html", sentence=row)
+    return render_template(
+        "sentence.html", sentence=row, return_to=request.args.get("return_to")
+    )
 
 
 @pages.get("/library")
@@ -178,8 +145,8 @@ def library() -> str:
     page = _page_number()
     rows = connection.execute(
         "SELECT e.*, c.reviews, c.suspended, c.id AS card_id, c.version, "
-        "(SELECT group_concat(e2.definition, char(10) || char(10)) "
-        "FROM entries e2 WHERE e2.word = e.word) AS all_definitions, "
+        "(SELECT group_concat(e2.definition_json, char(10)) "
+        "FROM entries e2 WHERE e2.word = e.word) AS definitions_json, "
         "(SELECT group_concat(DISTINCT e2.pinyin) FROM entries e2 "
         "WHERE e2.word = e.word) AS all_pinyin "
         "FROM entries e JOIN cards c ON c.entry_id = e.id AND c.sentence_id IS NULL "
@@ -191,6 +158,10 @@ def library() -> str:
     return render_template(
         "library.html",
         entries=rows[:PAGE_SIZE],
+        definitions={
+            row["word"]: combine_definitions(row["definitions_json"])
+            for row in rows[:PAGE_SIZE]
+        },
         known=known_words(connection, now_utc()),
         q=query,
         page=page,

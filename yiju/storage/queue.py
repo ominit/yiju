@@ -5,8 +5,8 @@ from typing import cast
 
 from yiju.core.selection import analyze
 
-from .database import settings
-from .learning import known_words
+from .database import settings, vocabulary_words
+from .learning import known_sentences, known_words
 
 CARD_QUERY = (
     "SELECT c.*, CASE WHEN c.sentence_id IS NULL THEN "
@@ -15,7 +15,11 @@ CARD_QUERY = (
     "CASE WHEN c.sentence_id IS NULL THEN "
     "(SELECT group_concat(e2.definition, char(10) || char(10)) FROM entries e2 "
     "WHERE e2.word = c.word) ELSE e.definition END AS definition, "
-    "s.chinese, s.pinyin AS sentence_pinyin, s.translation, s.tokens "
+    "CASE WHEN c.sentence_id IS NULL THEN "
+    "(SELECT group_concat(e2.definition_json, char(10)) FROM entries e2 "
+    "WHERE e2.word = c.word) ELSE e.definition_json END AS definition_json, "
+    "s.chinese, s.pinyin AS sentence_pinyin, s.translation, s.tokens, "
+    "s.version AS sentence_version "
     "FROM cards c JOIN entries e ON e.id = c.entry_id "
     "LEFT JOIN sentences s ON s.id = c.sentence_id "
 )
@@ -38,6 +42,13 @@ def study_queue(connection: sqlite3.Connection, now: datetime) -> list[sqlite3.R
             (now.isoformat(),),
         ).fetchall(),
     )
+    vocabulary = vocabulary_words(connection)
+    due = [
+        row
+        for row in due
+        if row["sentence_id"] is None
+        or all(token in vocabulary for token in json.loads(row["tokens"]))
+    ]
     reviews = [row for row in due if row["reviews"] > 0]
     new_sentences: list[tuple[float, sqlite3.Row]] = []
     new_words = []
@@ -54,6 +65,7 @@ def study_queue(connection: sqlite3.Connection, now: datetime) -> list[sqlite3.R
                 row["word"],
                 int(config["max_unknown"]),
                 include_zero=bool(config["include_zero"]),
+                vocabulary=vocabulary,
             )
             if analysis.eligible:
                 new_sentences.append((analysis.score, row))
@@ -71,9 +83,10 @@ def overview(connection: sqlite3.Connection, now: datetime) -> dict[str, int]:
         "known": len(known_words(connection, now)),
         "due": sum(row["reviews"] > 0 for row in queue),
         "new": sum(row["reviews"] == 0 for row in queue),
-        "pending": connection.execute(
-            "SELECT count(*) FROM sentences WHERE status = 'pending'"
+        "sentences": connection.execute(
+            "SELECT count(*) FROM sentences WHERE status = 'accepted'"
         ).fetchone()[0],
+        "learned_sentences": len(known_sentences(connection, now)),
         "today": connection.execute(
             "SELECT count(*) FROM reviews WHERE undone = 0 AND created >= ?",
             (now.date().isoformat(),),

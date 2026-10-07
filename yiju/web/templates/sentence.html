@@ -5,8 +5,7 @@
   <a class="back-link" href="{{ url_for('pages.sentences') }}">← Sentences</a>
   <div class="page-heading">
     <div>
-      <p class="eyebrow">Check the details</p>
-      <h1>A sentence for <span lang="zh-Hans">{{ sentence.word }}</span>.</h1>
+      <h1>Edit sentence</h1>
     </div>
   </div>
   <form class="panel editor-form"
@@ -14,20 +13,23 @@
         action="{{ url_for('actions.save_sentence', sentence_id=sentence.id) }}">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <input type="hidden" name="version" value="{{ sentence.version }}">
+    <input type="hidden" name="return_to" value="{{ return_to or '' }}">
     <label for="chinese">Chinese</label>
     <textarea id="chinese" name="chinese" lang="zh-Hans" maxlength="300" required>{{ sentence.chinese }}</textarea>
     <label for="pinyin">Pinyin</label>
     <textarea id="pinyin" name="pinyin" maxlength="1000">{{ sentence.pinyin }}</textarea>
     <label for="translation">Translation</label>
     <textarea id="translation" name="translation" maxlength="2000" required>{{ sentence.translation }}</textarea>
-    <p class="small muted">Keep the target word in the sentence. Your original dictionary text stays unchanged.</p>
     <div class="actions">
-      <button class="button" name="status" value="accepted">Save & approve</button>
-      <button class="button secondary" name="status" value="pending">Save for later</button>
-      <button class="text-button" name="status" value="rejected">Skip sentence</button>
+      <button class="button" name="status" value="{{ sentence.status }}">Save changes</button>
+      {% if sentence.status == 'rejected' %}
+        <button class="button secondary" name="status" value="accepted">Save & restore</button>
+      {% else %}
+        <button class="text-button" name="status" value="rejected">Skip sentence</button>
+      {% endif %}
     </div>
   </form>
-  <details class="panel source-details" open>
+  <details class="panel source-details">
     <summary>Original dictionary entry</summary>
     <p class="definition">{{ sentence.raw_definition }}</p>
   </details>

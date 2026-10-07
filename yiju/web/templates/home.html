@@ -1,93 +1,63 @@
 {% extends 'base.html' %}
 {% block content %}
   <div class="page-heading">
-    <div>
-      <p class="eyebrow">Your learning space</p>
-      <h1>A little Chinese, every day.</h1>
-      <p class="muted">Build your vocabulary. Put it into context.</p>
-    </div>
-    <a class="button secondary" href="{{ url_for('pages.import_page') }}">
-      <span aria-hidden="true">＋</span> Import words</a>
+    <h1>Overview</h1>
+    <a class="button secondary" href="{{ url_for('pages.import_page') }}">Import words</a>
   </div>
   {% if stats.words %}
     <div class="stats-grid">
       <div class="stat">
         <span class="stat-label">Familiar words</span>
-        <strong>{{ stats.known }}<small>/ {{ stats.words }}</small>
-        </strong>
-        <span>Grown through your reviews</span>
+        <strong>{{ stats.known }} <small>/ {{ stats.words }}</small></strong>
       </div>
       <div class="stat">
         <span class="stat-label">Due for review</span>
         <strong>{{ stats.due }}</strong>
-        <span>Keep what you’ve learned</span>
       </div>
       <div class="stat">
-        <span class="stat-label">New today</span>
+        <span class="stat-label">New cards</span>
         <strong>{{ stats.new }}</strong>
-        <span>Ready to start learning</span>
       </div>
       <div class="stat">
         <span class="stat-label">Reviews today</span>
         <strong>{{ stats.today }}</strong>
-        <span>A little practice adds up</span>
       </div>
     </div>
     <div class="dashboard-grid">
-      <section class="study-invitation">
-        <p class="eyebrow">Your next session</p>
-        <div class="invitation-character" lang="zh-Hans" aria-hidden="true">学</div>
-        <h2>{% if stats.due + stats.new %}Pick up where you left off.{% else %}You’re up to date.{% endif %}</h2>
-        <p>
-          {% if stats.due + stats.new %}{{ stats.due }} reviews and {{ stats.new }} new cards are ready. Take them at your own pace.{% else %}Come back when your next cards are due, or review the sentences waiting for approval.{% endif %}
-        </p>
+      <section class="panel study-invitation">
+        <h2>Study</h2>
         {% if stats.due + stats.new %}
-          <a class="button" href="{{ url_for('pages.study') }}">Start studying <span aria-hidden="true">→</span>
-          </a>
-        {% elif upcoming %}
-          <p class="next-due">
-            Next review: <time datetime="{{ upcoming }}">{{ upcoming[:16].replace('T', ' ') }} UTC</time>
-          </p>
+          <p>{{ stats.due }} reviews · {{ stats.new }} new cards</p>
+          <a class="button" href="{{ url_for('pages.study') }}">Start studying</a>
+        {% else %}
+          <p>No cards due</p>
+          {% if upcoming %}
+            <p class="next-due">Next review: <time datetime="{{ upcoming }}">{{ upcoming[:16].replace('T', ' ') }} UTC</time></p>
+          {% endif %}
         {% endif %}
       </section>
       <section class="panel review-invitation">
-        <div class="section-heading">
-          <p class="eyebrow">From your dictionary</p>
-          <span class="badge">{{ stats.pending }} pending</span>
-        </div>
-        <h2>Make the sentences yours.</h2>
-        <p>Check the extracted Chinese, pinyin, and translation before adding a sentence to your deck.</p>
-        <p class="small muted">Approved sentences become available as more of their words become familiar.</p>
-        <a class="text-link" href="{{ url_for('pages.sentences') }}">Review sentences <span aria-hidden="true">→</span>
-        </a>
+        <h2>Sentences</h2>
+        <p>{{ stats.learned_sentences }} learned · {{ stats.sentences }} active</p>
+        <a class="button secondary" href="{{ url_for('pages.sentences') }}">Browse sentences</a>
       </section>
     </div>
     <section class="recent-imports">
       <div class="section-heading">
         <h2>Recent imports</h2>
-        <a class="text-link" href="{{ url_for('pages.library') }}">Browse your words →</a>
       </div>
       {% for batch in history %}
         <a class="import-row"
            href="{{ url_for('pages.import_result', import_id=batch.id) }}">
-          <span>
-            <span class="file-icon" aria-hidden="true">↳</span> {{ batch.filename }}</span>
+          <span>{{ batch.filename }}</span>
           <time datetime="{{ batch.created }}">{{ batch.created[:10] }}</time>
-          <span aria-hidden="true">↗</span>
         </a>
       {% endfor %}
     </section>
   {% else %}
-    <section class="welcome panel">
-      <div class="welcome-mark" lang="zh-Hans">一句</div>
-      <div>
-        <p class="eyebrow">Begin with your own words</p>
-        <h2>Your Pleco list is the starting point.</h2>
-        <p>Import an XML export to create vocabulary cards and find useful example sentences. We’ll start from zero and learn what you know as you review.</p>
-        <a class="button" href="{{ url_for('pages.import_page') }}">Import Pleco XML <span aria-hidden="true">→</span>
-        </a>
-        <p class="small muted">Stored on your server. No external services.</p>
-      </div>
+    <section class="empty-state panel">
+      <h2>No words yet</h2>
+      <a class="button" href="{{ url_for('pages.import_page') }}">Import Pleco XML</a>
     </section>
   {% endif %}
 {% endblock %}

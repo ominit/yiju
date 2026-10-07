@@ -2,36 +2,50 @@
 {% block title %}Import result · Yiju{% endblock %}
 {% block page_class %}narrow{% endblock %}
 {% block content %}
-  <p class="eyebrow">Import receipt</p>
-  <h1>Your words are here.</h1>
+  <div class="page-heading">
+    <h1>Import result</h1>
+  </div>
   <p class="muted">{{ batch.filename }} · {{ batch.created[:10] }}</p>
   <div class="stats-grid compact">
-    <div class="stat">
-      <span class="stat-label">Entries added</span>
-      <strong>{{ summary.added }}</strong>
-    </div>
-    <div class="stat">
-      <span class="stat-label">Examples to check</span>
-      <strong>{{ summary.sentences }}</strong>
-    </div>
+    <div class="stat"><span class="stat-label">Entries added</span><strong>{{ summary.added }}</strong></div>
+    <div class="stat"><span class="stat-label">Sentences</span><strong>{{ summary.sentences }}</strong></div>
   </div>
   <section class="panel">
-    <p>{{ summary.parsed }} valid entries parsed. {{ summary.duplicates }} existing entries skipped. {{ summary.skipped }} entries without supported simplified headwords skipped.</p>
-    <p>{{ summary.issues|length }} invalid cards.</p>
-    <p class="small muted">This receipt describes the original import. Uploading the identical file again returns this receipt without creating more cards.</p>
+    <dl class="import-counts">
+      <div>
+        <dt>Entries read</dt>
+        <dd>
+          {{ summary.parsed }}
+        </dd>
+      </div>
+      <div>
+        <dt>Duplicates</dt>
+        <dd>
+          {{ summary.duplicates }}
+        </dd>
+      </div>
+      <div>
+        <dt>Unsupported entries</dt>
+        <dd>
+          {{ summary.skipped }}
+        </dd>
+      </div>
+      <div>
+        <dt>Invalid cards</dt>
+        <dd>
+          {{ summary.issues|length }}
+        </dd>
+      </div>
+    </dl>
     {% if summary.issues %}
       <details>
-        <summary>View invalid entries</summary>
-        <ul>
-          {% for issue in summary.issues %}
-            <li>Card {{ issue.card_number }}: {{ issue.message }}</li>
-          {% endfor %}
-        </ul>
+        <summary>Invalid entries</summary>
+        <ul>{% for issue in summary.issues %}<li>Card {{ issue.card_number }}: {{ issue.message }}</li>{% endfor %}</ul>
       </details>
     {% endif %}
     <div class="actions">
-      <a class="button" href="{{ url_for('pages.study') }}">Study words →</a>
-      <a class="button secondary" href="{{ url_for('pages.sentences') }}">Check sentences</a>
+      <a class="button" href="{{ url_for('pages.study') }}">Study words</a>
+      <a class="button secondary" href="{{ url_for('pages.sentences') }}">Browse sentences</a>
     </div>
   </section>
 {% endblock %}

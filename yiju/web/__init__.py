@@ -43,7 +43,6 @@ def create_app(database_path: Path | None = None) -> Flask:
     app.config.update(
         DATABASE=str(path),
         SECRET_KEY=_secret(path.with_suffix(".secret")),
-        MAX_CONTENT_LENGTH=10 * 1024 * 1024,
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
     )

@@ -2,9 +2,9 @@
 <html lang="en">
   <head>
     <meta charset="utf-8">
+    <meta name="color-scheme" content="dark">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description"
-          content="Your Chinese vocabulary, one sentence at a time.">
+    <meta name="description" content="Chinese vocabulary and sentence study.">
     <title>{% block title %}Yiju · 一句{% endblock %}</title>
     <link rel="icon"
           href="{{ url_for('static', filename='favicon.svg') }}"
@@ -16,7 +16,12 @@
     <a class="skip-link" href="#main">Skip to content</a>
     <header class="site-header">
       <a class="brand" href="{{ url_for('pages.home') }}">
-        <span class="brand-seal" lang="zh-Hans">句</span> yiju<span class="brand-caption">Chinese, in context.</span>
+        <img class="brand-seal"
+             src="{{ url_for('static', filename='favicon.svg') }}"
+             alt="句"
+             width="37"
+             height="37">
+        yiju
       </a>
       <nav aria-label="Main navigation">
         <a href="{{ url_for('pages.home') }}"
@@ -37,9 +42,5 @@
       {% endfor %}
       {% block content %}{% endblock %}
     </main>
-    <footer class="site-footer">
-      <span>一句 <span lang="zh-Hans">·</span> One sentence at a time.</span>
-      <a href="{{ url_for('pages.import_page') }}">Import vocabulary</a>
-    </footer>
   </body>
 </html>

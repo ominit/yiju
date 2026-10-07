@@ -24,6 +24,7 @@ from yiju.storage.queue import study_queue
 from yiju.storage.sentences import update_sentence
 
 from . import database
+from .studying import study_response
 
 actions = Blueprint("actions", __name__)
 
@@ -52,7 +53,7 @@ def upload() -> Response:
 
 
 @actions.post("/review/<card_id>")
-def rate(card_id: str) -> Response:
+def rate(card_id: str) -> str | Response:
     rating = integer("rating")
     if rating not in {1, 2, 3, 4}:
         abort(400, "Choose Again, Hard, Good, or Easy.")
@@ -62,18 +63,22 @@ def rate(card_id: str) -> Response:
         message = "This card is no longer available. Reload the study page."
         raise ConflictError(message)
     review_card(connection, card_id, integer("version"), rating, now)
+    if request.headers.get("X-Yiju-Partial") == "study":
+        return study_response()
     return redirect(url_for("pages.study"), code=303)
 
 
 @actions.post("/review/undo")
-def undo() -> Response:
+def undo() -> str | Response:
     undo_review(database(), integer("review_id"))
     flash("Last review undone.")
+    if request.headers.get("X-Yiju-Partial") == "study":
+        return study_response()
     return redirect(url_for("pages.study"), code=303)
 
 
 @actions.post("/sentences/<sentence_id>")
-def save_sentence(sentence_id: str) -> Response:
+def save_sentence(sentence_id: str) -> str | Response:
     try:
         update_sentence(
             database(),
@@ -82,7 +87,7 @@ def save_sentence(sentence_id: str) -> Response:
             request.form.get("chinese", ""),
             request.form.get("pinyin", ""),
             request.form.get("translation", ""),
-            request.form.get("status", "pending"),
+            request.form.get("status", "accepted"),
             now_utc(),
         )
     except ConflictError:
@@ -90,7 +95,15 @@ def save_sentence(sentence_id: str) -> Response:
     except ValueError as error:
         abort(400, str(error))
     flash("Sentence saved.")
-    return redirect(url_for("pages.sentences"), code=303)
+    destination = (
+        "pages.study" if request.form.get("return_to") == "study" else "pages.sentences"
+    )
+    if (
+        destination == "pages.study"
+        and request.headers.get("X-Yiju-Partial") == "study"
+    ):
+        return study_response()
+    return redirect(url_for(destination), code=303)
 
 
 @actions.post("/cards/<card_id>/suspend")

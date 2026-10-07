@@ -9,6 +9,7 @@ class Analysis:
     score: float
     eligible: bool
     reason: str
+    missing: tuple[str, ...] = ()
 
 
 def analyze(
@@ -18,19 +19,33 @@ def analyze(
     max_unknown: int = 2,
     *,
     include_zero: bool = False,
+    vocabulary: frozenset[str] | None = None,
 ) -> Analysis:
     unknown_tokens = tuple(token for token in tokens if token not in known)
     unknown = tuple(dict.fromkeys(unknown_tokens))
+    missing = tuple(
+        dict.fromkeys(
+            token
+            for token in tokens
+            if vocabulary is not None and token not in vocabulary
+        )
+    )
     coverage = 1 - len(unknown_tokens) / len(tokens) if tokens else 0.0
     reason = "Ready"
     if not tokens:
         reason = "No words found"
     elif target not in tokens:
         reason = "Target word is not a separate token"
+    elif missing:
+        reason = "Words missing from vocabulary"
+    elif not any(token in known for token in tokens):
+        reason = "Needs at least one known word"
     elif len(unknown) > max_unknown:
         reason = f"{len(unknown)} unfamiliar words; limit is {max_unknown}"
     elif not unknown and not include_zero:
         reason = "All words are familiar"
     preference = {1: 300, 2: 200, 0: 100}.get(len(unknown), 0)
     score = preference + 20 * coverage - min(len(tokens), 60) - len(unknown_tokens)
-    return Analysis(tokens, unknown, coverage, score, reason == "Ready", reason)
+    return Analysis(
+        tokens, unknown, coverage, score, reason == "Ready", reason, missing
+    )

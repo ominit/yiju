@@ -1,13 +1,34 @@
 import sqlite3
 from collections.abc import Generator
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from flask import Flask
 from flask.testing import FlaskClient
+from fsrs import Card, State
 
 from yiju.storage.database import connect, initialize
 from yiju.web import create_app
+
+
+def seed_known_word(
+    connection: sqlite3.Connection, word: str, now: datetime | None = None
+) -> None:
+    now = now or datetime.now(UTC)
+    card = Card(
+        card_id=1,
+        state=State.Review,
+        stability=20,
+        difficulty=3,
+        due=now,
+        last_review=now,
+    )
+    connection.execute(
+        "INSERT INTO knowledge VALUES (?, ?, ?, ?)",
+        (word, card.to_json(), 3, now.date().isoformat()),
+    )
+    connection.commit()
 
 
 @pytest.fixture

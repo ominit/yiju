@@ -17,7 +17,8 @@ CREATE TABLE IF NOT EXISTS entries (
     definition TEXT NOT NULL,
     raw_definition TEXT NOT NULL,
     references_json TEXT NOT NULL,
-    import_id INTEGER NOT NULL REFERENCES imports(id)
+    import_id INTEGER NOT NULL REFERENCES imports(id),
+    definition_json TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS entries_word ON entries(word);
 CREATE TABLE IF NOT EXISTS sentences (
@@ -27,7 +28,7 @@ CREATE TABLE IF NOT EXISTS sentences (
     pinyin TEXT NOT NULL,
     translation TEXT NOT NULL,
     tokens TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'accepted', 'rejected')),
+    status TEXT NOT NULL DEFAULT 'accepted' CHECK(status IN ('accepted', 'rejected')),
     version INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS cards (
@@ -59,4 +60,10 @@ CREATE TABLE IF NOT EXISTS reviews (
     undone INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS reviews_created ON reviews(created);
-PRAGMA user_version = 1;
+CREATE INDEX IF NOT EXISTS reviews_card ON reviews(card_id, id);
+CREATE TABLE IF NOT EXISTS review_words (
+    review_id INTEGER NOT NULL REFERENCES reviews(id),
+    word TEXT NOT NULL,
+    knowledge_before TEXT,
+    PRIMARY KEY(review_id, word)
+);

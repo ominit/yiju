@@ -1,13 +1,12 @@
 {% extends 'base.html' %}
-{% block title %}Your words · Yiju{% endblock %}
+{% from 'macros/definitions.html' import definition %}
+{% block title %}Words · Yiju{% endblock %}
 {% block content %}
   <div class="page-heading">
     <div>
-      <p class="eyebrow">Your growing vocabulary</p>
-      <h1>Words, collected.</h1>
-      <p class="muted">Familiarity comes from reviews on different days, not a single correct answer.</p>
+      <h1>Words</h1>
     </div>
-    <a class="button secondary" href="{{ url_for('pages.import_page') }}">＋ Import words</a>
+    <a class="button secondary" href="{{ url_for('pages.import_page') }}">Import words</a>
   </div>
   <form class="search-form" method="get">
     <label class="sr-only" for="q">Search words and definitions</label>
@@ -26,10 +25,7 @@
           <span class="pinyin">{{ entry.all_pinyin }}</span>
           <span class="badge {% if entry.word in known %}ready{% endif %}">{{ 'Familiar' if entry.word in known else 'Learning' if entry.reviews else 'New' }}</span>
         </div>
-        <details>
-          <summary>{{ entry.all_definitions[:150] }}{% if entry.all_definitions|length > 150 %}…{% endif %}</summary>
-          <p class="definition">{{ entry.all_definitions }}</p>
-        </details>
+        {{ definition(definitions[entry.word]) }}
         <form method="post"
               action="{{ url_for('actions.suspend', card_id=entry.card_id) }}">
           <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -39,8 +35,7 @@
       </article>
     {% else %}
       <div class="empty-state panel">
-        <h2>No matching words.</h2>
-        <p>Try a different search, or import your Pleco vocabulary.</p>
+        <h2>No matching words</h2>
       </div>
     {% endfor %}
   </div>

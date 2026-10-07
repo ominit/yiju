@@ -1,14 +1,9 @@
 {% extends 'base.html' %}
-{% block title %}Import vocabulary · Yiju{% endblock %}
+{% block title %}Import words · Yiju{% endblock %}
 {% block page_class %}narrow{% endblock %}
 {% block content %}
-  <a class="back-link" href="{{ url_for('pages.home') }}">← Overview</a>
   <div class="page-heading">
-    <div>
-      <p class="eyebrow">Bring your vocabulary</p>
-      <h1>Import from Pleco.</h1>
-      <p class="muted">Use the XML flashcard export with definitions included.</p>
-    </div>
+    <h1>Import words</h1>
   </div>
   <form class="panel import-form"
         method="post"
@@ -16,23 +11,14 @@
         data-busy>
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <label class="upload-area" for="file">
-      <span class="upload-symbol" aria-hidden="true">↥</span>
-      <strong>Choose your Pleco XML file</strong>
-      <span>Up to 10 MB · UTF-8 XML</span>
+      <strong>Pleco XML export</strong>
       <input id="file"
              name="file"
              type="file"
              accept=".xml,text/xml,application/xml"
              required>
     </label>
-    <div class="import-details">
-      <h2>What happens next</h2>
-      <p>Words get vocabulary cards automatically. Extracted examples go into a review queue so you can check and edit them before studying.</p>
-      <p class="small muted">Repeated imports skip existing entries and preserve your review history. Definitions and dictionary references are retained.</p>
-    </div>
-    <button class="button" type="submit">
-      Import vocabulary <span aria-hidden="true">→</span>
-    </button>
-    <p class="busy-message" role="status" hidden>Reading your export and finding examples…</p>
+    <button class="button" type="submit">Import</button>
+    <p class="busy-message" role="status" hidden>Importing…</p>
   </form>
 {% endblock %}

@@ -1,0 +1,32 @@
+{% macro definition(value) %}
+  {% if value.senses %}
+    <ol class="dictionary-senses">
+      {% for sense in value.senses %}
+        {% if sense.meaning %}
+          <li>
+            {% if sense.part_of_speech %}<span class="part-of-speech">{{ sense.part_of_speech }}</span>{% endif %}
+            <span>{{ sense.meaning }}</span>
+          </li>
+        {% endif %}
+      {% endfor %}
+    </ol>
+    {% if value.example_count %}
+      <details class="dictionary-examples">
+        <summary>Examples · {{ value.example_count }}</summary>
+        <div class="dictionary-example-list">
+          {% for sense in value.senses %}
+            {% for example in sense.examples %}
+              <div class="dictionary-example">
+                <p lang="zh-Hans">{{ example.chinese }}</p>
+                <p class="pinyin">{{ example.pinyin }}</p>
+                <p>{{ example.translation }}</p>
+              </div>
+            {% endfor %}
+          {% endfor %}
+        </div>
+      </details>
+    {% endif %}
+  {% else %}
+    <p class="muted">No definition</p>
+  {% endif %}
+{% endmacro %}
