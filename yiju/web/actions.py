@@ -8,6 +8,7 @@ from flask import (
     Blueprint,
     abort,
     flash,
+    jsonify,
     redirect,
     request,
     send_file,
@@ -59,13 +60,49 @@ def rate(card_id: str) -> str | Response:
         abort(400, "Choose Again, Hard, Good, or Easy.")
     connection = database()
     now = now_utc()
-    if not any(row["id"] == card_id for row in study_queue(connection, now)):
-        message = "This card is no longer available. Reload the study page."
-        raise ConflictError(message)
-    review_card(connection, card_id, integer("version"), rating, now)
+    version = integer("version")
+    buffered = request.headers.get("X-Yiju-Buffer") == "1"
+    if buffered:
+        saved = _saved_rating(connection, card_id, version, rating)
+        if saved is not None:
+            return jsonify(review_id=saved)
+    try:
+        _available_card(connection, card_id)
+        review_id = review_card(connection, card_id, version, rating, now)
+    except ConflictError:
+        saved = (
+            _saved_rating(connection, card_id, version, rating) if buffered else None
+        )
+        if saved is None:
+            raise
+        review_id = saved
+    if buffered:
+        return jsonify(review_id=review_id)
     if request.headers.get("X-Yiju-Partial") == "study":
         return study_response()
     return redirect(url_for("pages.study"), code=303)
+
+
+def _available_card(connection: sqlite3.Connection, card_id: str) -> None:
+    if not study_queue(connection, now_utc(), card_id=card_id):
+        message = "This card is no longer available. Reload the study page."
+        raise ConflictError(message)
+
+
+def _saved_rating(
+    connection: sqlite3.Connection, card_id: str, version: int, rating: int
+) -> int | None:
+    saved = connection.execute(
+        "SELECT id, rating FROM reviews WHERE card_id = ? AND undone = 0 "
+        "AND json_extract(card_before, '$.version') = ?",
+        (card_id, version),
+    ).fetchone()
+    if saved is None:
+        return None
+    if saved["rating"] != rating:
+        message = "This card was already rated differently. Reload the session."
+        raise ConflictError(message)
+    return int(saved["id"])
 
 
 @actions.post("/review/undo")
@@ -110,14 +147,18 @@ def save_sentence(sentence_id: str) -> str | Response:
 def suspend(card_id: str) -> Response:
     connection = database()
     with transaction(connection):
-        changed = connection.execute(
-            "UPDATE cards SET suspended = 1 - suspended, version = version + "
-            "1 WHERE id = ? AND version = ? AND sentence_id IS NULL",
+        card = connection.execute(
+            "SELECT * FROM cards WHERE id = ? AND version = ? AND sentence_id IS NULL",
             (card_id, integer("version")),
-        ).rowcount
-        if not changed:
+        ).fetchone()
+        if card is None:
             message = "This card has changed. Reload the page."
             raise ConflictError(message)
+        connection.execute(
+            "UPDATE cards SET suspended = ?, version = version + 1 "
+            "WHERE word = ? AND sentence_id IS NULL",
+            (1 - card["suspended"], card["word"]),
+        )
     return redirect(url_for("pages.library"), code=303)
 
 

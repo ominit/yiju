@@ -144,12 +144,15 @@ def library() -> str:
     query = request.args.get("q", "").strip()[:100]
     page = _page_number()
     rows = connection.execute(
-        "SELECT e.*, c.reviews, c.suspended, c.id AS card_id, c.version, "
+        "SELECT e.*, (SELECT sum(c2.reviews) FROM cards c2 "
+        "WHERE c2.word = e.word AND c2.sentence_id IS NULL) AS reviews, "
+        "c.suspended, c.id AS card_id, c.version, "
         "(SELECT group_concat(e2.definition_json, char(10)) "
         "FROM entries e2 WHERE e2.word = e.word) AS definitions_json, "
         "(SELECT group_concat(DISTINCT e2.pinyin) FROM entries e2 "
         "WHERE e2.word = e.word) AS all_pinyin "
         "FROM entries e JOIN cards c ON c.entry_id = e.id AND c.sentence_id IS NULL "
+        "AND c.direction = 'recognition' "
         "WHERE instr(e.word, ?) > 0 OR EXISTS(SELECT 1 FROM entries e2 "
         "WHERE e2.word = e.word AND instr(lower(e2.definition), lower(?)) > 0) "
         "ORDER BY e.word LIMIT ? OFFSET ?",

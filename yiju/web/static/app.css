@@ -32,11 +32,6 @@
 #study-session:focus {
   outline: none;
 }
-.study-card + .sentence-actions {
-  margin-top: 16px;
-  padding-top: 0;
-  border-top: 0;
-}
 body {
   margin: 0;
 }
@@ -401,16 +396,43 @@ input[type="file"]::file-selector-button {
   flex-wrap: wrap;
   margin-top: 24px;
 }
+.study-layout {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.study-layout .site-header {
+  width: 100%;
+  padding: 12px 24px;
+  flex-shrink: 0;
+}
 .study-page {
-  max-width: 890px;
-  padding-top: 32px;
+  width: 100%;
+  max-width: 1160px;
+  padding: 20px 24px;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.study-page .notice {
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+#study-session {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 .study-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 20px;
+  flex-shrink: 0;
 }
 .study-toolbar .back-link {
   margin: 0;
@@ -419,7 +441,22 @@ input[type="file"]::file-selector-button {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
-  padding: 26px 40px 32px;
+  padding: 20px 28px;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.study-body {
+  min-height: 0;
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.study-card.revealed .study-body {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 28px;
 }
 .card-heading {
   display: flex;
@@ -433,22 +470,44 @@ input[type="file"]::file-selector-button {
 }
 .question {
   text-align: center;
-  padding: 48px 5px;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.question-content {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.question-pinyin {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 .chinese {
   font-family: "Noto Serif CJK SC", "Songti SC", "SimSun", serif;
-  font-size: 84px;
+  font-size: var(--question-font-size, 84px);
   font-weight: 400;
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
 .chinese.sentence-text {
-  font-size: clamp(30px, 5vw, 48px);
-  line-height: 1.7;
+  font-size: var(--question-font-size, clamp(30px, 4vw, 48px));
+  line-height: 1.55;
+}
+.recall-prompt {
+  font-size: var(--question-font-size, clamp(20px, 2vw, 28px));
+  line-height: 1.6;
+  overflow-wrap: anywhere;
 }
 .reveal-area {
-  text-align: center;
-  padding: 0 0 12px;
+  min-height: 66px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 .reveal-area .button {
   min-width: 230px;
@@ -463,36 +522,69 @@ kbd {
   font-weight: 400;
 }
 .answer {
-  border-top: 1px solid var(--line);
-  padding-top: 24px;
-  text-align: center;
+  min-height: 0;
+  min-width: 0;
+  border-left: 1px solid var(--line);
+  padding-left: 28px;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) 32px;
+  gap: 12px;
+}
+.answer-pages {
+  min-height: 0;
+  overflow: hidden;
+}
+.answer-flow {
+  height: 100%;
+  column-count: 1;
+  column-gap: 24px;
+  column-fill: auto;
+}
+.answer-pagination,
+.answer-pagination[hidden] {
+  display: flex !important;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.answer-pagination[hidden] {
+  visibility: hidden;
+}
+.answer-pagination button:disabled {
+  cursor: default;
+}
+.study-card + .sentence-actions {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  flex-shrink: 0;
 }
 .pinyin {
   font-size: 15px;
   color: var(--muted);
   line-height: 1.7;
 }
-.answer > .pinyin {
-  font-size: 22px;
+.question-pinyin {
+  font-size: 20px;
   color: var(--accent);
-  margin-bottom: 12px;
 }
 .translation {
   font-size: 15px;
   line-height: 1.7;
 }
-.answer > .translation {
-  font-size: 20px;
+.answer-flow > .translation {
+  font-size: 18px;
 }
 .definition-block {
   text-align: left;
-  margin: 24px auto 0;
+  margin: 16px auto 0;
   border-top: 1px solid var(--line);
-  padding-top: 22px;
+  padding-top: 16px;
 }
 .definition-block h2 {
   font-size: 21px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
+  break-after: avoid;
 }
 .definition {
   font-size: 15px;
@@ -508,6 +600,9 @@ kbd {
 }
 .dictionary-senses li + li {
   margin-top: 8px;
+}
+.answer-flow .dictionary-senses li {
+  break-inside: avoid;
 }
 .part-of-speech {
   color: var(--muted);
@@ -569,7 +664,8 @@ details[open] > summary {
   color: var(--amber);
 }
 .rating-area {
-  margin: 20px 0;
+  margin: 0;
+  flex-shrink: 0;
 }
 .rating-buttons {
   display: grid;
@@ -934,7 +1030,7 @@ textarea[lang="zh-Hans"] {
     padding: 22px;
   }
   .question {
-    padding: 40px 0;
+    padding: 0;
   }
   .chinese {
     font-size: 65px;
@@ -989,6 +1085,100 @@ textarea[lang="zh-Hans"] {
   }
   .actions .button {
     flex: 1;
+  }
+}
+.study-page .empty-state {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+@media (max-width: 700px) {
+  .study-layout .site-header {
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+  }
+  .study-layout .site-header nav {
+    width: auto;
+    padding: 0;
+    flex-wrap: nowrap;
+  }
+  .study-layout .site-header nav a:not([aria-current]):not(:first-child) {
+    display: none;
+  }
+  .study-layout .study-page {
+    padding: 12px 16px max(12px, env(safe-area-inset-bottom));
+  }
+  #study-session {
+    gap: 8px;
+  }
+  .study-toolbar {
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+  .study-card {
+    padding: 14px 16px;
+    gap: 10px;
+  }
+  .study-card.revealed .study-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(60px, var(--question-height, 0.4fr)) minmax(
+        0,
+        1.6fr
+      );
+    gap: 12px;
+  }
+  .answer {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    padding: 12px 0 0;
+    gap: 6px;
+  }
+  .chinese {
+    font-size: var(--question-font-size, 65px);
+  }
+  .chinese.sentence-text {
+    font-size: var(--question-font-size, 30px);
+  }
+  .question-pinyin {
+    font-size: 16px;
+  }
+  .answer-flow > .translation {
+    font-size: 16px;
+  }
+  .definition-block {
+    margin-top: 12px;
+    padding-top: 12px;
+  }
+  .definition-block h2 {
+    font-size: 18px;
+  }
+  .rating {
+    padding: 10px 3px;
+  }
+  .reveal-area {
+    min-height: 58px;
+  }
+}
+@media (max-height: 500px) and (min-width: 701px) {
+  .study-layout .site-header {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  .study-layout .study-page {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+  #study-session {
+    gap: 6px;
+  }
+  .study-card {
+    padding: 12px 20px;
+    gap: 10px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

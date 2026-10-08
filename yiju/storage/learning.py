@@ -33,16 +33,21 @@ def known_words(connection: sqlite3.Connection, now: datetime) -> frozenset[str]
 def known_sentences(connection: sqlite3.Connection, now: datetime) -> frozenset[str]:
     config = settings(connection)
     rows = connection.execute(
-        "WITH failures AS (SELECT card_id, max(id) AS last_failure FROM reviews "
-        "WHERE undone = 0 AND rating = 1 GROUP BY card_id) "
-        "SELECT c.sentence_id, c.scheduling, "
+        "WITH failures AS (SELECT c.sentence_id, max(r.id) AS last_failure "
+        "FROM reviews r JOIN cards c ON c.id = r.card_id "
+        "WHERE r.undone = 0 AND r.rating = 1 AND c.sentence_id IS NOT NULL "
+        "GROUP BY c.sentence_id), "
+        "successes AS (SELECT c.sentence_id, "
         "count(DISTINCT substr(r.created, 1, 10)) AS success_days "
+        "FROM reviews r JOIN cards c ON c.id = r.card_id "
+        "LEFT JOIN failures f ON f.sentence_id = c.sentence_id "
+        "WHERE r.undone = 0 AND r.rating IN (3, 4) "
+        "AND r.id > coalesce(f.last_failure, 0) GROUP BY c.sentence_id) "
+        "SELECT c.sentence_id, c.scheduling, p.success_days "
         "FROM cards c JOIN sentences s ON s.id = c.sentence_id "
-        "LEFT JOIN failures f ON f.card_id = c.id "
-        "LEFT JOIN reviews r ON r.card_id = c.id AND r.undone = 0 "
-        "AND r.rating IN (3, 4) AND r.id > coalesce(f.last_failure, 0) "
+        "JOIN successes p ON p.sentence_id = c.sentence_id "
         "WHERE c.suspended = 0 AND c.reviews > 0 AND s.status = 'accepted' "
-        "GROUP BY c.id HAVING success_days >= ?",
+        "AND p.success_days >= ?",
         (int(config["known_days"]),),
     )
     return frozenset(
@@ -120,7 +125,7 @@ def review_card(
     version: int,
     rating: int,
     now: datetime,
-) -> None:
+) -> int:
     choice = Rating(rating)
     with transaction(connection):
         card = connection.execute(
@@ -158,6 +163,7 @@ def review_card(
             "version = version + 1 WHERE id = ?",
             (updated.to_json(), updated.due.isoformat(), card_id),
         )
+        return int(cursor.lastrowid or 0)
 
 
 def undo_review(connection: sqlite3.Connection, review_id: int) -> None:

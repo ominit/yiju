@@ -3,7 +3,9 @@ import sqlite3
 from datetime import datetime
 from typing import cast
 
+from yiju.core.definitions import recall_prompt
 from yiju.core.selection import analyze
+from yiju.core.text import contains_han
 
 from .database import settings, vocabulary_words
 from .learning import known_sentences, known_words
@@ -19,13 +21,17 @@ CARD_QUERY = (
     "(SELECT group_concat(e2.definition_json, char(10)) FROM entries e2 "
     "WHERE e2.word = c.word) ELSE e.definition_json END AS definition_json, "
     "s.chinese, s.pinyin AS sentence_pinyin, s.translation, s.tokens, "
-    "s.version AS sentence_version "
+    "s.version AS sentence_version, "
+    "EXISTS(SELECT 1 FROM cards sibling WHERE sibling.sentence_id = c.sentence_id "
+    "AND sibling.reviews > 0) AS sentence_started "
     "FROM cards c JOIN entries e ON e.id = c.entry_id "
     "LEFT JOIN sentences s ON s.id = c.sentence_id "
 )
 
 
-def study_queue(connection: sqlite3.Connection, now: datetime) -> list[sqlite3.Row]:
+def study_queue(
+    connection: sqlite3.Connection, now: datetime, *, card_id: str | None = None
+) -> list[sqlite3.Row]:
     config = settings(connection)
     known = known_words(connection, now)
     started = connection.execute(
@@ -37,17 +43,30 @@ def study_queue(connection: sqlite3.Connection, now: datetime) -> list[sqlite3.R
     due = cast(
         "list[sqlite3.Row]",
         connection.execute(
-            CARD_QUERY + "WHERE c.suspended = 0 AND c.due <= ? "
-            "ORDER BY (c.reviews = 0), c.due, c.id",
-            (now.isoformat(),),
+            CARD_QUERY
+            + "WHERE c.suspended = 0 AND c.due <= ? "
+            + ("AND c.id = ? " if card_id is not None else "")
+            + "ORDER BY (c.reviews = 0), c.due, c.id",
+            (now.isoformat(), card_id) if card_id is not None else (now.isoformat(),),
         ).fetchall(),
     )
     vocabulary = vocabulary_words(connection)
     due = [
         row
         for row in due
-        if row["sentence_id"] is None
-        or all(token in vocabulary for token in json.loads(row["tokens"]))
+        if (
+            row["sentence_id"] is None
+            or all(token in vocabulary for token in json.loads(row["tokens"]))
+        )
+        and (
+            row["direction"] == "recognition"
+            or (
+                bool(row["translation"].strip())
+                and not contains_han(row["translation"])
+                if row["sentence_id"] is not None
+                else bool(recall_prompt(row["definition_json"]))
+            )
+        )
     ]
     reviews = [row for row in due if row["reviews"] > 0]
     new_sentences: list[tuple[float, sqlite3.Row]] = []
@@ -56,7 +75,7 @@ def study_queue(connection: sqlite3.Connection, now: datetime) -> list[sqlite3.R
         if row["reviews"]:
             continue
         if row["sentence_id"] is None:
-            if row["word"] not in known:
+            if row["word"] not in known or row["direction"] == "production":
                 new_words.append(row)
         else:
             analysis = analyze(
@@ -64,13 +83,23 @@ def study_queue(connection: sqlite3.Connection, now: datetime) -> list[sqlite3.R
                 known,
                 row["word"],
                 int(config["max_unknown"]),
-                include_zero=bool(config["include_zero"]),
+                include_zero=bool(config["include_zero"])
+                or bool(row["sentence_started"]),
                 vocabulary=vocabulary,
             )
             if analysis.eligible:
                 new_sentences.append((analysis.score, row))
-    new_words.sort(key=lambda row: (len(row["word"]), row["word"], row["id"]))
-    new_sentences.sort(key=lambda item: (-item[0], item[1]["id"]))
+    new_words.sort(
+        key=lambda row: (
+            len(row["word"]),
+            row["direction"] == "production",
+            row["word"],
+            row["id"],
+        )
+    )
+    new_sentences.sort(
+        key=lambda item: (-item[0], item[1]["direction"] == "production", item[1]["id"])
+    )
     return reviews + ([row for _, row in new_sentences] + new_words)[:remaining]
 
 

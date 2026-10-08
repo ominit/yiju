@@ -1,22 +1,29 @@
 {% from 'macros/definitions.html' import definition %}
-<div id="study-session" tabindex="-1">
+<div id="study-session"
+     tabindex="-1"
+     data-card-id="{{ card.id if card else '' }}"
+     data-card-version="{{ card.version if card else '' }}">
   {% for message in get_flashed_messages() %}<div class="notice" role="status">{{ message }}</div>{% endfor %}
   <div class="notice study-error" role="alert" hidden>
     <p></p>
-    <button class="text-button" type="button" data-study-refresh>Reload session</button>
+    <button class="text-button" type="button" data-study-refresh>Retry</button>
+    <button class="text-button" type="button" data-study-discard hidden>Discard unsaved ratings</button>
   </div>
   <div class="study-toolbar">
     <a class="back-link" href="{{ url_for('pages.home') }}">← Overview</a>
     {% if card %}
-      <span class="small muted">{{ count }} cards</span>
+      <span class="small muted" data-card-count>{{ count }} cards</span>
     {% endif %}
-    {% if last_review %}
-      <form method="post" action="{{ url_for('actions.undo') }}">
-        <input type="hidden" name="csrf" value="{{ csrf }}">
-        <input type="hidden" name="review_id" value="{{ last_review.id }}">
-        <button class="text-button" type="submit">Undo last review</button>
-      </form>
-    {% endif %}
+    <form method="post"
+          action="{{ url_for('actions.undo') }}"
+          data-study-undo
+          {% if not last_review %}hidden{% endif %}>
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden"
+             name="review_id"
+             value="{{ last_review.id if last_review else '' }}">
+      <button class="text-button" type="submit">Undo last review</button>
+    </form>
   </div>
   {% if card %}
     <article class="study-card {% if answer %}revealed{% endif %}">
@@ -24,44 +31,66 @@
         <span class="card-type">{% if card.sentence_id %}Sentence{% else %}Word{% endif %}</span>
         <span class="badge">{% if card.reviews %}Review{% else %}New{% endif %}</span>
       </div>
-      <div class="question">
-        <p class="chinese {% if card.sentence_id %}sentence-text{% endif %}"
-           lang="zh-Hans">{{ card.chinese or card.word }}</p>
-      </div>
-      <div class="answer" id="answer" {% if not answer %}hidden{% endif %}>
-        <p class="pinyin">{{ card.sentence_pinyin if card.sentence_id else card.word_pinyin }}</p>
-        {% if card.sentence_id %}
-          <p class="translation">{{ card.translation }}</p>
-        {% endif %}
-        {% if card.sentence_id %}
-          {% for word in sentence_definitions %}
-            <div class="definition-block" data-word="{{ word.word }}">
-              <h2>
-                <span lang="zh-Hans">{{ word.word }}</span> <span class="pinyin small">{{ word.pinyin }}</span>
-              </h2>
-              {{ definition(word.definition) }}
+      <div class="study-body">
+        <div class="question">
+          <div class="question-content">
+            {% if card.direction == 'production' %}
+              <p class="recall-prompt question-text"
+                 data-hide-answer
+                 {% if answer %}hidden{% endif %}>{{ recall_prompt }}</p>
+            {% endif %}
+            <p class="chinese question-text {% if card.sentence_id %}sentence-text{% endif %}"
+               data-reveal-answer
+               {% if card.direction == 'production' and not answer %}hidden{% endif %}
+               lang="zh-Hans">{{ card.chinese or card.word }}</p>
+            <p class="pinyin question-pinyin"
+               data-reveal-answer
+               {% if not answer %}hidden{% endif %}>{{ card.sentence_pinyin if card.sentence_id else card.word_pinyin }}</p>
+          </div>
+        </div>
+        <div class="answer" id="answer" {% if not answer %}hidden{% endif %}>
+          <div class="answer-pages" tabindex="0" aria-label="Answer">
+            <div class="answer-flow">
+              {% if card.sentence_id %}
+                <p class="translation">{{ card.translation }}</p>
+              {% endif %}
+              {% if card.sentence_id %}
+                {% for word in sentence_definitions %}
+                  <div class="definition-block" data-word="{{ word.word }}">
+                    <h2>
+                      <span lang="zh-Hans">{{ word.word }}</span> <span class="pinyin small">{{ word.pinyin }}</span>
+                    </h2>
+                    {{ definition(word.definition) }}
+                  </div>
+                {% endfor %}
+              {% else %}
+                <div class="definition-block">{{ definition(word_definition) }}</div>
+              {% endif %}
+              {% if analysis %}
+                <details class="token-details">
+                  <summary>Sentence words · {{ analysis.unknown|length }} unfamiliar</summary>
+                  <div class="tokens">
+                    {% for token in analysis.tokens %}
+                      <span class="token {% if token in analysis.unknown %}unknown{% endif %}"
+                            lang="zh-Hans">{{ token }}</span>
+                    {% endfor %}
+                  </div>
+                </details>
+              {% endif %}
             </div>
-          {% endfor %}
-        {% else %}
-          <div class="definition-block">{{ definition(word_definition) }}</div>
-        {% endif %}
-        {% if analysis %}
-          <details class="token-details">
-            <summary>Sentence words · {{ analysis.unknown|length }} unfamiliar</summary>
-            <div class="tokens">
-              {% for token in analysis.tokens %}
-                <span class="token {% if token in analysis.unknown %}unknown{% endif %}"
-                      lang="zh-Hans">{{ token }}</span>
-              {% endfor %}
-            </div>
-          </details>
-        {% endif %}
-      </div>
-      <div class="reveal-area" {% if answer %}hidden{% endif %}>
-        <a class="button"
-           id="reveal-answer"
-           href="{{ url_for('pages.study', card=card.id, answer=1) }}">Show answer <kbd>Space</kbd>
-        </a>
+          </div>
+          <nav class="answer-pagination" aria-label="Answer pages" hidden>
+            <button class="text-button"
+                    type="button"
+                    data-answer-previous
+                    aria-label="Previous answer page">← Previous</button>
+            <span class="small muted" data-answer-page aria-live="polite"></span>
+            <button class="text-button"
+                    type="button"
+                    data-answer-next
+                    aria-label="Next answer page">Next →</button>
+          </nav>
+        </div>
       </div>
     </article>
     {% if card.sentence_id %}
@@ -80,6 +109,12 @@
         </form>
       </div>
     {% endif %}
+    <div class="reveal-area" {% if answer %}hidden{% endif %}>
+      <a class="button"
+         id="reveal-answer"
+         href="{{ url_for('pages.study', card=card.id, answer=1) }}">Show answer <kbd>Space</kbd>
+      </a>
+    </div>
     <section class="rating-area"
              aria-label="Rate your recall"
              {% if not answer %}hidden{% endif %}>

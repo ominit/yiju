@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS cards (
     id TEXT PRIMARY KEY,
     entry_id TEXT NOT NULL REFERENCES entries(id),
     sentence_id TEXT REFERENCES sentences(id),
+    direction TEXT NOT NULL DEFAULT 'recognition' CHECK(direction IN ('recognition', 'production')),
     word TEXT NOT NULL,
     scheduling TEXT NOT NULL,
     due TEXT NOT NULL,
@@ -43,6 +44,7 @@ CREATE TABLE IF NOT EXISTS cards (
     suspended INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS cards_due ON cards(due);
+CREATE INDEX IF NOT EXISTS cards_sentence ON cards(sentence_id);
 CREATE TABLE IF NOT EXISTS knowledge (
     word TEXT PRIMARY KEY,
     scheduling TEXT NOT NULL,

@@ -7,7 +7,7 @@ from yiju.core.definitions import parse_definition
 from yiju.core.models import ExampleSentence, PlecoEntry
 from yiju.core.normalization import normalize_text
 from yiju.core.pleco_parser import parse_pleco_xml
-from yiju.core.scheduling import new_card, now_utc
+from yiju.core.scheduling import now_utc
 from yiju.core.text import (
     clean_definition,
     contains_han,
@@ -15,7 +15,7 @@ from yiju.core.text import (
 )
 from yiju.core.tokenizer import tokenize
 
-from .cards import create_sentence_card, identity
+from .cards import create_sentence_cards, create_word_cards, identity
 from .database import transaction
 
 
@@ -111,18 +111,7 @@ def import_xml(connection: sqlite3.Connection, data: bytes, filename: str) -> in
                 summary["duplicates"] += 1
                 continue
             summary["added"] += 1
-            card_id = identity("word", word)
-            connection.execute(
-                "INSERT OR IGNORE INTO cards(id, entry_id, word, scheduling, due) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (
-                    card_id,
-                    entry.source_id,
-                    word,
-                    new_card(card_id, now).to_json(),
-                    now.isoformat(),
-                ),
-            )
+            create_word_cards(connection, entry.source_id, word, now)
             for example, tokens in item.examples:
                 if word not in tokens:
                     continue
@@ -142,7 +131,7 @@ def import_xml(connection: sqlite3.Connection, data: bytes, filename: str) -> in
                 ).rowcount
                 summary["sentences"] += inserted
                 if inserted:
-                    create_sentence_card(
+                    create_sentence_cards(
                         connection, sentence_id, entry.source_id, word, now
                     )
         connection.execute(

@@ -1,16 +1,17 @@
 import json
 import sqlite3
+from datetime import datetime
 
-from flask import redirect, render_template, request, url_for
+from flask import jsonify, redirect, render_template, request, url_for
 from fsrs import Card
 from werkzeug.wrappers import Response
 
-from yiju.core.definitions import Definition, combine_definitions
+from yiju.core.definitions import Definition, combine_definitions, recall_prompt
 from yiju.core.scheduling import intervals, now_utc
 from yiju.core.selection import analyze
 from yiju.storage.database import settings, vocabulary_words
 from yiju.storage.learning import known_words
-from yiju.storage.queue import overview, study_queue
+from yiju.storage.queue import study_queue
 
 from . import database
 
@@ -38,39 +39,19 @@ def _sentence_definitions(
     return definitions
 
 
-def study_response() -> str | Response:
-    template = (
-        "study_content.html"
-        if request.headers.get("X-Yiju-Partial") == "study"
-        else "study.html"
-    )
-    connection = database()
-    now = now_utc()
-    queue = study_queue(connection, now)
-    last_review = connection.execute(
-        "SELECT id FROM reviews WHERE undone = 0 ORDER BY id DESC LIMIT 1"
-    ).fetchone()
-    if not queue:
-        return render_template(
-            template,
-            card=None,
-            stats=overview(connection, now),
-            last_review=last_review,
-        )
-    card_id = request.args.get("card")
-    card = next((row for row in queue if row["id"] == card_id), queue[0])
-    if card_id is not None and card_id != card["id"]:
-        return redirect(url_for("pages.study"))
+def _card_context(
+    connection: sqlite3.Connection, card: sqlite3.Row, now: datetime
+) -> dict[str, object]:
+    config = settings(connection)
     analysis = None
     sentence_definitions = []
-    config = settings(connection)
     if card["tokens"] is not None:
         analysis = analyze(
             tuple(json.loads(card["tokens"])),
             known_words(connection, now),
             card["word"],
             int(config["max_unknown"]),
-            include_zero=bool(config["include_zero"]),
+            include_zero=bool(config["include_zero"]) or bool(card["sentence_started"]),
             vocabulary=vocabulary_words(connection),
         )
         sentence_definitions = _sentence_definitions(
@@ -83,16 +64,66 @@ def study_response() -> str | Response:
                 )
             ),
         )
-    return render_template(
-        template,
-        card=card,
-        count=len(queue),
-        answer=request.args.get("answer") == "1",
-        intervals=intervals(
+    return {
+        "card": card,
+        "intervals": intervals(
             Card.from_json(card["scheduling"]), now, float(config["retention"])
         ),
-        analysis=analysis,
-        sentence_definitions=sentence_definitions,
-        word_definition=combine_definitions(card["definition_json"]),
+        "analysis": analysis,
+        "sentence_definitions": sentence_definitions,
+        "word_definition": combine_definitions(card["definition_json"]),
+        "recall_prompt": (
+            card["translation"]
+            if card["sentence_id"] is not None
+            else recall_prompt(card["definition_json"])
+        ),
+    }
+
+
+def study_response() -> str | Response:
+    template = (
+        "study_content.html"
+        if request.headers.get("X-Yiju-Partial") == "study"
+        else "study.html"
+    )
+    connection = database()
+    now = now_utc()
+    queue = study_queue(connection, now)
+    last_review = connection.execute(
+        "SELECT id FROM reviews WHERE undone = 0 ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    card_id = request.args.get("card")
+    card = next(
+        (row for row in queue if row["id"] == card_id), queue[0] if queue else None
+    )
+    if card_id is not None and (card is None or card_id != card["id"]):
+        return redirect(url_for("pages.study"))
+    batch = ([card] if card is not None else []) + [
+        row for row in queue if card is not None and row["id"] != card["id"]
+    ][:11]
+    if template == "study_content.html" and request.headers.get("X-Yiju-Buffer") != "1":
+        batch = []
+    prepared = [
+        render_template(
+            "study_content.html",
+            **_card_context(connection, row, now),
+            count=max(1, len(queue) - index),
+            answer=False,
+            last_review=last_review,
+        )
+        for index, row in enumerate(batch)
+    ]
+    if request.headers.get("X-Yiju-Buffer") == "1":
+        return jsonify(
+            cards=prepared, review_id=last_review["id"] if last_review else None
+        )
+    return render_template(
+        template,
+        **(
+            _card_context(connection, card, now) if card is not None else {"card": None}
+        ),
+        count=len(queue),
+        answer=request.args.get("answer") == "1",
         last_review=last_review,
+        prepared=prepared[1:],
     )

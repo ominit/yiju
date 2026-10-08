@@ -6,7 +6,7 @@ from yiju.core.selection import Analysis, analyze
 from yiju.core.text import contains_han
 from yiju.core.tokenizer import tokenize
 
-from .cards import create_sentence_card, identity
+from .cards import create_sentence_cards
 from .database import settings, transaction, vocabulary_words
 from .learning import ConflictError, known_words
 
@@ -79,12 +79,12 @@ def update_sentence(
                 sentence_id,
             ),
         )
-        card_id = identity("sentence-card", sentence_id)
         if status == "accepted":
-            create_sentence_card(
+            create_sentence_cards(
                 connection, sentence_id, row["entry_id"], row["word"], now
             )
         connection.execute(
-            "UPDATE cards SET suspended = ?, version = version + 1 WHERE id = ?",
-            (int(status != "accepted"), card_id),
+            "UPDATE cards SET suspended = ?, version = version + 1 "
+            "WHERE sentence_id = ?",
+            (int(status != "accepted"), sentence_id),
         )

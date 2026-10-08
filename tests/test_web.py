@@ -287,7 +287,11 @@ def test_sentence_answer_shows_each_unfamiliar_word(
         return
     front = client.get(f"/study?card={card['id']}").data.decode()
     assert re.search(r'id="answer"\s+hidden', front)
-    answer = client.get(f"/study?card={card['id']}&answer=1").data.decode()
+    answer = (
+        client.get(f"/study?card={card['id']}&answer=1")
+        .data.decode()
+        .split("<template")[0]
+    )
     assert answer.count('data-word="分配"') == 1
     assert answer.count('data-word="工作"') == 1
     assert answer.index('data-word="分配"') < answer.index('data-word="工作"')
