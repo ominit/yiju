@@ -1,59 +1,101 @@
 {% extends 'base.html' %}
+{% block page_class %}overview-page{% endblock %}
 {% block content %}
   <div class="page-heading">
     <h1>Overview</h1>
-    <a class="button secondary" href="{{ url_for('pages.import_page') }}">Import words</a>
+    <div class="overview-actions">
+      <a class="button secondary" href="{{ url_for('pages.import_page') }}">Import words</a>
+      {% if stats.due + stats.new %}<a class="button" href="{{ url_for('pages.study') }}">Study now <span>{{ stats.due + stats.new }}</span></a>{% endif %}
+    </div>
   </div>
   {% if stats.words %}
-    <div class="stats-grid">
-      <div class="stat">
-        <span class="stat-label">Familiar words</span>
-        <strong>{{ stats.known }} <small>/ {{ stats.words }}</small></strong>
-      </div>
-      <div class="stat">
+    <div class="stats-grid overview-stats">
+      <a class="stat" href="{{ url_for('pages.study') }}">
         <span class="stat-label">Due for review</span>
         <strong>{{ stats.due }}</strong>
-      </div>
-      <div class="stat">
-        <span class="stat-label">New cards</span>
-        <strong>{{ stats.new }}</strong>
-      </div>
+        <span class="small muted">{{ stats.new }} new cards available</span>
+      </a>
       <div class="stat">
         <span class="stat-label">Reviews today</span>
         <strong>{{ stats.today }}</strong>
+        <span class="small muted">{{ activity.study_days }} / 30 study days</span>
       </div>
+      <a class="stat" href="{{ url_for('pages.library', filter='learned') }}">
+        <span class="stat-label">Words learned</span>
+        <strong>{{ stats.known }} <small>/ {{ stats.words }}</small></strong>
+        <span class="small muted">{{ learning }} learning</span>
+      </a>
+      <a class="stat"
+         href="{{ url_for('pages.sentences', filter='learned') }}"
+         aria-label="{{ stats.learned_sentences }} of {{ stats.sentences }} sentences learned">
+        <span class="stat-label">Sentences learned</span>
+        <strong>{{ stats.learned_sentences }} <small>/ {{ stats.sentences }}</small></strong>
+      </a>
     </div>
-    <div class="dashboard-grid">
-      <section class="panel study-invitation">
-        <h2>Study</h2>
-        {% if stats.due + stats.new %}
-          <p>{{ stats.due }} reviews · {{ stats.new }} new cards</p>
-          <a class="button" href="{{ url_for('pages.study') }}">Start studying</a>
-        {% else %}
-          <p>No cards due</p>
-          {% if upcoming %}
-            <p class="next-due">Next review: <time datetime="{{ upcoming }}">{{ upcoming[:16].replace('T', ' ') }} UTC</time></p>
-          {% endif %}
-        {% endif %}
-      </section>
-      <section class="panel review-invitation">
-        <h2>Sentences</h2>
-        <p>{{ stats.learned_sentences }} learned · {{ stats.sentences }} active</p>
-        <a class="button secondary" href="{{ url_for('pages.sentences') }}">Browse sentences</a>
-      </section>
-    </div>
-    <section class="recent-imports">
-      <div class="section-heading">
-        <h2>Recent imports</h2>
+    {% if not stats.due + stats.new %}
+      <div class="overview-next">
+        <span>No cards due</span>
+        {% if upcoming %}<span class="muted">Next review <time datetime="{{ upcoming }}">{{ upcoming[:16].replace('T', ' ') }} UTC</time></span>{% endif %}
       </div>
-      {% for batch in history %}
-        <a class="import-row"
-           href="{{ url_for('pages.import_result', import_id=batch.id) }}">
-          <span>{{ batch.filename }}</span>
-          <time datetime="{{ batch.created }}">{{ batch.created[:10] }}</time>
-        </a>
-      {% endfor %}
-    </section>
+    {% endif %}
+    <div class="overview-charts">
+      <section class="panel activity-panel">
+        <div class="section-heading">
+          <h2>Review activity</h2>
+          <span class="small muted">Last 30 days</span>
+        </div>
+        <div class="activity-totals">
+          <div><strong>{{ activity.reviews }}</strong><span>Reviews</span></div>
+          <div title="Hard, Good and Easy on previously reviewed cards"><strong>{{ (activity.recall|string) ~ '%' if activity.recall is not none else '—' }}</strong><span>Recall</span></div>
+          <div title="Words practiced for the first time, divided by days studied"><strong>{{ activity.rate }}</strong><span>New words / study day</span></div>
+        </div>
+        <svg class="activity-chart"
+             viewBox="0 0 600 175"
+             role="img"
+             aria-labelledby="activity-title">
+          <title id="activity-title">Daily reviews over the last 30 days. {{ activity.reviews }} reviews on {{ activity.study_days }} study days.</title>
+          <path class="chart-grid" d="M0 20H600 M0 80H600 M0 140H600" />
+          {% for bar in activity.bars %}
+            {% set x = loop.index0 * 20 + 3 %}
+            <g>
+            <title>{{ bar.day }} · {{ bar.total }} {{ 'review' if bar.total == 1 else 'reviews' }}</title>
+            <rect class="chart-empty" x="{{ x }}" y="137" width="12" height="3" rx="1" />
+            {% for segment in bar.segments %}
+              {% if segment.height %}
+                <rect class="chart-rating-{{ segment.rating }}" x="{{ x }}" y="{{ segment.y }}" width="12" height="{{ segment.height }}" rx="1" />
+              {% endif %}
+            {% endfor %}
+            {% if loop.index0 in [0, 10, 20] %}<text class="chart-date" x="{{ x }}" y="166">{{ bar.day }}</text>{% endif %}
+            {% if loop.last %}<text class="chart-date" x="594" y="166" text-anchor="end">Today</text>{% endif %}
+            </g>
+          {% endfor %}
+        </svg>
+        <div class="chart-legend">
+          {% for value, label in [(1,'Again'), (2,'Hard'), (3,'Good'), (4,'Easy')] %}<span><i class="chart-rating-{{ value }}"></i>{{ label }}</span>{% endfor %}
+        </div>
+      </section>
+      <section class="panel vocabulary-panel">
+        <div class="section-heading">
+          <h2>Vocabulary</h2>
+          <a class="text-link" href="{{ url_for('pages.library') }}">Library →</a>
+        </div>
+        <div class="vocabulary-chart">
+          <svg viewBox="0 0 160 160"
+               role="img"
+               aria-label="{{ stats.known }} learned words, {{ learning }} learning, {{ unstarted }} new">
+            <circle class="vocabulary-track" cx="80" cy="80" r="65" />
+            <circle class="vocabulary-learning" cx="80" cy="80" r="65" pathLength="100" stroke-dasharray="{{ (stats.known + learning) / stats.words * 100 }} 100" transform="rotate(-90 80 80)" />
+            <circle class="vocabulary-learned" cx="80" cy="80" r="65" pathLength="100" stroke-dasharray="{{ stats.known / stats.words * 100 }} 100" transform="rotate(-90 80 80)" />
+          </svg>
+          <div class="vocabulary-center"><strong>{{ stats.words }}</strong><span>words</span></div>
+        </div>
+        <div class="vocabulary-legend">
+          {% for key, label, count in [('learned','Learned',stats.known), ('learning','Learning',learning), ('new','New',unstarted)] %}
+            <a href="{{ url_for('pages.library', filter=key) }}"><span><i class="vocabulary-{{ key }}"></i>{{ label }}</span><strong>{{ count }}</strong></a>
+          {% endfor %}
+        </div>
+      </section>
+    </div>
   {% else %}
     <section class="empty-state panel">
       <h2>No words yet</h2>

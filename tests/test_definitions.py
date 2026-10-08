@@ -1,4 +1,4 @@
-from yiju.core.definitions import parse_definition
+from yiju.core.definitions import parse_definition, recall_prompt
 
 
 def test_separates_numbered_senses_parts_of_speech_and_examples() -> None:
@@ -64,3 +64,11 @@ def test_chinese_in_usage_notes_is_preserved() -> None:
     assert (
         definition.senses[0].meaning == "note in gongchepu (工尺谱), corresponding to 7"
     )
+
+
+def test_recall_prompt_includes_all_meanings_without_character_hints() -> None:
+    definition = parse_definition(
+        "verb 1 work 2 operate\nnoun work; job\n"
+        "noun see 工作\nnoun note (工尺谱)\nverb work"
+    )
+    assert recall_prompt(definition.to_json()) == "work\noperate\nwork; job\nnote"

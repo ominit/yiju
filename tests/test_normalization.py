@@ -1,6 +1,7 @@
 import pytest
 
 from yiju.core.normalization import normalize_text
+from yiju.core.text import display_pinyin
 
 
 @pytest.mark.parametrize(
@@ -20,3 +21,20 @@ def test_normalize_text(text: str, expected: str) -> None:
 
     assert result == expected
     assert normalize_text(result) == result
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("hui2//jia1", "huí jiā"),
+        ("huí //jiā", "huí jiā"),
+        ("chi1//fan4", "chī fàn"),
+        ("xue2xi2", "xué xí"),
+        ("he2/he4", "hé /hè"),
+        ("  huí  jiā  ", "huí jiā"),
+        (None, ""),
+    ],
+)
+def test_pinyin_hides_separable_verb_markers(text: str | None, expected: str) -> None:
+    assert display_pinyin(text) == expected
+    assert display_pinyin(expected) == expected

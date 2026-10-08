@@ -6,13 +6,16 @@ from pathlib import Path
 
 from yiju.core.definitions import parse_definition
 from yiju.core.scheduling import now_utc
+from yiju.core.text import display_pinyin
 
 from .cards import create_sentence_cards, create_word_cards
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 7
 SENTENCE_DEFAULT_VERSION = 2
 DEFINITION_SCHEMA_VERSION = 3
 REVIEW_WORDS_SCHEMA_VERSION = 4
+CARD_DIRECTION_SCHEMA_VERSION = 5
+PINYIN_FORMAT_VERSION = 7
 
 DEFAULT_SETTINGS = {
     "max_unknown": 2,
@@ -54,6 +57,18 @@ def _create_reverse_cards(connection: sqlite3.Connection) -> None:
             )
 
 
+def _migrate_pinyin(connection: sqlite3.Connection, version: int) -> None:
+    if version >= PINYIN_FORMAT_VERSION:
+        return
+    for row in connection.execute(
+        "SELECT id, pinyin FROM entries WHERE instr(pinyin, '//') > 0"
+    ).fetchall():
+        connection.execute(
+            "UPDATE entries SET pinyin = ? WHERE id = ?",
+            (display_pinyin(row["pinyin"]), row["id"]),
+        )
+
+
 def initialize(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with closing(connect(path)) as connection:
@@ -65,7 +80,7 @@ def initialize(path: Path) -> None:
         connection.executescript(Path(__file__).with_name("schema.sql").read_text())
         with transaction(connection):
             version = connection.execute("PRAGMA user_version").fetchone()[0]
-            if version < SCHEMA_VERSION:
+            if version < CARD_DIRECTION_SCHEMA_VERSION:
                 _add_card_direction(connection)
             if version < SENTENCE_DEFAULT_VERSION:
                 connection.execute(
@@ -108,9 +123,10 @@ def initialize(path: Path) -> None:
                     "(review_id, word, knowledge_before) "
                     "SELECT id, word, knowledge_before FROM reviews"
                 )
-            if version < SCHEMA_VERSION:
+            if version < CARD_DIRECTION_SCHEMA_VERSION:
                 _create_reverse_cards(connection)
-                connection.execute("PRAGMA user_version = 5")
+            _migrate_pinyin(connection, version)
+            connection.execute("PRAGMA user_version = 7")
             connection.executemany(
                 "INSERT OR IGNORE INTO settings(key, value) VALUES (?, ?)",
                 [(key, json.dumps(value)) for key, value in DEFAULT_SETTINGS.items()],

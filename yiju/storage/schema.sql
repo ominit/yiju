@@ -21,6 +21,12 @@ CREATE TABLE IF NOT EXISTS entries (
     definition_json TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS entries_word ON entries(word);
+CREATE TABLE IF NOT EXISTS word_flags (
+    word TEXT PRIMARY KEY,
+    note TEXT NOT NULL DEFAULT '',
+    created TEXT NOT NULL,
+    updated TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS sentences (
     id TEXT PRIMARY KEY,
     entry_id TEXT NOT NULL REFERENCES entries(id),

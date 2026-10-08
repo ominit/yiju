@@ -19,11 +19,12 @@ def clean_definition(text: str) -> str:
 
 
 def display_pinyin(text: str | None) -> str:
-    return re.sub(
+    text = re.sub(
         r"[a-zA-ZüÜvV:]+[1-5]",
         lambda match: to_tone(match.group()) + " ",
-        text or "",
-    ).strip()
+        (text or "").replace("//", " "),
+    )
+    return " ".join(text.split())
 
 
 def comparison_text(text: str) -> str:

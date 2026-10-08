@@ -3,6 +3,7 @@ import json
 import sqlite3
 import tempfile
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from flask import (
     Blueprint,
@@ -35,6 +36,14 @@ def integer(name: str) -> int:
     if value is None:
         abort(400, f"Missing or invalid {name}.")
     return value
+
+
+def library_return(endpoint: str) -> str:
+    destination = request.form.get("library_return", "")
+    parsed = urlsplit(destination)
+    if not parsed.scheme and not parsed.netloc and parsed.path == url_for(endpoint):
+        return destination
+    return url_for(endpoint)
 
 
 @actions.post("/import")
@@ -140,7 +149,7 @@ def save_sentence(sentence_id: str) -> str | Response:
         and request.headers.get("X-Yiju-Partial") == "study"
     ):
         return study_response()
-    return redirect(url_for(destination), code=303)
+    return redirect(library_return(destination), code=303)
 
 
 @actions.post("/cards/<card_id>/suspend")
@@ -159,7 +168,7 @@ def suspend(card_id: str) -> Response:
             "WHERE word = ? AND sentence_id IS NULL",
             (1 - card["suspended"], card["word"]),
         )
-    return redirect(url_for("pages.library"), code=303)
+    return redirect(library_return("pages.library"), code=303)
 
 
 @actions.post("/settings")

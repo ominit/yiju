@@ -1,46 +1,59 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="color-scheme" content="dark">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="Chinese vocabulary and sentence study.">
-    <title>{% block title %}Yiju · 一句{% endblock %}</title>
-    <link rel="icon"
-          href="{{ url_for('static', filename='favicon.svg') }}"
-          type="image/svg+xml">
-    <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
-    <script src="{{ url_for('static', filename='app.js') }}" defer></script>
-  </head>
-  <body class="{% block body_class %}{% endblock %}">
-    <a class="skip-link" href="#main">Skip to content</a>
-    <header class="site-header">
-      <a class="brand" href="{{ url_for('pages.home') }}">
-        <img class="brand-seal"
-             src="{{ url_for('static', filename='favicon.svg') }}"
-             alt="句"
-             width="37"
-             height="37">
-        yiju
-      </a>
-      <nav aria-label="Main navigation">
-        <a href="{{ url_for('pages.home') }}"
-           {% if request.endpoint == 'pages.home' %}aria-current="page"{% endif %}>Overview</a>
-        <a href="{{ url_for('pages.study') }}"
-           {% if request.endpoint == 'pages.study' %}aria-current="page"{% endif %}>Study</a>
-        <a href="{{ url_for('pages.sentences') }}"
-           {% if request.endpoint in ['pages.sentences','pages.sentence_detail'] %}aria-current="page"{% endif %}>Sentences</a>
-        <a href="{{ url_for('pages.library') }}"
-           {% if request.endpoint == 'pages.library' %}aria-current="page"{% endif %}>Words</a>
-        <a href="{{ url_for('pages.preferences') }}"
-           {% if request.endpoint == 'pages.preferences' %}aria-current="page"{% endif %}>Settings</a>
-      </nav>
-    </header>
-    <main id="main" class="page {% block page_class %} {% endblock %}">
-      {% for message in get_flashed_messages() %}
-        <div class="notice" role="status">{{ message }}</div>
-      {% endfor %}
-      {% block content %}{% endblock %}
-    </main>
+{% if request.headers.get('X-Yiju-Partial') != 'page' %}
+  <!DOCTYPE html>
+  <html lang="en">
+    <head>
+      <meta charset="utf-8">
+      <meta name="color-scheme" content="dark">
+      <meta name="viewport"
+            content="width=device-width, initial-scale=1, viewport-fit=cover">
+      <meta name="description" content="Chinese vocabulary and sentence study.">
+      <title>{% block title %}Yiju · 一句{% endblock %}</title>
+      <link rel="icon"
+            href="{{ url_for('static', filename='favicon.svg') }}"
+            type="image/svg+xml">
+      <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+      <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+      <script src="{{ url_for('static', filename='practice.js') }}" defer></script>
+      <script src="{{ url_for('static', filename='vendor/hanzi-writer.min.js') }}"
+              defer></script>
+      <script src="{{ url_for('static', filename='strokes.js') }}" defer></script>
+      <script src="{{ url_for('static', filename='navigation.js') }}" defer></script>
+    </head>
+    <body class="{% block body_class %}{% endblock %}">
+      <a class="skip-link" href="#main">Skip to content</a>
+      <header class="site-header">
+        <a class="brand" href="{{ url_for('pages.home') }}">
+          <img class="brand-seal"
+               src="{{ url_for('static', filename='favicon.svg') }}"
+               alt="句"
+               width="37"
+               height="37">
+          yiju
+        </a>
+        <nav aria-label="Main navigation">
+          <a href="{{ url_for('pages.home') }}"
+             {% if request.endpoint == 'pages.home' %}aria-current="page"{% endif %}>Overview</a>
+          <a href="{{ url_for('pages.study') }}"
+             {% if request.endpoint == 'pages.study' %}aria-current="page"{% endif %}>Study</a>
+          <a href="{{ url_for('pages.library') }}"
+             {% if request.endpoint in ['pages.library','pages.sentences','pages.sentence_detail'] %}aria-current="page"{% endif %}>Library</a>
+          <a href="{{ url_for('pages.preferences') }}"
+             {% if request.endpoint == 'pages.preferences' %}aria-current="page"{% endif %}>Settings</a>
+        </nav>
+      </header>
+{% endif %}
+<main id="main"
+      class="page {% block page_class %} {% endblock %}"
+      tabindex="-1"
+      data-title="{{ self.title() |striptags|trim }}"
+      data-body-class="{{ self.body_class() |trim }}"
+      data-navigation="{{ navigation }}">
+  {% for message in get_flashed_messages() %}
+    <div class="notice" role="status">{{ message }}</div>
+  {% endfor %}
+  {% block content %}{% endblock %}
+</main>
+{% if request.headers.get('X-Yiju-Partial') != 'page' %}
   </body>
-</html>
+  </html>
+{% endif %}

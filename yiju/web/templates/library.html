@@ -1,53 +1,161 @@
 {% extends 'base.html' %}
 {% from 'macros/definitions.html' import definition %}
-{% block title %}Words · Yiju{% endblock %}
+{% from 'macros/progress.html' import ring, metrics %}
+{% from 'macros/controls.html' import flag %}
+{% from 'macros/pronunciation.html' import pronounced %}
+{% block title %}{{ 'Words' if kind == 'words' else 'Sentences' }} · Library · Yiju{% endblock %}
+{% block page_class %}library-page{% endblock %}
 {% block content %}
+  {% set endpoint = 'pages.library' if kind == 'words' else 'pages.sentences' %}
   <div class="page-heading">
-    <div>
-      <h1>Words</h1>
-    </div>
-    <a class="button secondary" href="{{ url_for('pages.import_page') }}">Import words</a>
-  </div>
-  <form class="search-form" method="get">
-    <label class="sr-only" for="q">Search words and definitions</label>
-    <input type="search"
-           id="q"
-           name="q"
-           value="{{ q }}"
-           placeholder="Search a word or meaning…">
-    <button class="button secondary">Search</button>
-  </form>
-  <div class="word-list">
-    {% for entry in entries %}
-      <article class="panel word-row">
-        <div class="word-heading">
-          <span class="word-chinese" lang="zh-Hans">{{ entry.word }}</span>
-          <span class="pinyin">{{ entry.all_pinyin }}</span>
-          <span class="badge {% if entry.word in known %}ready{% endif %}">{{ 'Familiar' if entry.word in known else 'Learning' if entry.reviews else 'New' }}</span>
-        </div>
-        {{ definition(definitions[entry.word]) }}
-        <form method="post"
-              action="{{ url_for('actions.suspend', card_id=entry.card_id) }}">
-          <input type="hidden" name="csrf" value="{{ csrf }}">
-          <input type="hidden" name="version" value="{{ entry.version }}">
-          <button class="text-button">{{ 'Resume card' if entry.suspended else 'Pause card' }}</button>
-        </form>
-      </article>
+    <h1>Library</h1>
+    {% if state == 'flagged' %}
+      <a class="button secondary"
+         href="{{ url_for('flags.export_flags') }}"
+         download>Export flags</a>
     {% else %}
-      <div class="empty-state panel">
-        <h2>No matching words</h2>
-      </div>
+      <a class="button secondary" href="{{ url_for('pages.import_page') }}">Import words</a>
+    {% endif %}
+  </div>
+  <nav class="library-tabs" aria-label="Library content">
+    <a href="{{ url_for('pages.library', q=q) }}"
+       {% if kind == 'words' %}aria-current="page"{% endif %}>Words <span>{{ word_count }}</span></a>
+    <a href="{{ url_for('pages.sentences', q=q) }}"
+       {% if kind == 'sentences' %}aria-current="page"{% endif %}>Sentences <span>{{ sentence_count }}</span></a>
+  </nav>
+  <form class="library-tools" method="get">
+    <input type="hidden" name="filter" value="{{ state }}">
+    <div class="library-search">
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+        <circle cx="10" cy="10" r="6" />
+        <path d="m15 15 5 5" />
+      </svg>
+      <label class="sr-only" for="q">Search {{ kind }}</label>
+      <input type="search"
+             id="q"
+             name="q"
+             value="{{ q }}"
+             placeholder="Search characters, pinyin or meaning">
+      <button class="text-button" type="submit">Search</button>
+    </div>
+    <label class="sr-only" for="sort">Order by</label>
+    <select id="sort" name="sort" data-auto-submit>
+      {% for key, label in [('learning','Learning first'), ('progress','Most learned'), ('recent','Recently imported'), ('length','Shortest first')] %}
+        <option value="{{ key }}" {% if sort == key %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </form>
+  <nav class="library-filters" aria-label="Learning status">
+    {% for key, label in filters %}
+      <a href="{{ url_for(endpoint, filter=key, q=q, sort=sort) }}"
+         {% if state == key %}aria-current="page"{% endif %}>{{ label }} <span>{{ counts[key] }}</span></a>
+    {% endfor %}
+  </nav>
+  <div class="library-list">
+    {% for item in items %}
+      <details class="library-entry"
+               data-entry="{{ item.row.word if kind == 'words' else item.row.id }}">
+        <summary class="library-row">
+          <div class="library-copy">
+            <div class="library-headword">
+              <span lang="zh-Hans" class="library-chinese">{{ pronounced(item.text, item.pinyin) }}</span>
+            </div>
+            <p class="library-meaning">{{ item.meaning }}</p>
+          </div>
+          <div class="library-learning">
+            {{ ring(item.progress) }}
+            <div>
+              <span class="learning-label state-{{ item.progress.state }}">{{ 'Paused' if item.hidden and kind == 'words' else 'Skipped' if item.hidden else item.progress.state|capitalize }}</span>
+              <span class="small muted">{{ item.reviews }} {{ 'review' if item.reviews == 1 else 'reviews' }}</span>
+            </div>
+          </div>
+          <svg class="entry-chevron"
+               viewBox="0 0 20 20"
+               width="18"
+               height="18"
+               aria-hidden="true">
+            <path d="m6 8 4 4 4-4" />
+          </svg>
+        </summary>
+        <div class="library-detail">
+          {{ metrics(item.progress, config) }}
+          <div class="card-directions">
+            {% for card in item.cards %}
+              <div>
+                <span>{{ 'Characters → meaning' if card.direction == 'recognition' else 'Meaning → characters' }}</span>
+                <span class="small muted">{{ card.reviews }} reviews · {{ 'Paused' if card.suspended else 'New' if not card.reviews else 'Due ' ~ card.due[:10] }}</span>
+              </div>
+            {% endfor %}
+          </div>
+          {% if kind == 'words' %}
+            <div class="library-definition">{{ definition(item.definition) }}</div>
+            {% if item.text in flags %}
+              <form class="flag-note-form" data-flag-note data-word="{{ item.text }}">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <label for="flag-note-{{ loop.index }}">Correction note</label>
+                <textarea id="flag-note-{{ loop.index }}" name="note" maxlength="2000" rows="2">{{ flags[item.text] }}</textarea>
+                <button class="button secondary small-button" type="submit">Save note</button>
+                <span class="small muted" data-note-status role="status"></span>
+              </form>
+            {% endif %}
+          {% else %}
+            {% if not item.ready and not item.hidden %}
+              <p class="library-availability">{{ item.analysis.reason }}</p>
+            {% endif %}
+            <div class="tokens">
+              {% for token in item.analysis.tokens %}
+                <span class="token {% if token in item.analysis.unknown %}unknown{% endif %}"
+                      lang="zh-Hans">{{ token }}</span>
+              {% endfor %}
+            </div>
+          {% endif %}
+          <div class="library-entry-actions">
+            {% if kind == 'words' %}
+              {{ flag(item.text, item.text in flags, csrf) }}
+              <form method="post"
+                    action="{{ url_for('actions.suspend', card_id=item.row.card_id) }}">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <input type="hidden"
+                       name="library_return"
+                       value="{{ url_for(endpoint, filter=state, q=q, sort=sort, page=page) }}">
+                <input type="hidden" name="version" value="{{ item.row.version }}">
+                <button class="button secondary small-button">{{ 'Resume cards' if item.hidden else 'Pause cards' }}</button>
+              </form>
+            {% else %}
+              <a class="button secondary small-button"
+                 href="{{ url_for('pages.sentence_detail', sentence_id=item.row.id) }}">Edit sentence</a>
+              <form method="post"
+                    action="{{ url_for('actions.save_sentence', sentence_id=item.row.id) }}">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <input type="hidden"
+                       name="library_return"
+                       value="{{ url_for(endpoint, filter=state, q=q, sort=sort, page=page) }}">
+                <input type="hidden" name="version" value="{{ item.row.version }}">
+                <input type="hidden" name="chinese" value="{{ item.text }}">
+                <input type="hidden" name="pinyin" value="{{ item.pinyin }}">
+                <input type="hidden" name="translation" value="{{ item.meaning }}">
+                <button class="button secondary small-button"
+                        name="status"
+                        value="{{ 'accepted' if item.hidden else 'rejected' }}">{{ 'Restore sentence' if item.hidden else 'Skip sentence' }}</button>
+              </form>
+            {% endif %}
+          </div>
+        </div>
+      </details>
+    {% else %}
+      <section class="empty-state panel">
+        <h2>No {{ kind }}{% if q or state != 'all' %} match these filters{% else %} yet{% endif %}</h2>
+        {% if q or state != 'all' %}<a class="button secondary" href="{{ url_for(endpoint) }}">Clear filters</a>{% else %}<a class="button secondary" href="{{ url_for('pages.import_page') }}">Import words</a>{% endif %}
+      </section>
     {% endfor %}
   </div>
-  <div class="pagination">
-    {% if page > 1 %}
-      <a class="button secondary"
-         href="{{ url_for('pages.library', q=q, page=page-1) }}">← Previous</a>
-    {% endif %}
-    <span class="small muted">Page {{ page }}</span>
-    {% if more %}
-      <a class="button secondary"
-         href="{{ url_for('pages.library', q=q, page=page+1) }}">Next →</a>
-    {% endif %}
-  </div>
+  {% if total %}
+    <div class="pagination">
+      {% if page > 1 %}<a class="button secondary small-button"
+   href="{{ url_for(endpoint, filter=state, q=q, sort=sort, page=page-1) }}">← Previous</a>{% endif %}
+      <span class="small muted">{{ total }} {{ kind }} · {{ page }} / {{ pages }}</span>
+      {% if page < pages %}<a class="button secondary small-button"
+   href="{{ url_for(endpoint, filter=state, q=q, sort=sort, page=page+1) }}">Next →</a>{% endif %}
+    </div>
+  {% endif %}
 {% endblock %}

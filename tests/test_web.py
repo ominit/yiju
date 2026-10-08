@@ -186,7 +186,7 @@ def test_restart_preserves_data_and_secret(
     assert restarted.secret_key == app.secret_key
     with restarted.test_client() as other:
         assert b"3" in other.get("/").data
-        assert b"words.xml" in other.get("/").data
+        assert b"words.xml" in other.get("/imports/1").data
 
 
 def test_sentences_are_active_by_default_and_can_be_fixed_or_skipped_in_study(
@@ -286,7 +286,7 @@ def test_sentence_answer_shows_each_unfamiliar_word(
         assert response.location == "/study"
         return
     front = client.get(f"/study?card={card['id']}").data.decode()
-    assert re.search(r'id="answer"\s+hidden', front)
+    assert re.search(r'<div\b[^>]*\bid="answer"[^>]*\s+hidden(?:\s|>)', front)
     answer = (
         client.get(f"/study?card={card['id']}&answer=1")
         .data.decode()
@@ -297,7 +297,14 @@ def test_sentence_answer_shows_each_unfamiliar_word(
     assert answer.index('data-word="分配"') < answer.index('data-word="工作"')
     assert "work; job" in answer
     assert "assign; distribute" in answer
-    assert "fēn pèi" in answer
+    heading = re.search(r'data-word="分配".*?</h2>', answer, re.DOTALL)
+    assert heading is not None
+    assert re.findall(
+        r'<span class="syllable"[^>]*>(.*?)</span>', heading[0], re.DOTALL
+    ) == [
+        "fēn",
+        "pèi",
+    ]
     assert "No imported definition" not in answer
 
 
@@ -391,16 +398,16 @@ def test_learned_sentence_count_and_badge_follow_reviews_and_undo(
                 now = datetime.fromisoformat(card["due"])
         review_id = db.execute("SELECT max(id) FROM reviews").fetchone()[0]
     monkeypatch.setattr("yiju.web.pages.now_utc", lambda: now)
-    assert "1 learned · 2 active" in client.get("/").data.decode()
+    assert 'aria-label="1 of 2 sentences learned"' in client.get("/").data.decode()
     assert b">Learned</span>" in client.get("/sentences").data
     restarted = create_app(Path(app.config["DATABASE"]))
     with restarted.test_client() as other:
-        assert "1 learned · 2 active" in other.get("/").data.decode()
+        assert 'aria-label="1 of 2 sentences learned"' in other.get("/").data.decode()
     assert (
         client.post(
             "/review/undo", data={"csrf": token, "review_id": review_id}
         ).status_code
         == 303
     )
-    assert "0 learned · 2 active" in client.get("/").data.decode()
+    assert 'aria-label="0 of 2 sentences learned"' in client.get("/").data.decode()
     assert b">Learned</span>" not in client.get("/sentences").data

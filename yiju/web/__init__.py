@@ -6,6 +6,7 @@ from typing import cast
 
 from flask import Flask, current_app, g
 
+from yiju.core.pronunciation import pronunciation
 from yiju.storage.database import connect, initialize
 
 from .security import register_handlers
@@ -36,6 +37,7 @@ def _close_database(_error: BaseException | None) -> None:
 
 def create_app(database_path: Path | None = None) -> Flask:
     app = Flask(__name__)
+    app.jinja_env.filters["pronunciation"] = pronunciation
     path = (
         database_path or Path(os.environ.get("YIJU_DATA_DIR", "data")) / "yiju.sqlite3"
     )
@@ -49,8 +51,14 @@ def create_app(database_path: Path | None = None) -> Flask:
     register_handlers(app)
     app.teardown_appcontext(_close_database)
     from .actions import actions
+    from .audio import audio
+    from .flags import flags
     from .pages import pages
+    from .strokes import strokes
 
     app.register_blueprint(pages)
     app.register_blueprint(actions)
+    app.register_blueprint(audio)
+    app.register_blueprint(flags)
+    app.register_blueprint(strokes)
     return app

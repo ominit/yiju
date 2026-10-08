@@ -1,0 +1,33 @@
+{% macro pronounced(text, pinyin, revealed=true) -%}
+  {% set parts = text | pronunciation(pinyin) -%}
+  <span class="pronunciation" lang="zh-Hans">
+    {%- if parts|length == 1 and parts[0][0]|length > 1 and parts[0][1] -%}
+      <span class="pronunciation-fallback">
+        <span class="pinyin"
+              data-reveal-answer
+              {% if not revealed %}hidden{% endif %}>{{ parts[0][1] }}</span>
+        <span class="pronunciation-characters">
+          {%- for character in parts[0][0] -%}
+            <span class="character">{{ character }}</span>
+          {%- endfor -%}
+        </span>
+      </span>
+    {%- else -%}
+      <span class="pronunciation-characters">
+        {%- for character, syllable in parts -%}
+          <span class="character">{{ character }}</span>
+        {%- endfor -%}
+      </span>
+      <span class="pronunciation-pinyin"
+            lang="zh-Latn"
+            data-reveal-answer
+            {% if not revealed %}hidden{% endif %}>
+        {%- for character, syllable in parts -%}
+          {%- if syllable -%}
+            <span class="syllable" data-character-index="{{ loop.index0 }}">{{ syllable }}</span>{{ ' ' if not loop.last else '' }}
+          {%- endif -%}
+        {%- endfor -%}
+      </span>
+    {%- endif -%}
+  </span>
+{%- endmacro %}

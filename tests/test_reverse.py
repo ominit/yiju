@@ -12,7 +12,7 @@ from flask import Flask
 from flask.testing import FlaskClient
 
 from yiju.core.definitions import recall_prompt
-from yiju.storage.database import connect, initialize
+from yiju.storage.database import SCHEMA_VERSION, connect, initialize
 from yiju.storage.importing import import_xml
 from yiju.storage.learning import known_sentences, review_card, undo_review
 from yiju.storage.queue import overview, study_queue
@@ -180,7 +180,7 @@ def test_upgrade_adds_reverse_cards_without_changing_existing_progress(
     for _ in range(2):
         initialize(path)
         with connect(path) as db:
-            assert db.execute("PRAGMA user_version").fetchone()[0] == 5
+            assert db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
             assert db.execute("SELECT count(*) FROM cards").fetchone()[0] == 10
             for row in db.execute(
                 "SELECT * FROM cards WHERE direction = 'recognition'"
@@ -205,8 +205,16 @@ def test_reverse_front_shows_english_and_reveal_has_the_chinese_answer(
     client: FlaskClient, app: Flask, xml_export: bytes, *, sentence: bool
 ) -> None:
     token = csrf(client)
+    data = (
+        xml_export
+        if sentence
+        else xml_export.replace(
+            b"verb go",
+            "verb 1 go 2 leave\nnoun note (工尺谱), corresponding to 7".encode(),
+        )
+    )
     client.post(
-        "/import", data={"csrf": token, "file": (io.BytesIO(xml_export), "words.xml")}
+        "/import", data={"csrf": token, "file": (io.BytesIO(data), "words.xml")}
     )
     with connect(Path(app.config["DATABASE"])) as db:
         seed_known_word(db, "我")
@@ -217,16 +225,47 @@ def test_reverse_front_shows_english_and_reveal_has_the_chinese_answer(
         ).fetchone()
     front = client.get(f"/study?card={card['id']}").data.decode()
     prompt = re.search(
-        r'<p class="recall-prompt question-text"[^>]*>(.*?)</p>', front, re.DOTALL
+        r'<p class="recall-prompt question-text"[^>]*>(.*?)</p>'
+        if sentence
+        else r'<div class="recall-definitions"[^>]*>(.*?)</div>\s*<p class="chinese',
+        front,
+        re.DOTALL,
     )
     assert prompt is not None
-    assert prompt[1] == ("I am going." if sentence else "go")
+    if sentence:
+        assert prompt[1] == "I am going."
+    else:
+        assert '<ol class="dictionary-senses">' in prompt[1]
+        assert '<span class="part-of-speech">verb</span>' in prompt[1]
+        assert '<span class="part-of-speech">noun</span>' in prompt[1]
+        assert "<span>go</span>" in prompt[1]
+        assert "<span>leave</span>" in prompt[1]
+        assert "note (工尺谱), corresponding to 7" in prompt[1]
+        assert "dictionary-example" not in prompt[1]
+        assert "I am going." not in prompt[1]
     assert re.search(
         r'class="chinese question-text[^"]*"\s+data-reveal-answer\s+hidden', front
     )
     answer = client.get(f"/study?card={card['id']}&answer=1").data.decode()
+    if not sentence:
+        front_senses = re.search(
+            r'<ol class="dictionary-senses">(.*?)</ol>', prompt[1], re.DOTALL
+        )
+        back_senses = re.search(
+            r'<div class="answer-flow">.*?<ol class="dictionary-senses">(.*?)</ol>',
+            answer,
+            re.DOTALL,
+        )
+        assert front_senses is not None
+        assert back_senses is not None
+        assert front_senses[1] == back_senses[1]
+        assert 'class="dictionary-examples"' in answer
+        assert "I am going." in answer
     assert re.search(
-        r'class="recall-prompt question-text"\s+data-hide-answer\s+hidden', answer
+        r'class="recall-prompt question-text"\s+data-hide-answer\s+hidden'
+        if sentence
+        else r'class="recall-definitions"\s+data-hide-answer\s+hidden',
+        answer,
     )
     response = client.post(
         f"/review/{card['id']}",
@@ -244,7 +283,7 @@ def test_library_does_not_duplicate_words_and_pauses_both_directions(
     client.post(
         "/import", data={"csrf": token, "file": (io.BytesIO(xml_export), "words.xml")}
     )
-    assert client.get("/library").data.count(b'class="panel word-row"') == 3
+    assert client.get("/library").data.count(b'class="library-entry"') == 3
     with connect(Path(app.config["DATABASE"])) as db:
         card = db.execute(
             "SELECT * FROM cards WHERE word = '去' AND sentence_id IS NULL "

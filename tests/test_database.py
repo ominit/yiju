@@ -15,6 +15,61 @@ from yiju.storage.queue import study_queue
 from yiju.storage.sentences import update_sentence
 
 
+def test_pinyin_migration_cleans_existing_entries_and_preserves_progress(
+    tmp_path: Path, xml_export: bytes
+) -> None:
+    path = tmp_path / "pinyin.sqlite3"
+    initialize(path)
+    source = xml_export.replace("我".encode(), "回家".encode()).replace(
+        b"wo3", b"hui2//jia1"
+    )
+    with connect(path) as db:
+        import_xml(db, source, "words.xml")
+        entry = db.execute("SELECT * FROM entries WHERE word = '回家'").fetchone()
+        assert entry["pinyin"] == "huí jiā"
+        db.execute(
+            "UPDATE entries SET pinyin = 'huí //jiā' WHERE id = ?", (entry["id"],)
+        )
+        db.commit()
+        now = datetime.now(UTC) + timedelta(seconds=1)
+        card = db.execute(
+            "SELECT * FROM cards WHERE word = '回家' AND direction = 'recognition' "
+            "AND sentence_id IS NULL"
+        ).fetchone()
+        review_card(db, card["id"], card["version"], 3, now)
+        db.execute(
+            "INSERT INTO word_flags VALUES ('回家', '', ?, ?)",
+            (now.isoformat(), now.isoformat()),
+        )
+        db.execute("PRAGMA user_version = 6")
+        queries = (
+            "SELECT * FROM cards ORDER BY rowid",
+            "SELECT * FROM knowledge ORDER BY rowid",
+            "SELECT * FROM reviews ORDER BY rowid",
+            "SELECT * FROM word_flags ORDER BY rowid",
+            "SELECT * FROM settings ORDER BY rowid",
+        )
+        before = {query: [tuple(row) for row in db.execute(query)] for query in queries}
+        original_entry = dict(entry)
+    for _ in range(2):
+        initialize(path)
+        with connect(path) as db:
+            assert (
+                dict(
+                    db.execute(
+                        "SELECT * FROM entries WHERE id = ?", (entry["id"],)
+                    ).fetchone()
+                )
+                == original_entry
+            )
+            assert (
+                db.execute("PRAGMA user_version").fetchone()[0]
+                == database.SCHEMA_VERSION
+            )
+            for query in queries:
+                assert [tuple(row) for row in db.execute(query)] == before[query]
+
+
 @pytest.mark.parametrize("existing_pending_card", [False, True])
 def test_migration_activates_pending_sentences_and_preserves_progress(
     tmp_path: Path, xml_export: bytes, *, existing_pending_card: bool

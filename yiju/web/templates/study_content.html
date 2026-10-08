@@ -1,114 +1,168 @@
 {% from 'macros/definitions.html' import definition %}
+{% from 'macros/controls.html' import icon, flag, review_undo %}
+{% from 'macros/pronunciation.html' import pronounced %}
 <div id="study-session"
      tabindex="-1"
      data-card-id="{{ card.id if card else '' }}"
-     data-card-version="{{ card.version if card else '' }}">
+     data-card-version="{{ card.version if card else '' }}"
+     data-audio-url="{{ url_for('audio.pronunciation', card_id=card.id) if card else '' }}"
+     data-direction="{{ card.direction if card else '' }}">
   {% for message in get_flashed_messages() %}<div class="notice" role="status">{{ message }}</div>{% endfor %}
   <div class="notice study-error" role="alert" hidden>
     <p></p>
     <button class="text-button" type="button" data-study-refresh>Retry</button>
     <button class="text-button" type="button" data-study-discard hidden>Discard unsaved ratings</button>
   </div>
-  <div class="study-toolbar">
-    <a class="back-link" href="{{ url_for('pages.home') }}">← Overview</a>
-    {% if card %}
-      <span class="small muted" data-card-count>{{ count }} cards</span>
-    {% endif %}
-    <form method="post"
-          action="{{ url_for('actions.undo') }}"
-          data-study-undo
-          {% if not last_review %}hidden{% endif %}>
-      <input type="hidden" name="csrf" value="{{ csrf }}">
-      <input type="hidden"
-             name="review_id"
-             value="{{ last_review.id if last_review else '' }}">
-      <button class="text-button" type="submit">Undo last review</button>
-    </form>
-  </div>
   {% if card %}
     <article class="study-card {% if answer %}revealed{% endif %}">
       <div class="card-heading">
-        <span class="card-type">{% if card.sentence_id %}Sentence{% else %}Word{% endif %}</span>
-        <span class="badge">{% if card.reviews %}Review{% else %}New{% endif %}</span>
-      </div>
-      <div class="study-body">
-        <div class="question">
-          <div class="question-content">
-            {% if card.direction == 'production' %}
-              <p class="recall-prompt question-text"
-                 data-hide-answer
-                 {% if answer %}hidden{% endif %}>{{ recall_prompt }}</p>
-            {% endif %}
-            <p class="chinese question-text {% if card.sentence_id %}sentence-text{% endif %}"
-               data-reveal-answer
-               {% if card.direction == 'production' and not answer %}hidden{% endif %}
-               lang="zh-Hans">{{ card.chinese or card.word }}</p>
-            <p class="pinyin question-pinyin"
-               data-reveal-answer
-               {% if not answer %}hidden{% endif %}>{{ card.sentence_pinyin if card.sentence_id else card.word_pinyin }}</p>
-          </div>
+        <div class="card-progress">
+          <span class="small muted" data-card-count>{{ count }} cards</span>
+          {{ review_undo(last_review, csrf) }}
         </div>
-        <div class="answer" id="answer" {% if not answer %}hidden{% endif %}>
-          <div class="answer-pages" tabindex="0" aria-label="Answer">
-            <div class="answer-flow">
-              {% if card.sentence_id %}
-                <p class="translation">{{ card.translation }}</p>
+        <div class="practice-controls">
+          {{ flag(card.word, card.word in flagged_words, csrf) }}
+          <button class="icon-button"
+                  type="button"
+                  data-audio-replay
+                  aria-label="Replay pronunciation"
+                  title="Replay pronunciation"
+                  {% if not answer %}hidden{% endif %}>{{ icon("replay") }}</button>
+          <button class="icon-button"
+                  type="button"
+                  data-audio-toggle
+                  aria-pressed="false"
+                  aria-label="Mute pronunciation"
+                  title="Mute pronunciation">
+            <span data-audio-on>{{ icon("audio") }}</span>
+            <span data-audio-off hidden>{{ icon("muted") }}</span>
+          </button>
+        </div>
+      </div>
+      <div class="study-scroll">
+        <div class="study-body {% if card.direction == 'production' %}drawing-active{% endif %}">
+          <div class="question">
+            <div class="question-content">
+              {% if card.direction == 'production' %}
+                {% if card.sentence_id %}
+                  <p class="recall-prompt question-text"
+                     data-hide-answer
+                     {% if answer %}hidden{% endif %}>{{ card.translation }}</p>
+                {% else %}
+                  <div class="recall-definitions"
+                       data-hide-answer
+                       {% if answer %}hidden{% endif %}>{{ definition(word_definition, include_examples=false) }}</div>
+                {% endif %}
               {% endif %}
-              {% if card.sentence_id %}
-                {% for word in sentence_definitions %}
-                  <div class="definition-block" data-word="{{ word.word }}">
-                    <h2>
-                      <span lang="zh-Hans">{{ word.word }}</span> <span class="pinyin small">{{ word.pinyin }}</span>
-                    </h2>
-                    {{ definition(word.definition) }}
-                  </div>
-                {% endfor %}
-              {% else %}
-                <div class="definition-block">{{ definition(word_definition) }}</div>
-              {% endif %}
-              {% if analysis %}
-                <details class="token-details">
-                  <summary>Sentence words · {{ analysis.unknown|length }} unfamiliar</summary>
-                  <div class="tokens">
-                    {% for token in analysis.tokens %}
-                      <span class="token {% if token in analysis.unknown %}unknown{% endif %}"
-                            lang="zh-Hans">{{ token }}</span>
-                    {% endfor %}
-                  </div>
-                </details>
-              {% endif %}
+              <p class="chinese question-text {% if card.sentence_id %}sentence-text{% endif %}"
+                 data-reveal-answer
+                 {% if card.direction == 'production' and not answer %}hidden{% endif %}
+                 lang="zh-Hans">{{ pronounced(card.chinese or card.word, card.sentence_pinyin if card.sentence_id else card.word_pinyin, answer) }}</p>
+              <p class="small muted" data-stroke-feedback role="status" hidden></p>
             </div>
           </div>
-          <nav class="answer-pagination" aria-label="Answer pages" hidden>
-            <button class="text-button"
-                    type="button"
-                    data-answer-previous
-                    aria-label="Previous answer page">← Previous</button>
-            <span class="small muted" data-answer-page aria-live="polite"></span>
-            <button class="text-button"
-                    type="button"
-                    data-answer-next
-                    aria-label="Next answer page">Next →</button>
-          </nav>
+          {% if card.direction == 'production' %}
+            <section class="drawing-board" aria-label="Handwriting practice">
+              <div class="drawing-stage">
+                <div class="drawing-surfaces">
+                  <div class="drawing-history"
+                       data-drawing-history
+                       tabindex="0"
+                       aria-label="Previous drawings"
+                       hidden></div>
+                  <canvas data-drawing-canvas
+                          tabindex="0"
+                          aria-label="Draw the Chinese character"></canvas>
+                  <div class="drawing-actions">
+                    <button class="text-button"
+                            type="button"
+                            data-drawing-undo
+                            aria-label="Undo stroke"
+                            title="Undo stroke">{{ icon("undo") }}</button>
+                    <button class="text-button"
+                            type="button"
+                            data-drawing-clear
+                            aria-label="Clear drawing"
+                            title="Clear drawing">{{ icon("erase") }}</button>
+                    <button class="text-button"
+                            type="button"
+                            data-drawing-previous
+                            aria-label="Previous character"
+                            title="Previous character"
+                            disabled>{{ icon("previous") }}</button>
+                    <button class="text-button"
+                            type="button"
+                            data-drawing-next
+                            aria-label="Next character"
+                            title="Next character">{{ icon("next") }}</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+          {% endif %}
+          <div class="answer" id="answer" {% if not answer %}hidden{% endif %}>
+            <div class="answer-pages" tabindex="0" aria-label="Answer">
+              <div class="answer-flow">
+                {% if card.sentence_id %}
+                  <p class="translation">{{ card.translation }}</p>
+                {% endif %}
+                {% if card.sentence_id %}
+                  {% for word in sentence_definitions %}
+                    <div class="definition-block" data-word="{{ word.word }}">
+                      <h2>
+                        {{ pronounced(word.word, word.pinyin) }}
+                        {{ flag(word.word, word.word in flagged_words, csrf) }}
+                      </h2>
+                      {{ definition(word.definition) }}
+                    </div>
+                  {% endfor %}
+                {% else %}
+                  <div class="definition-block">{{ definition(word_definition) }}</div>
+                {% endif %}
+                {% if analysis %}
+                  <details class="token-details">
+                    <summary>Sentence words · {{ analysis.unknown|length }} unfamiliar</summary>
+                    <div class="tokens">
+                      {% for token in analysis.tokens %}
+                        <span class="token {% if token in analysis.unknown %}unknown{% endif %}"
+                              lang="zh-Hans">{{ token }}</span>
+                      {% endfor %}
+                    </div>
+                  </details>
+                {% endif %}
+              </div>
+            </div>
+            <nav class="answer-pagination" aria-label="Answer pages" hidden>
+              <button class="text-button"
+                      type="button"
+                      data-answer-previous
+                      aria-label="Previous answer page">← Previous</button>
+              <span class="small muted" data-answer-page aria-live="polite"></span>
+              <button class="text-button"
+                      type="button"
+                      data-answer-next
+                      aria-label="Next answer page">Next →</button>
+            </nav>
+          </div>
         </div>
+        {% if card.sentence_id %}
+          <div class="sentence-actions">
+            <a class="text-link"
+               href="{{ url_for('pages.sentence_detail', sentence_id=card.sentence_id, return_to='study') }}">Edit sentence</a>
+            <form method="post"
+                  action="{{ url_for('actions.save_sentence', sentence_id=card.sentence_id) }}">
+              <input type="hidden" name="csrf" value="{{ csrf }}">
+              <input type="hidden" name="version" value="{{ card.sentence_version }}">
+              <input type="hidden" name="chinese" value="{{ card.chinese }}">
+              <input type="hidden" name="pinyin" value="{{ card.sentence_pinyin }}">
+              <input type="hidden" name="translation" value="{{ card.translation }}">
+              <input type="hidden" name="return_to" value="study">
+              <button class="text-button" name="status" value="rejected">Skip sentence</button>
+            </form>
+          </div>
+        {% endif %}
       </div>
     </article>
-    {% if card.sentence_id %}
-      <div class="sentence-actions">
-        <a class="text-link"
-           href="{{ url_for('pages.sentence_detail', sentence_id=card.sentence_id, return_to='study') }}">Edit sentence</a>
-        <form method="post"
-              action="{{ url_for('actions.save_sentence', sentence_id=card.sentence_id) }}">
-          <input type="hidden" name="csrf" value="{{ csrf }}">
-          <input type="hidden" name="version" value="{{ card.sentence_version }}">
-          <input type="hidden" name="chinese" value="{{ card.chinese }}">
-          <input type="hidden" name="pinyin" value="{{ card.sentence_pinyin }}">
-          <input type="hidden" name="translation" value="{{ card.translation }}">
-          <input type="hidden" name="return_to" value="study">
-          <button class="text-button" name="status" value="rejected">Skip sentence</button>
-        </form>
-      </div>
-    {% endif %}
     <div class="reveal-area" {% if answer %}hidden{% endif %}>
       <a class="button"
          id="reveal-answer"
@@ -139,6 +193,7 @@
   {% else %}
     <section class="empty-state panel">
       <h1>No cards due</h1>
+      {{ review_undo(last_review, csrf) }}
       <div class="actions">
         <a class="button" href="{{ url_for('pages.home') }}">Back to overview</a>
         <a class="button secondary" href="{{ url_for('pages.sentences') }}">Browse sentences</a>

@@ -36,7 +36,7 @@ def test_prepared_cards_have_both_directions_and_hidden_answers(
     assert any("recall-prompt" not in card for card in batch["cards"])
     keys = []
     for card in batch["cards"]:
-        assert re.search(r'id="answer"\s+hidden', card)
+        assert re.search(r'<div\b[^>]*\bid="answer"[^>]*\s+hidden(?:\s|>)', card)
         assert re.search(r'class="rating-area"[\s\S]*?hidden>', card)
         key = re.search(r'data-card-id="([^"]+)"', card)
         assert key is not None

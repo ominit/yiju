@@ -3,7 +3,7 @@
   perSystem = {pkgs, ...}: {
     treefmt = {
       projectRootFile = "flake.nix";
-      settings.excludes = ["uv.lock"];
+      settings.excludes = ["uv.lock" "yiju/web/static/vendor/*"];
       programs.alejandra.enable = true;
       programs.deadnix.enable = true;
       programs.just.enable = true;

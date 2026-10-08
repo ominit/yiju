@@ -6,7 +6,7 @@ from itertools import pairwise
 
 from .extraction import extract_examples
 from .models import ExampleSentence
-from .text import HAN, clean_definition, contains_han
+from .text import HAN, clean_definition
 
 PART_OF_SPEECH = re.compile(
     r"^(noun|verb|adverb|adjective|pronoun|measure word|preposition|conjunction|"
@@ -73,16 +73,16 @@ def combine_definitions(values: str) -> Definition:
 
 @lru_cache(maxsize=2048)
 def recall_prompt(values: str) -> str:
-    return next(
-        (
-            sense.meaning
-            for sense in combine_definitions(values).senses
-            if sense.meaning
-            and not contains_han(sense.meaning)
-            and not REFERENCE.match(sense.meaning)
-        ),
-        "",
+    meanings = (
+        re.sub(
+            r"\(\s*\)|\[\s*\]|\uff08\s*\uff09",
+            "",
+            re.sub(f"[{HAN}]+", "", sense.meaning),
+        ).strip()
+        for sense in combine_definitions(values).senses
+        if sense.meaning and not REFERENCE.match(sense.meaning)
     )
+    return "\n".join(dict.fromkeys(meaning for meaning in meanings if meaning))
 
 
 def _sections(text: str) -> tuple[str, ...]:

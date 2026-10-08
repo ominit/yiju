@@ -6,7 +6,7 @@ from flask import jsonify, redirect, render_template, request, url_for
 from fsrs import Card
 from werkzeug.wrappers import Response
 
-from yiju.core.definitions import Definition, combine_definitions, recall_prompt
+from yiju.core.definitions import Definition, combine_definitions
 from yiju.core.scheduling import intervals, now_utc
 from yiju.core.selection import analyze
 from yiju.storage.database import settings, vocabulary_words
@@ -66,17 +66,15 @@ def _card_context(
         )
     return {
         "card": card,
+        "flagged_words": {
+            row["word"] for row in connection.execute("SELECT word FROM word_flags")
+        },
         "intervals": intervals(
             Card.from_json(card["scheduling"]), now, float(config["retention"])
         ),
         "analysis": analysis,
         "sentence_definitions": sentence_definitions,
         "word_definition": combine_definitions(card["definition_json"]),
-        "recall_prompt": (
-            card["translation"]
-            if card["sentence_id"] is not None
-            else recall_prompt(card["definition_json"])
-        ),
     }
 
 

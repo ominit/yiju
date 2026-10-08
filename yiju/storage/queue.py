@@ -1,6 +1,8 @@
 import json
 import sqlite3
 from datetime import datetime
+from itertools import zip_longest
+from random import SystemRandom
 from typing import cast
 
 from yiju.core.definitions import recall_prompt
@@ -27,6 +29,19 @@ CARD_QUERY = (
     "FROM cards c JOIN entries e ON e.id = c.entry_id "
     "LEFT JOIN sentences s ON s.id = c.sentence_id "
 )
+
+
+def _new_word_order(cards: list[sqlite3.Row]) -> list[sqlite3.Row]:
+    random = SystemRandom()
+    random.shuffle(cards)
+    directions = [
+        [card for card in cards if card["direction"] == direction]
+        for direction in ("recognition", "production")
+    ]
+    random.shuffle(directions)
+    return [
+        card for pair in zip_longest(*directions) for card in pair if card is not None
+    ]
 
 
 def study_queue(
@@ -89,14 +104,7 @@ def study_queue(
             )
             if analysis.eligible:
                 new_sentences.append((analysis.score, row))
-    new_words.sort(
-        key=lambda row: (
-            len(row["word"]),
-            row["direction"] == "production",
-            row["word"],
-            row["id"],
-        )
-    )
+    new_words = _new_word_order(new_words)
     new_sentences.sort(
         key=lambda item: (-item[0], item[1]["direction"] == "production", item[1]["id"])
     )

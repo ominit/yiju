@@ -1,4 +1,5 @@
-{% macro definition(value) %}
+{% from 'macros/pronunciation.html' import pronounced %}
+{% macro definition(value, include_examples=true) %}
   {% if value.senses %}
     <ol class="dictionary-senses">
       {% for sense in value.senses %}
@@ -10,15 +11,14 @@
         {% endif %}
       {% endfor %}
     </ol>
-    {% if value.example_count %}
+    {% if include_examples and value.example_count %}
       <details class="dictionary-examples">
         <summary>Examples · {{ value.example_count }}</summary>
         <div class="dictionary-example-list">
           {% for sense in value.senses %}
             {% for example in sense.examples %}
               <div class="dictionary-example">
-                <p lang="zh-Hans">{{ example.chinese }}</p>
-                <p class="pinyin">{{ example.pinyin }}</p>
+                <p lang="zh-Hans">{{ pronounced(example.chinese, example.pinyin) }}</p>
                 <p>{{ example.translation }}</p>
               </div>
             {% endfor %}

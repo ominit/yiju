@@ -1,0 +1,39 @@
+{% macro ring(progress) %}
+  <span class="learning-ring progress-{{ progress.state }}"
+        role="img"
+        aria-label="Learning progress {{ progress.percent }} percent"
+        title="{{ progress.percent }}% toward your Learned thresholds">
+    <svg viewBox="0 0 48 48" aria-hidden="true">
+      <circle class="ring-track" cx="24" cy="24" r="20" />
+      {% if progress.percent %}
+        <circle class="ring-value" cx="24" cy="24" r="20" pathLength="100" stroke-dasharray="{{ progress.percent }} 100" transform="rotate(-90 24 24)" />
+      {% endif %}
+    </svg>
+    <span>{{ progress.percent }}<small>%</small></span>
+  </span>
+{% endmacro %}
+{% macro metrics(progress, config) %}
+  <div class="learning-metrics">
+    <div>
+      <span>Successful days</span>
+      <strong>{{ progress.days }} <small>/ {{ config.known_days }}</small></strong>
+      <progress max="{{ config.known_days }}"
+                value="{{ progress.days }}"
+                aria-label="Successful days toward Learned"></progress>
+    </div>
+    <div>
+      <span>Memory strength</span>
+      <strong>{{ progress.stability }} <small>/ {{ config.known_stability }} days</small></strong>
+      <progress max="{{ config.known_stability }}"
+                value="{{ progress.stability }}"
+                aria-label="Memory strength toward Learned"></progress>
+    </div>
+    <div>
+      <span>Estimated recall</span>
+      <strong>{{ (progress.recall|string) ~ '%' if progress.recall is not none else '—' }}</strong>
+      <progress max="100"
+                value="{{ progress.recall or 0 }}"
+                aria-label="Estimated recall"></progress>
+    </div>
+  </div>
+{% endmacro %}

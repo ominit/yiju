@@ -1,9 +1,31 @@
 let studyPending = false;
 let studyObserver;
+let studyUpdating;
+let studyDeparting = false;
 
 function layoutStudy() {
   const session = document.querySelector("#study-session");
   if (!session) return;
+  if (
+    matchMedia(
+      "(max-width: 700px), (max-width: 1000px) and (max-height: 500px)",
+    ).matches
+  ) {
+    session.querySelectorAll(".question-text").forEach((text) => {
+      text.style.removeProperty("--question-font-size");
+    });
+    session
+      .querySelector(".study-body")
+      ?.style.removeProperty("--question-height");
+    const viewport = session.querySelector(".answer-pages");
+    if (viewport) {
+      viewport.scrollLeft = 0;
+      viewport.dataset.page = "0";
+      viewport.dataset.pages = "1";
+      session.querySelector(".answer-pagination").hidden = true;
+    }
+    return;
+  }
   const question = session.querySelector(".question");
   const text = question?.querySelector(".question-text:not([hidden])");
   if (text) {
@@ -64,6 +86,10 @@ function initializeStudy() {
   requestAnimationFrame(layoutStudy);
 }
 
+document.addEventListener("yiju:drawing-history", () =>
+  requestAnimationFrame(layoutStudy),
+);
+
 let preparedCards = Array.from(
   document.querySelector("#study-prepared")?.content.children || [],
 );
@@ -88,7 +114,8 @@ function persistOutbox() {
 function syncStudyControls() {
   const session = document.querySelector("#study-session");
   if (!session) return;
-  const blocked = studyPending || waitingForCard || studyFailure;
+  const blocked =
+    studyPending || waitingForCard || studyFailure || studyDeparting;
   if (studyPending || waitingForCard) session.setAttribute("aria-busy", "true");
   else session.removeAttribute("aria-busy");
   session
@@ -105,10 +132,14 @@ function syncStudyControls() {
 }
 
 function replaceStudy(next) {
+  document.dispatchEvent(new Event("yiju:unmount"));
   document.querySelector("#study-session").replaceWith(next);
   initializeStudy();
   syncStudyControls();
-  history.replaceState(null, "", "/study");
+  document.dispatchEvent(
+    new CustomEvent("yiju:mounted", { detail: { studyOnly: true } }),
+  );
+  history.replaceState(history.state, "", "/study");
   next.focus({ preventScroll: true });
   window.scrollTo({ top: 0, behavior: "instant" });
 }
@@ -151,7 +182,7 @@ function showStudyError(error) {
 
 async function prepareStudy() {
   if (preparing) return preparing;
-  if (outbox.length || studyPending || studyFailure) return;
+  if (outbox.length || studyPending || studyFailure || studyDeparting) return;
   const revision = studyRevision;
   preparing = (async () => {
     try {
@@ -159,7 +190,13 @@ async function prepareStudy() {
         headers: { "X-Yiju-Buffer": "1" },
       });
       const batch = await response.json();
-      if (revision !== studyRevision || outbox.length || studyPending) return;
+      if (
+        revision !== studyRevision ||
+        outbox.length ||
+        studyPending ||
+        studyDeparting
+      )
+        return;
       const current = document.querySelector("#study-session");
       preparedCards = batch.cards
         .map(parseStudy)
@@ -177,7 +214,8 @@ async function prepareStudy() {
       }
       syncStudyControls();
     } catch (error) {
-      if (waitingForCard) showStudyError(error);
+      if (revision === studyRevision && !studyDeparting && waitingForCard)
+        showStudyError(error);
     } finally {
       preparing = null;
     }
@@ -198,6 +236,7 @@ async function saveRatings() {
           headers: { "X-Yiju-Buffer": "1" },
         });
         lastReview = (await response.json()).review_id;
+        document.dispatchEvent(new Event("yiju:changed"));
         outbox.shift();
         persistOutbox();
         syncStudyControls();
@@ -207,7 +246,11 @@ async function saveRatings() {
     } finally {
       saving = null;
     }
-    if (!studyFailure && (preparedCards.length < 6 || waitingForCard)) {
+    if (
+      !studyFailure &&
+      !studyDeparting &&
+      (preparedCards.length < 6 || waitingForCard)
+    ) {
       await prepareStudy();
       if (waitingForCard && !studyFailure) await prepareStudy();
     }
@@ -218,7 +261,13 @@ async function saveRatings() {
 function rateStudy(form, submitter) {
   const session = form.closest("#study-session");
   const key = cardKey(session);
-  if (consumedCards.has(key) || studyFailure || waitingForCard || studyPending)
+  if (
+    consumedCards.has(key) ||
+    studyFailure ||
+    waitingForCard ||
+    studyPending ||
+    studyDeparting
+  )
     return;
   const item = {
     url: form.action,
@@ -235,6 +284,7 @@ function rateStudy(form, submitter) {
     );
     return;
   }
+  document.dispatchEvent(new Event("yiju:changed"));
   consumedCards.add(key);
   studyRevision++;
   if (preparedCards.length) replaceStudy(preparedCards.shift());
@@ -245,7 +295,15 @@ function rateStudy(form, submitter) {
   saveRatings();
 }
 
-async function updateStudy(url, options = {}) {
+function updateStudy(url, options = {}) {
+  if (studyUpdating) return studyUpdating;
+  studyUpdating = performStudyUpdate(url, options).finally(() => {
+    studyUpdating = null;
+  });
+  return studyUpdating;
+}
+
+async function performStudyUpdate(url, options = {}) {
   if (studyPending) return;
   studyPending = true;
   studyRevision++;
@@ -258,6 +316,8 @@ async function updateStudy(url, options = {}) {
   }
   try {
     const response = await studyFetch(url, options);
+    if (options.method === "POST")
+      document.dispatchEvent(new Event("yiju:changed"));
     const next = parseStudy(await response.text());
     if (!next) throw new Error("Could not load the next card.");
     preparedCards = [];
@@ -294,7 +354,8 @@ document.addEventListener("click", (event) => {
   const reveal = event.target.closest("#reveal-answer");
   if (reveal) {
     event.preventDefault();
-    if (studyPending || waitingForCard || studyFailure) return;
+    if (studyPending || waitingForCard || studyFailure || studyDeparting)
+      return;
     const session = reveal.closest("#study-session");
     session.querySelector("#answer").hidden = false;
     session.querySelectorAll("[data-reveal-answer]").forEach((element) => {
@@ -306,6 +367,8 @@ document.addEventListener("click", (event) => {
     session.querySelector(".rating-area").hidden = false;
     session.querySelector(".reveal-area").hidden = true;
     session.querySelector(".study-card").classList.add("revealed");
+    session.querySelector(".study-scroll").scrollTop = 0;
+    document.dispatchEvent(new Event("yiju:revealed"));
     requestAnimationFrame(layoutStudy);
     session.focus({ preventScroll: true });
   }
@@ -336,15 +399,6 @@ document.addEventListener("click", (event) => {
       updateStudy("/study");
     }
   }
-  const link = event.target.closest(
-    "#study-session a[href]:not(#reveal-answer)",
-  );
-  if (link && outbox.length) {
-    event.preventDefault();
-    saveRatings().then(() => {
-      if (!outbox.length && !studyFailure) location.assign(link.href);
-    });
-  }
 });
 document.addEventListener(
   "toggle",
@@ -354,14 +408,13 @@ document.addEventListener(
   },
   true,
 );
-initializeStudy();
 
 document.addEventListener("submit", (event) => {
   const form = event.target;
   const session = form.closest("#study-session");
   if (!session) return;
   event.preventDefault();
-  if (studyPending || studyFailure || waitingForCard) return;
+  if (studyPending || studyFailure || waitingForCard || studyDeparting) return;
   if (form.classList.contains("rating-buttons")) {
     rateStudy(form, event.submitter);
     return;
@@ -376,7 +429,7 @@ document.addEventListener("keydown", (event) => {
   if (event.altKey || event.ctrlKey || event.metaKey || event.repeat) return;
   if (
     event.target.closest(
-      "input, textarea, select, button, a, summary, [contenteditable]",
+      "input, textarea, select, button, a, summary, [contenteditable], [data-stroke-character]",
     )
   )
     return;
@@ -406,21 +459,25 @@ document.addEventListener("keydown", (event) => {
     }
   }
 });
-document.querySelectorAll("form[data-busy]").forEach((form) => {
-  form.addEventListener("submit", () => {
-    form.querySelector('button[type="submit"]').disabled = true;
-    form.querySelector(".busy-message").hidden = false;
+function mountPage() {
+  document.querySelectorAll("time[datetime]").forEach((element) => {
+    if (element.textContent.includes("UTC")) {
+      const date = new Date(element.dateTime);
+      if (!Number.isNaN(date.getTime()))
+        element.textContent = date.toLocaleString();
+    }
   });
-});
-document.querySelectorAll("time[datetime]").forEach((element) => {
-  if (element.textContent.includes("UTC")) {
-    const date = new Date(element.dateTime);
-    if (!Number.isNaN(date.getTime()))
-      element.textContent = date.toLocaleString();
-  }
-});
-
-if (document.querySelector("#study-session")) {
+  studyDeparting = false;
+  if (!document.querySelector("#study-session")) return;
+  preparedCards = Array.from(
+    document.querySelector("#study-prepared")?.content.children || [],
+  );
+  consumedCards.clear();
+  lastReview = document.querySelector("[name=review_id]")?.value || "";
+  waitingForCard = false;
+  studyFailure = false;
+  studyRevision++;
+  initializeStudy();
   try {
     outbox = JSON.parse(sessionStorage.getItem(outboxKey) || "[]");
     outbox.forEach((item) => consumedCards.add(item.key));
@@ -436,3 +493,45 @@ if (document.querySelector("#study-session")) {
     );
   }
 }
+
+window.yijuStudy = {
+  async beforeNavigation() {
+    studyDeparting = true;
+    syncStudyControls();
+    if (studyUpdating) await studyUpdating;
+    if (saving) await saving;
+    if (outbox.length) await saveRatings();
+    if (outbox.length) {
+      studyDeparting = false;
+      syncStudyControls();
+      return false;
+    }
+    return true;
+  },
+  unmount() {
+    document.dispatchEvent(new Event("yiju:unmount"));
+    studyRevision++;
+    studyObserver?.disconnect();
+  },
+  cancelNavigation() {
+    studyDeparting = false;
+    syncStudyControls();
+    if (
+      document.querySelector("#study-session") &&
+      !studyFailure &&
+      (waitingForCard || preparedCards.length < 6)
+    )
+      prepareStudy();
+  },
+  mount() {
+    mountPage();
+    document.dispatchEvent(new Event("yiju:mounted"));
+  },
+};
+
+document.addEventListener("change", (event) => {
+  if (event.target.matches("[data-auto-submit]"))
+    event.target.form.requestSubmit();
+});
+
+mountPage();
