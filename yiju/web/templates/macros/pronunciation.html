@@ -1,4 +1,22 @@
-{% macro pronounced(text, pinyin, revealed=true) -%}
+{% macro glyph_character(character, glyphs) -%}
+  <span class="character{% if glyphs is not none and character in glyphs %}{{ ' stroke-rendered' if glyphs[character] else ' stroke-pending' }}{% endif %}">{{- character -}}
+    {%- if glyphs is not none and glyphs.get(character) -%}
+      <svg class="stroke-glyph"
+           viewBox="0 0 100 100"
+           aria-hidden="true"
+           focusable="false">
+        {%- if glyphs.get(character) -%}
+          <g transform="translate(5, 84.1015625) scale(0.087890625, -0.087890625)" fill="currentColor">
+          {%- for path in glyphs[character] -%}
+            <path d="{{ path }}" />
+          {%- endfor -%}
+          </g>
+        {%- endif -%}
+      </svg>
+    {%- endif -%}
+  </span>
+{%- endmacro %}
+{% macro pronounced(text, pinyin, revealed=true, glyphs=none) -%}
   {% set parts = text | pronunciation(pinyin) -%}
   <span class="pronunciation" lang="zh-Hans">
     {%- if parts|length == 1 and parts[0][0]|length > 1 and parts[0][1] -%}
@@ -8,14 +26,14 @@
               {% if not revealed %}hidden{% endif %}>{{ parts[0][1] }}</span>
         <span class="pronunciation-characters">
           {%- for character in parts[0][0] -%}
-            <span class="character">{{ character }}</span>
+            {{- glyph_character(character, glyphs) -}}
           {%- endfor -%}
         </span>
       </span>
     {%- else -%}
       <span class="pronunciation-characters">
         {%- for character, syllable in parts -%}
-          <span class="character">{{ character }}</span>
+          {{- glyph_character(character, glyphs) -}}
         {%- endfor -%}
       </span>
       <span class="pronunciation-pinyin"

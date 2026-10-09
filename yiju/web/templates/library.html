@@ -88,7 +88,7 @@
             {% endfor %}
           </div>
           {% if kind == 'words' %}
-            <div class="library-definition">{{ definition(item.definition) }}</div>
+            <div class="library-definition">{{ definition(item.definition, examples_url=url_for('pages.library_examples', entry_id=item.row.id)) }}</div>
             {% if item.text in flags %}
               <form class="flag-note-form" data-flag-note data-word="{{ item.text }}">
                 <input type="hidden" name="csrf" value="{{ csrf }}">

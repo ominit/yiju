@@ -1,6 +1,8 @@
 (() => {
   const dataCache = new Map();
+  const readyData = new Map();
   const glyphs = new Map();
+  let bufferedCharacters = new Set();
   const waitingLoads = [];
   const svgNS = "http://www.w3.org/2000/svg";
   let loading = 0;
@@ -25,14 +27,18 @@
 
   async function fetchCharacter(character) {
     if (loading < 2) loading++;
-    else await new Promise((resolve) => waitingLoads.push(resolve));
+    else
+      await new Promise((resolve) => {
+        waitingLoads.push({ character, resolve });
+      });
     try {
       if (
+        !bufferedCharacters.has(character) &&
         ![...glyphs.values()].some(
           (state) => state.character === character && currentGlyph(state),
         )
       )
-        throw new DOMException("Character is no longer visible.", "AbortError");
+        throw new DOMException("Character is no longer needed.", "AbortError");
       const response = await fetch(
         `/strokes/characters/${encodeURIComponent(character)}`,
         { headers: { "X-Yiju-Partial": "page" } },
@@ -42,31 +48,82 @@
         throw new Error(data.error || "Stroke order is unavailable.");
       return data;
     } finally {
-      const next = waitingLoads.shift();
-      if (next) next();
+      const priority = waitingLoads.findIndex(({ character }) =>
+        [...glyphs.values()].some(
+          (state) => state.character === character && currentGlyph(state),
+        ),
+      );
+      const next = waitingLoads.splice(Math.max(0, priority), 1)[0];
+      if (next) next.resolve();
       else loading--;
     }
   }
 
   function characterData(character) {
     if (!dataCache.has(character)) {
-      const promise = fetchCharacter(character).catch((error) => {
-        dataCache.delete(character);
-        if (error instanceof TypeError)
-          throw new Error("Stroke order is unavailable. Tap to retry.");
-        throw error;
-      });
+      const promise = fetchCharacter(character)
+        .then((data) => {
+          readyData.set(character, data);
+          return data;
+        })
+        .catch((error) => {
+          dataCache.delete(character);
+          if (error instanceof TypeError)
+            throw new Error("Stroke order is unavailable. Tap to retry.");
+          throw error;
+        });
       dataCache.set(character, promise);
     }
     return dataCache.get(character);
   }
 
   function currentGlyph(state) {
-    return (
-      glyphs.get(state.element) === state &&
-      state.element.isConnected &&
-      !state.element.closest("[hidden]")
-    );
+    return glyphs.get(state.element) === state && state.element.isConnected;
+  }
+
+  function renderGlyph(state, data) {
+    clearTimeout(state.fallbackTimer);
+    state.stableFallback = false;
+    if (!state.element.querySelector(".stroke-glyph")) {
+      const svg = document.createElementNS(svgNS, "svg");
+      svg.setAttribute("viewBox", "0 0 100 100");
+      svg.setAttribute("aria-hidden", "true");
+      svg.setAttribute("focusable", "false");
+      svg.classList.add("stroke-glyph");
+      const group = document.createElementNS(svgNS, "g");
+      group.setAttribute(
+        "transform",
+        HanziWriter.getScalingTransform(100, 100, 5).transform,
+      );
+      group.setAttribute("fill", "currentColor");
+      for (const stroke of data.strokes) {
+        const path = document.createElementNS(svgNS, "path");
+        path.setAttribute("d", stroke);
+        group.append(path);
+      }
+      svg.append(group);
+      state.element.append(svg);
+    }
+    state.element.classList.add("stroke-rendered");
+    state.element.classList.remove("stroke-pending");
+  }
+
+  function showFallback(state) {
+    if (!currentGlyph(state)) return;
+    clearTimeout(state.fallbackTimer);
+    state.stableFallback = true;
+    state.element.classList.remove("stroke-pending");
+  }
+
+  function pendingGlyph(state) {
+    if (
+      state.stableFallback ||
+      state.element.classList.contains("stroke-rendered") ||
+      state.element.closest("[hidden]") ||
+      state.fallbackTimer
+    )
+      return;
+    state.fallbackTimer = setTimeout(() => showFallback(state), 150);
   }
 
   function loadGlyph(state) {
@@ -75,26 +132,8 @@
     state.loading = characterData(state.character)
       .then((data) => {
         if (!currentGlyph(state)) return data;
-        const svg = document.createElementNS(svgNS, "svg");
-        svg.setAttribute("viewBox", "0 0 100 100");
-        svg.setAttribute("aria-hidden", "true");
-        svg.setAttribute("focusable", "false");
-        svg.classList.add("stroke-glyph");
-        const group = document.createElementNS(svgNS, "g");
-        group.setAttribute(
-          "transform",
-          HanziWriter.getScalingTransform(100, 100, 5).transform,
-        );
-        group.setAttribute("fill", "currentColor");
-        for (const stroke of data.strokes) {
-          const path = document.createElementNS(svgNS, "path");
-          path.setAttribute("d", stroke);
-          group.append(path);
-        }
-        svg.append(group);
-        state.element.append(svg);
-        state.element.classList.add("stroke-rendered");
         state.data = data;
+        if (!state.stableFallback) renderGlyph(state, data);
         return data;
       })
       .finally(() => {
@@ -122,6 +161,10 @@
     try {
       await loadGlyph(state);
       if (!currentAnimation(request)) return;
+      renderGlyph(state, state.data);
+      const styles = getComputedStyle(element.closest(".chinese"));
+      const strokeColor = styles.color;
+      const outlineColor = styles.getPropertyValue("--line").trim();
       if (!writer) {
         animation = document.createElement("span");
         animation.className = "stroke-animation";
@@ -132,6 +175,9 @@
           padding: 5,
           showCharacter: false,
           showOutline: true,
+          strokeColor,
+          radicalColor: strokeColor,
+          outlineColor,
           strokeAnimationSpeed: 1.2,
           delayBetweenStrokes: 180,
           charDataLoader: (character, loaded, failed) => {
@@ -146,14 +192,10 @@
       }
       await writer.getCharacterData();
       if (!currentAnimation(request)) return;
-      const styles = getComputedStyle(element.closest(".chinese"));
       await Promise.all([
-        writer.updateColor("strokeColor", styles.color, { duration: 0 }),
-        writer.updateColor(
-          "outlineColor",
-          styles.getPropertyValue("--line").trim(),
-          { duration: 0 },
-        ),
+        writer.updateColor("strokeColor", strokeColor, { duration: 0 }),
+        writer.updateColor("radicalColor", strokeColor, { duration: 0 }),
+        writer.updateColor("outlineColor", outlineColor, { duration: 0 }),
         writer.hideCharacter({ duration: 0 }),
         writer.showOutline({ duration: 0 }),
       ]);
@@ -184,14 +226,22 @@
     const revealed = card.classList.contains("revealed");
     card.querySelectorAll(".question .character").forEach((element) => {
       const character = element.textContent;
-      if (element.closest("[hidden]") || !/^\p{Script=Han}$/u.test(character))
-        return;
+      if (!/^\p{Script=Han}$/u.test(character)) return;
       let state = glyphs.get(element);
       if (!state) {
         state = { element, character };
         glyphs.set(element, state);
-        loadGlyph(state).catch(() => {});
+        const data = readyData.get(character);
+        if (data) {
+          state.data = data;
+          renderGlyph(state, data);
+        } else {
+          if (!element.classList.contains("stroke-rendered"))
+            element.classList.add("stroke-pending");
+          loadGlyph(state).catch(() => showFallback(state));
+        }
       }
+      pendingGlyph(state);
       if (revealed) {
         element.dataset.strokeCharacter = character;
         element.tabIndex = 0;
@@ -209,25 +259,41 @@
     stop();
     pointer = null;
     lastClick = null;
+    bufferedCharacters.clear();
     for (const { element } of glyphs.values()) {
-      element.querySelector(".stroke-glyph")?.remove();
-      element.classList.remove("stroke-rendered");
       element.removeAttribute("data-stroke-character");
       element.removeAttribute("tabindex");
       element.removeAttribute("role");
       element.removeAttribute("aria-label");
       element.removeAttribute("title");
     }
+    for (const state of glyphs.values()) clearTimeout(state.fallbackTimer);
     glyphs.clear();
+  }
+
+  function prepareCharacters(cards) {
+    bufferedCharacters = new Set(
+      cards.flatMap((card) =>
+        [...card.querySelectorAll(".question .character")]
+          .map((element) => element.textContent)
+          .filter((character) => /^\p{Script=Han}$/u.test(character)),
+      ),
+    );
+    for (const character of bufferedCharacters)
+      characterData(character).catch(() => {});
   }
 
   function mount() {
     unmount();
     syncCharacters();
+    prepareCharacters(window.yijuStudy?.preparedCards() || []);
   }
 
   document.addEventListener("yiju:mounted", mount);
   document.addEventListener("yiju:revealed", syncCharacters);
+  document.addEventListener("yiju:prepared", (event) => {
+    prepareCharacters(event.detail.cards);
+  });
   document.addEventListener("yiju:unmount", unmount);
   document.addEventListener("pointerdown", (event) => {
     clearTimeout(clickTimer);

@@ -8,6 +8,7 @@ from flask import (
 )
 from werkzeug.wrappers import Response
 
+from yiju.core.definitions import combine_definitions
 from yiju.core.scheduling import now_utc
 from yiju.storage.database import settings
 from yiju.storage.progress import activity
@@ -95,6 +96,25 @@ def sentence_detail(sentence_id: str) -> str:
 @pages.get("/library")
 def library() -> str:
     return library_response("words", now_utc())
+
+
+@pages.get("/library/entries/<entry_id>/examples")
+def library_examples(entry_id: str) -> str:
+    rows = (
+        database()
+        .execute(
+            "SELECT definition_json FROM entries WHERE word = "
+            "(SELECT word FROM entries WHERE id = ?) ORDER BY rowid",
+            (entry_id,),
+        )
+        .fetchall()
+    )
+    if not rows:
+        abort(404)
+    return render_template(
+        "library_examples.html",
+        value=combine_definitions("\n".join(row["definition_json"] for row in rows)),
+    )
 
 
 @pages.get("/settings")

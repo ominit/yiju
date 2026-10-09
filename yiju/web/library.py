@@ -4,6 +4,7 @@ import unicodedata
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
+from functools import cached_property
 
 from flask import abort, render_template, request
 
@@ -57,13 +58,24 @@ class Library:
             for word, progress in self.knowledge.items()
             if progress.state == "learned"
         )
-        self.word_cards: dict[str, list[sqlite3.Row]] = defaultdict(list)
-        self.sentence_cards: dict[str, list[sqlite3.Row]] = defaultdict(list)
-        for card in connection.execute("SELECT * FROM cards ORDER BY direction DESC"):
-            if card["sentence_id"] is None:
-                self.word_cards[card["word"]].append(card)
-            else:
-                self.sentence_cards[card["sentence_id"]].append(card)
+
+    @cached_property
+    def word_cards(self) -> dict[str, list[sqlite3.Row]]:
+        cards: dict[str, list[sqlite3.Row]] = defaultdict(list)
+        for card in self.connection.execute(
+            "SELECT * FROM cards WHERE sentence_id IS NULL ORDER BY direction DESC"
+        ):
+            cards[card["word"]].append(card)
+        return cards
+
+    @cached_property
+    def sentence_cards(self) -> dict[str, list[sqlite3.Row]]:
+        cards: dict[str, list[sqlite3.Row]] = defaultdict(list)
+        for card in self.connection.execute(
+            "SELECT * FROM cards WHERE sentence_id IS NOT NULL ORDER BY direction DESC"
+        ):
+            cards[card["sentence_id"]].append(card)
+        return cards
 
     def words(self) -> list[LibraryItem]:
         reviews = {
@@ -205,6 +217,7 @@ def library_response(kind: str, now: datetime) -> str:
     }:
         abort(400)
     query = request.args.get("q", "").strip()[:100]
+    normalized_query = _search_text(query)
     counts = Counter(item.state for item in items if not item.hidden)
     counts["all"] = sum(not item.hidden for item in items)
     counts["hidden"] = sum(item.hidden for item in items)
@@ -227,7 +240,7 @@ def library_response(kind: str, now: datetime) -> str:
         )
         and (
             not query
-            or _search_text(query)
+            or normalized_query
             in _search_text(
                 " ".join(
                     (

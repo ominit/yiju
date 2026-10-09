@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import tempfile
+from functools import lru_cache
 from http import HTTPStatus
 from pathlib import Path
 from threading import Lock
@@ -16,6 +17,37 @@ from yiju.core.text import contains_han
 strokes = Blueprint("strokes", __name__)
 DATA_VERSION = "2.0.1"
 _locks = tuple(Lock() for _ in range(16))
+
+
+@lru_cache(maxsize=2048)
+def _read_strokes(path: Path, _modified: int) -> tuple[str, ...] | None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        paths = data["strokes"]
+    except (OSError, ValueError, TypeError, KeyError):
+        return None
+    if (
+        not isinstance(paths, list)
+        or not paths
+        or not all(isinstance(value, str) for value in paths)
+    ):
+        return None
+    return tuple(cast("list[str]", paths))
+
+
+def available_strokes(text: str, directory: Path) -> dict[str, tuple[str, ...] | None]:
+    result: dict[str, tuple[str, ...] | None] = {}
+    for character in dict.fromkeys(text):
+        if not contains_han(character):
+            continue
+        path = directory / f"{DATA_VERSION}-{ord(character):x}.json"
+        try:
+            modified = path.stat().st_mtime_ns
+        except OSError:
+            result[character] = None
+        else:
+            result[character] = _read_strokes(path, modified)
+    return result
 
 
 async def fetch_character(character: str) -> dict[str, object]:

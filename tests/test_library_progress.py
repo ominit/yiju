@@ -196,3 +196,55 @@ def test_search_handles_entries_without_meanings(
     result = client.get("/library?q=学习")
     assert result.status_code == 200
     assert b"No definition" in result.data
+
+
+def test_library_examples_load_separately_and_include_every_dictionary_entry(
+    client: FlaskClient, app: Flask, xml_export: bytes
+) -> None:
+    with connect(Path(app.config["DATABASE"])) as db:
+        import_xml(db, xml_export, "words.xml")
+        import_xml(
+            db,
+            xml_export.replace(
+                b"I am going.",
+                b"I am leaving. &lt;script&gt;alert(1)&lt;/script&gt;",
+            ).replace(b'dictid="TEST"', b'dictid="OTHER"'),
+            "more.xml",
+        )
+        entry_id = db.execute(
+            "SELECT id FROM entries WHERE word = '我' ORDER BY rowid"
+        ).fetchone()["id"]
+    page = client.get("/library").data
+    url = f"/library/entries/{entry_id}/examples"
+    assert f'data-library-examples="{url}"'.encode() in page
+    assert b"I am going." not in page
+    assert b"I am leaving." not in page
+    assert b"Examples" in page
+    examples = client.get(url, headers={"X-Yiju-Partial": "examples"})
+    assert examples.status_code == 200
+    assert examples.data.count(b'class="dictionary-example"') == 2
+    assert b"I am going." in examples.data
+    assert b"I am leaving." in examples.data
+    assert b"&lt;script&gt;alert(1)&lt;/script&gt;" in examples.data
+    assert b"<script>" not in examples.data
+    assert 'class="syllable"' in examples.text
+    assert b"<!DOCTYPE" not in examples.data
+    assert examples.headers["Cache-Control"] == "no-store"
+    assert "frame-ancestors 'none'" in examples.headers["Content-Security-Policy"]
+    assert client.get("/library/entries/missing/examples").status_code == 404
+
+
+def test_library_word_cards_do_not_load_sentence_schedules(
+    connection: sqlite3.Connection, xml_export: bytes
+) -> None:
+    import_xml(connection, xml_export, "words.xml")
+    statements = []
+    connection.set_trace_callback(statements.append)
+    library = Library(connection, datetime.now(UTC))
+    words = library.words()
+    assert all(len(word.cards) == 2 for word in words)
+    card_queries = [query for query in statements if "SELECT * FROM cards" in query]
+    assert len(card_queries) == 1
+    assert "WHERE sentence_id IS NULL" in card_queries[0]
+    sentences = library.sentences()
+    assert all(len(sentence.cards) == 2 for sentence in sentences)

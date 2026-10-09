@@ -57,7 +57,7 @@
               <p class="chinese question-text {% if card.sentence_id %}sentence-text{% endif %}"
                  data-reveal-answer
                  {% if card.direction == 'production' and not answer %}hidden{% endif %}
-                 lang="zh-Hans">{{ pronounced(card.chinese or card.word, card.sentence_pinyin if card.sentence_id else card.word_pinyin, answer) }}</p>
+                 lang="zh-Hans">{{ pronounced(card.chinese or card.word, card.sentence_pinyin if card.sentence_id else card.word_pinyin, answer, stroke_glyphs) }}</p>
               <p class="small muted" data-stroke-feedback role="status" hidden></p>
             </div>
           </div>
@@ -67,9 +67,19 @@
                 <div class="drawing-surfaces">
                   <div class="drawing-history"
                        data-drawing-history
-                       tabindex="0"
+                       role="group"
                        aria-label="Previous drawings"
-                       hidden></div>
+                       hidden>
+                    <div class="drawing-history-heading">
+                      <button class="drawing-history-expand"
+                              type="button"
+                              data-history-expand
+                              aria-label="All drawings"
+                              title="All drawings"
+                              hidden>{{ icon("gallery") }}</button>
+                    </div>
+                    <div class="drawing-thumbnails" data-drawing-thumbnails></div>
+                  </div>
                   <canvas data-drawing-canvas
                           tabindex="0"
                           aria-label="Draw the Chinese character"></canvas>
@@ -98,6 +108,15 @@
                   </div>
                 </div>
               </div>
+              <dialog class="drawing-archive"
+                      data-drawing-archive
+                      aria-labelledby="drawing-archive-title">
+                <div class="drawing-archive-heading">
+                  <h2 id="drawing-archive-title">Your drawings</h2>
+                  <button class="text-button" type="button" data-history-close autofocus>Close</button>
+                </div>
+                <div class="drawing-thumbnails" data-all-drawings></div>
+              </dialog>
             </section>
           {% endif %}
           <div class="answer" id="answer" {% if not answer %}hidden{% endif %}>

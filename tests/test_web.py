@@ -325,7 +325,10 @@ def test_pages_read_stored_definitions_without_parsing_export_text(
         assert client.get(url).status_code == 200
     response = client.get("/library").data
     assert b'class="dictionary-senses"' in response
-    assert b'class="dictionary-example"' in response
+    assert b'class="dictionary-example"' not in response
+    examples_url = re.search(rb'data-library-examples="([^"]+)"', response)
+    assert examples_url is not None
+    assert b'class="dictionary-example"' in client.get(examples_url[1].decode()).data
 
 
 def test_partial_review_and_undo_return_next_card_and_reject_stale_ratings(

@@ -1,8 +1,9 @@
 import json
 import sqlite3
 from datetime import datetime
+from pathlib import Path
 
-from flask import jsonify, redirect, render_template, request, url_for
+from flask import current_app, jsonify, redirect, render_template, request, url_for
 from fsrs import Card
 from werkzeug.wrappers import Response
 
@@ -14,6 +15,7 @@ from yiju.storage.learning import known_words
 from yiju.storage.queue import study_queue
 
 from . import database
+from .strokes import available_strokes
 
 
 def _sentence_definitions(
@@ -75,6 +77,10 @@ def _card_context(
         "analysis": analysis,
         "sentence_definitions": sentence_definitions,
         "word_definition": combine_definitions(card["definition_json"]),
+        "stroke_glyphs": available_strokes(
+            card["chinese"] or card["word"],
+            Path(current_app.config["DATABASE"]).resolve().parent / "strokes",
+        ),
     }
 
 

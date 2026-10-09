@@ -3,6 +3,40 @@ let studyObserver;
 let studyUpdating;
 let studyDeparting = false;
 
+function layoutDrawing(body) {
+  const surfaces = body.querySelector(".drawing-surfaces");
+  if (!surfaces) return;
+  const probe = document.createElement("span");
+  probe.className = "drawing-thumbnail";
+  probe.style.position = "absolute";
+  probe.style.visibility = "hidden";
+  surfaces.append(probe);
+  const previewSize = probe.getBoundingClientRect().width;
+  probe.remove();
+  const minimum = parseFloat(
+    getComputedStyle(surfaces).getPropertyValue("--pad-min"),
+  );
+  if (body.closest(".study-card.revealed")) {
+    const gap = parseFloat(getComputedStyle(body).rowGap);
+    const available = Math.max(
+      40,
+      body.clientHeight - gap - minimum - previewSize - 48,
+    );
+    const natural = body.querySelector(".question-content").offsetHeight;
+    body.style.setProperty(
+      "--question-height",
+      `${Math.min(natural, available)}px`,
+    );
+  } else {
+    body.style.removeProperty("--question-height");
+  }
+  const height = surfaces.closest(".drawing-stage").clientHeight;
+  surfaces.style.setProperty(
+    "--history-rows",
+    height >= minimum + 2 * (previewSize + 8) + 40 ? "2" : "1",
+  );
+}
+
 function layoutStudy() {
   const session = document.querySelector("#study-session");
   if (!session) return;
@@ -17,6 +51,9 @@ function layoutStudy() {
     session
       .querySelector(".study-body")
       ?.style.removeProperty("--question-height");
+    session
+      .querySelector(".drawing-surfaces")
+      ?.style.removeProperty("--history-rows");
     const viewport = session.querySelector(".answer-pages");
     if (viewport) {
       viewport.scrollLeft = 0;
@@ -28,22 +65,11 @@ function layoutStudy() {
   }
   const question = session.querySelector(".question");
   const text = question?.querySelector(".question-text:not([hidden])");
+  text?.style.removeProperty("--question-font-size");
+  const body = question?.closest(".study-body");
+  if (body) layoutDrawing(body);
   if (text) {
     const content = question.querySelector(".question-content");
-    text.style.removeProperty("--question-font-size");
-    const body = question.closest(".study-body");
-    if (
-      matchMedia("(max-width: 700px)").matches &&
-      question.closest(".study-card").classList.contains("revealed")
-    ) {
-      const height = Math.min(
-        Math.max(60, body.clientHeight * 0.6),
-        Math.max(60, content.offsetHeight),
-      );
-      body.style.setProperty("--question-height", `${height}px`);
-    } else {
-      body.style.removeProperty("--question-height");
-    }
     let high = parseFloat(getComputedStyle(text).fontSize);
     let low = 16;
     if (content.offsetHeight > question.clientHeight) {
@@ -80,9 +106,11 @@ function layoutStudy() {
 function initializeStudy() {
   studyObserver?.disconnect();
   studyObserver = new ResizeObserver(() => requestAnimationFrame(layoutStudy));
-  document.querySelectorAll(".question, .answer-pages").forEach((element) => {
-    studyObserver.observe(element);
-  });
+  document
+    .querySelectorAll(".question, .question-content, .answer-pages")
+    .forEach((element) => {
+      studyObserver.observe(element);
+    });
   requestAnimationFrame(layoutStudy);
 }
 
@@ -202,6 +230,9 @@ async function prepareStudy() {
             !consumedCards.has(cardKey(card)) &&
             (waitingForCard || cardKey(card) !== cardKey(current)),
         );
+      document.dispatchEvent(
+        new CustomEvent("yiju:prepared", { detail: { cards: preparedCards } }),
+      );
       lastReview = batch.review_id || "";
       if (waitingForCard) {
         waitingForCard = false;
@@ -423,9 +454,10 @@ document.addEventListener("submit", (event) => {
 
 document.addEventListener("keydown", (event) => {
   if (event.altKey || event.ctrlKey || event.metaKey || event.repeat) return;
+  if (document.querySelector("[data-drawing-archive][open]")) return;
   if (
     event.target.closest(
-      "input, textarea, select, button, a, summary, [contenteditable], [data-stroke-character]",
+      "input, textarea, select, button, a, summary, dialog, [contenteditable], [data-stroke-character]",
     )
   )
     return;
@@ -491,6 +523,9 @@ function mountPage() {
 }
 
 window.yijuStudy = {
+  preparedCards() {
+    return preparedCards;
+  },
   async beforeNavigation() {
     studyDeparting = true;
     syncStudyControls();

@@ -17,6 +17,11 @@
       <path d="m10 5 7 7-7 7" />
     {% elif name == 'erase' %}
       <path d="m16 3 5 5a2 2 0 0 1 0 3l-8 9H7l-4-4a2 2 0 0 1 0-3L13 3a2 2 0 0 1 3 0ZM8 8l8 8M7 20h14" />
+    {% elif name == 'gallery' %}
+      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+      <rect x="14" y="14" width="7" height="7" rx="1.5" />
     {% endif %}
   </svg>
 {% endmacro %}
@@ -29,7 +34,7 @@
     <input type="hidden"
            name="review_id"
            value="{{ review.id if review else '' }}">
-    <button class="text-button review-undo"
+    <button class="review-undo"
             type="submit"
             aria-label="Undo last review"
             title="Undo last review">

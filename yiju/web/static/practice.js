@@ -195,22 +195,207 @@
     });
   }
 
-  function renderDrawingHistory() {
+  function drawingPreview(drawing, index) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "drawing-thumbnail";
+    button.dataset.drawingSelect = String(index);
+    button.setAttribute("aria-label", `Edit drawn character ${index + 1}`);
+    button.setAttribute("aria-pressed", String(index === board.index));
+    const namespace = "http://www.w3.org/2000/svg";
+    const preview = document.createElementNS(namespace, "svg");
+    const [width, height] = drawing.space || [1, 1];
+    preview.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    preview.setAttribute("aria-hidden", "true");
+    preview.setAttribute("focusable", "false");
+    for (const stroke of drawing.strokes) {
+      const path = document.createElementNS(namespace, "path");
+      let points = stroke
+        .map(
+          ([x, y], point) =>
+            `${point ? "L" : "M"}${(x * width).toFixed(4)} ${(y * height).toFixed(4)}`,
+        )
+        .join(" ");
+      if (stroke.length === 1) points += " l 0.001 0";
+      path.setAttribute("d", points);
+      path.setAttribute("fill", "none");
+      path.setAttribute("stroke", "currentColor");
+      path.setAttribute("stroke-width", "2");
+      path.setAttribute("stroke-linecap", "round");
+      path.setAttribute("stroke-linejoin", "round");
+      path.setAttribute("vector-effect", "non-scaling-stroke");
+      preview.append(path);
+    }
+    button.append(preview);
+    return button;
+  }
+
+  function completedDrawings() {
+    return board.characters
+      .map((drawing, index) => ({ drawing, index }))
+      .filter(
+        ({ drawing, index }) =>
+          drawing.retained && (drawing.strokes.length || index === board.index),
+      );
+  }
+
+  function renderDrawingArchive() {
+    const thumbnails = document.querySelector("[data-all-drawings]");
+    const active = document.activeElement;
+    const selected = thumbnails.contains(active)
+      ? active.closest("[data-drawing-select]")?.dataset.drawingSelect
+      : undefined;
+    thumbnails.replaceChildren(
+      ...completedDrawings().map(({ drawing, index }) =>
+        drawingPreview(drawing, index),
+      ),
+    );
+    if (selected !== undefined) {
+      const target =
+        thumbnails.querySelector(`[data-drawing-select="${selected}"]`) ||
+        document.querySelector("[data-history-close]");
+      target.focus({ preventScroll: true });
+    }
+  }
+
+  function renderDrawingHistory(selection = false) {
     if (!board) return;
+    if (document.querySelector("[data-drawing-archive]").open)
+      renderDrawingArchive();
     const history = document.querySelector("[data-drawing-history]");
     if (!board.canvas.getBoundingClientRect().width) return;
-    history.replaceChildren();
-    for (const drawing of board.characters.slice(0, board.index)) {
-      if (!drawing.strokes.length) continue;
-      const preview = document.createElement("canvas");
-      preview.setAttribute("role", "img");
-      preview.setAttribute("aria-label", "Previously drawn character");
-      history.append(preview);
-      const size = parseFloat(getComputedStyle(preview).width);
-      paintDrawing(preview, drawing, size, size, 1.5);
+    history.style.removeProperty("--history-width");
+    const drawings = completedDrawings();
+    history.hidden = !drawings.length;
+    const thumbnails = history.querySelector("[data-drawing-thumbnails]");
+    const active = document.activeElement;
+    const focused = thumbnails.contains(active)
+      ? active.closest("[data-drawing-select]")?.dataset.drawingSelect
+      : undefined;
+    const restoreFocus = () => {
+      if (focused === undefined) return;
+      const target =
+        (!history.hidden &&
+          (thumbnails.querySelector(`[data-drawing-select="${focused}"]`) ||
+            history.querySelector("[data-history-expand]:not([hidden])"))) ||
+        board.canvas;
+      target.focus({ preventScroll: true });
+    };
+    if (!drawings.length) {
+      thumbnails.replaceChildren();
+      restoreFocus();
+      return;
     }
-    history.hidden = !history.childElementCount;
-    history.scrollLeft = history.scrollWidth;
+    const mobile = matchMedia(
+      "(max-width: 700px), (max-width: 1000px) and (max-height: 500px)",
+    ).matches;
+    const front = !board.canvas
+      .closest(".study-card")
+      .classList.contains("revealed");
+    const compact =
+      mobile &&
+      front &&
+      board.canvas.closest(".study-body").clientHeight <= 320;
+    history.dataset.compact = String(compact);
+    if (compact) {
+      thumbnails.replaceChildren();
+      history.querySelector("[data-history-expand]").hidden = false;
+      restoreFocus();
+      return;
+    }
+    const probe = drawingPreview(drawings[0].drawing, drawings[0].index);
+    probe.style.position = "absolute";
+    probe.style.visibility = "hidden";
+    thumbnails.append(probe);
+    const size = probe.getBoundingClientRect().width;
+    const rows = Number(
+      getComputedStyle(history).getPropertyValue("--history-rows"),
+    );
+    const width = mobile
+      ? board.canvas.closest(".drawing-stage").getBoundingClientRect().width
+      : Math.min(
+          thumbnails.getBoundingClientRect().width,
+          board.canvas.closest(".study-body").getBoundingClientRect().width /
+            2 -
+            12,
+        );
+    const columns = Math.max(1, Math.floor((width + 8) / (size + 8)));
+    const capacity = columns * rows;
+    const selected = drawings.findIndex(({ index }) => index >= board.index);
+    const position = selected === -1 ? drawings.length - 1 : selected;
+    let start = Math.max(
+      0,
+      drawings.findIndex(({ index }) => index >= (board.historyStart ?? 0)),
+    );
+    if (position < start) start = position;
+    if (position >= start + capacity) start = position - capacity + 1;
+    start = Math.max(0, Math.min(start, drawings.length - capacity));
+    if (selection && capacity > 1) {
+      if (position === start && start > 0) start -= 1;
+      else if (
+        position === start + capacity - 1 &&
+        start + capacity < drawings.length
+      )
+        start += 1;
+    }
+    board.historyStart = drawings[start].index;
+    const visible = drawings.slice(start, start + capacity);
+    const usedColumns = Math.min(columns, visible.length);
+    history.style.setProperty(
+      "--history-width",
+      `${usedColumns * size + (usedColumns - 1) * 8}px`,
+    );
+    const firstRow = visible.length % columns || columns;
+    const previewRows = [];
+    for (let offset = 0; offset < visible.length;) {
+      const count = offset === 0 ? firstRow : columns;
+      const row = document.createElement("div");
+      row.className = "drawing-thumbnail-row";
+      row.append(
+        ...visible
+          .slice(offset, offset + count)
+          .map(({ drawing, index }) => drawingPreview(drawing, index)),
+      );
+      previewRows.push(row);
+      offset += count;
+    }
+    history.dataset.rows = String(previewRows.length);
+    thumbnails.replaceChildren(...previewRows);
+    history.querySelector("[data-history-expand]").hidden =
+      drawings.length <= capacity;
+    restoreFocus();
+  }
+
+  function selectDrawing(index) {
+    if (index === null) return;
+    if (index === board.index) {
+      renderDrawingHistory(true);
+      return;
+    }
+    const current = board.characters[board.index];
+    current.retained = Boolean(current.strokes.length);
+    board.index = index;
+    board.characters[index] ||= { strokes: [], space: null };
+    renderBoard();
+    renderDrawingHistory(true);
+  }
+
+  function adjacentDrawing(direction) {
+    for (
+      let index = board.index + direction;
+      index >= 0 && index < board.characters.length;
+      index += direction
+    ) {
+      if (board.characters[index].strokes.length) return index;
+    }
+    if (direction < 0) return null;
+    const last = board.characters.length - 1;
+    if (board.index < last && !board.characters[last].strokes.length)
+      return last;
+    const drawing = board.characters[board.index];
+    return drawing.strokes.length || drawing.retained
+      ? board.characters.length
+      : null;
   }
 
   function renderBoard() {
@@ -226,7 +411,9 @@
     container.querySelector("[data-drawing-clear]").disabled =
       !drawing.strokes.length;
     container.querySelector("[data-drawing-previous]").disabled =
-      board.index === 0;
+      adjacentDrawing(-1) === null;
+    container.querySelector("[data-drawing-next]").disabled =
+      adjacentDrawing(1) === null;
   }
 
   function mountBoard() {
@@ -273,6 +460,12 @@
         ),
       ];
     };
+    const appendPoint = (event) => {
+      const stroke = board.characters[board.index].strokes.at(-1);
+      const next = point(event);
+      const previous = stroke.at(-1);
+      if (next[0] !== previous[0] || next[1] !== previous[1]) stroke.push(next);
+    };
     canvas.addEventListener("pointerdown", (event) => {
       if (
         board?.canvas !== canvas ||
@@ -289,16 +482,20 @@
     canvas.addEventListener("pointermove", (event) => {
       if (board?.canvas !== canvas || board.pointer !== event.pointerId) return;
       event.preventDefault();
-      const events = event.getCoalescedEvents?.() || [event];
-      const stroke = board.characters[board.index].strokes.at(-1);
-      events.forEach((sample) => stroke.push(point(sample)));
+      event.getCoalescedEvents?.().forEach(appendPoint);
+      appendPoint(event);
       renderBoard();
     });
     const endStroke = (event) => {
       if (board?.canvas !== canvas || board.pointer !== event.pointerId) return;
+      if (event.type === "pointerup") {
+        appendPoint(event);
+        renderBoard();
+      }
       board.pointer = null;
       if (canvas.hasPointerCapture(event.pointerId))
         canvas.releasePointerCapture(event.pointerId);
+      renderDrawingHistory();
     };
     canvas.addEventListener("pointerup", endStroke);
     canvas.addEventListener("pointercancel", endStroke);
@@ -341,10 +538,14 @@
     syncAudio();
     playAudio();
     schedulePronunciation();
-    requestAnimationFrame(renderBoard);
+    requestAnimationFrame(() => {
+      renderBoard();
+      renderDrawingHistory();
+    });
   });
   document.fonts.addEventListener("loadingdone", schedulePronunciation);
   document.fonts.ready.then(schedulePronunciation);
+  document.addEventListener("yiju:pronunciation-added", mountPronunciation);
 
   document.addEventListener("copy", (event) => {
     const selection = getSelection();
@@ -404,7 +605,7 @@
     }
     if (
       button.matches(
-        "[data-drawing-undo], [data-drawing-clear], [data-drawing-next], [data-drawing-previous]",
+        "[data-drawing-undo], [data-drawing-clear], [data-drawing-next], [data-drawing-previous], [data-drawing-select]",
       ) &&
       board
     ) {
@@ -418,21 +619,34 @@
       drawing.strokes.pop();
       if (!drawing.strokes.length) drawing.space = null;
       renderBoard();
+      renderDrawingHistory();
     }
     if (button.matches("[data-drawing-clear]") && board) {
-      board.characters[board.index] = { strokes: [], space: null };
+      const drawing = board.characters[board.index];
+      drawing.strokes = [];
+      drawing.space = null;
       renderBoard();
+      renderDrawingHistory();
     }
     if (button.matches("[data-drawing-next]") && board) {
-      board.index++;
-      board.characters[board.index] ||= { strokes: [], space: null };
-      renderBoard();
-      renderDrawingHistory();
+      selectDrawing(adjacentDrawing(1));
     }
     if (button.matches("[data-drawing-previous]") && board) {
-      board.index = Math.max(0, board.index - 1);
-      renderBoard();
-      renderDrawingHistory();
+      selectDrawing(adjacentDrawing(-1));
+    }
+    if (button.matches("[data-drawing-select]") && board) {
+      const index = Number(button.dataset.drawingSelect);
+      if (!Number.isInteger(index) || !board.characters[index]) return;
+      document.querySelector("[data-drawing-archive]").close();
+      selectDrawing(index);
+      board.canvas.focus({ preventScroll: true });
+    }
+    if (button.matches("[data-history-expand]") && board) {
+      renderDrawingArchive();
+      document.querySelector("[data-drawing-archive]").showModal();
+    }
+    if (button.matches("[data-history-close]")) {
+      button.closest("dialog").close();
     }
   });
 
