@@ -195,71 +195,10 @@
     });
   }
 
-  function positionDrawingHistory(history) {
-    if (
-      matchMedia(
-        "(max-width: 700px), (max-width: 1000px) and (max-height: 500px)",
-      ).matches
-    ) {
-      history.dataset.placement = "above";
-      history.style.removeProperty("--preview-size");
-      return;
-    }
-    const canvas = board.canvas.getBoundingClientRect();
-    const previewMax = parseFloat(
-      getComputedStyle(board.canvas.closest(".drawing-board")).getPropertyValue(
-        "--preview-max",
-      ),
-    );
-    const size = Math.min(previewMax, Math.max(24, canvas.height - 2));
-    const left = canvas.left - size - 20;
-    const overlaps =
-      left < 8 ||
-      [
-        ...document.querySelectorAll(
-          ".question .character, .question .syllable, .recall-prompt:not([hidden]), .recall-definitions:not([hidden])",
-        ),
-      ].some((element) => {
-        const rect = element.getBoundingClientRect();
-        return (
-          rect.width &&
-          rect.left < canvas.left - 8 &&
-          rect.right > left &&
-          rect.top < canvas.bottom &&
-          rect.bottom > canvas.top
-        );
-      });
-    if (!overlaps) {
-      delete history.dataset.placement;
-      history.style.removeProperty("--preview-size");
-      return;
-    }
-    const heading = document
-      .querySelector(".card-heading")
-      .getBoundingClientRect();
-    const progress = document
-      .querySelector(".card-progress")
-      .getBoundingClientRect();
-    const controls = document
-      .querySelector(".practice-controls")
-      .getBoundingClientRect();
-    const width = controls.left - progress.right - 16;
-    const previewSize = Math.min(previewMax, heading.height - 8, width);
-    history.dataset.placement = "toolbar";
-    history.style.setProperty("--preview-size", `${previewSize}px`);
-    history.style.setProperty(
-      "--history-left",
-      `${progress.right + 8 - canvas.left}px`,
-    );
-    history.style.setProperty("--history-top", `${heading.top - canvas.top}px`);
-    history.style.setProperty("--history-width", `${width}px`);
-  }
-
   function renderDrawingHistory() {
     if (!board) return;
     const history = document.querySelector("[data-drawing-history]");
     if (!board.canvas.getBoundingClientRect().width) return;
-    positionDrawingHistory(history);
     history.replaceChildren();
     for (const drawing of board.characters.slice(0, board.index)) {
       if (!drawing.strokes.length) continue;
@@ -271,9 +210,7 @@
       paintDrawing(preview, drawing, size, size, 1.5);
     }
     history.hidden = !history.childElementCount;
-    history.scrollTop = history.scrollHeight;
     history.scrollLeft = history.scrollWidth;
-    document.dispatchEvent(new Event("yiju:drawing-history"));
   }
 
   function renderBoard() {

@@ -1972,26 +1972,30 @@ textarea[lang="zh-Hans"] {
   place-items: center;
 }
 .drawing-surfaces {
-  --preview-size: min(var(--preview-max), max(24px, calc(100cqh - 2px)));
-  --pad-size: min(calc(100cqw - 128px), 100cqh, 280px);
+  --preview-size: min(var(--preview-max), max(24px, 12cqh));
+  --history-space: calc(var(--preview-size) + 16px);
+  --pad-size: min(
+    calc(100cqw - 128px),
+    calc(100cqh - var(--history-space)),
+    280px
+  );
   position: relative;
   width: var(--pad-size);
-  height: var(--pad-size);
+  height: calc(var(--pad-size) + var(--history-space));
 }
 .drawing-history {
   position: absolute;
-  right: calc(100% + 8px);
-  top: 0;
+  left: 0;
+  top: calc(var(--pad-size) + 8px);
   display: flex;
-  flex-direction: column;
   gap: 6px;
-  width: calc(var(--preview-size) + 12px);
-  height: var(--pad-size);
+  width: var(--pad-size);
+  height: calc(var(--preview-size) + 8px);
   min-width: 0;
   min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding-right: 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
   scrollbar-width: thin;
 }
 .drawing-history canvas {
@@ -2003,17 +2007,6 @@ textarea[lang="zh-Hans"] {
   background: var(--input);
   color: var(--accent);
   pointer-events: none;
-}
-.drawing-history[data-placement="toolbar"] {
-  right: auto;
-  left: var(--history-left);
-  top: var(--history-top);
-  width: var(--history-width);
-  height: calc(var(--preview-size) + 8px);
-  flex-direction: row;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding-right: 0;
 }
 .drawing-surfaces > [data-drawing-canvas] {
   display: block;
@@ -2039,7 +2032,7 @@ textarea[lang="zh-Hans"] {
 .drawing-actions {
   position: absolute;
   left: calc(100% + 12px);
-  top: 50%;
+  top: calc(var(--pad-size) / 2);
   transform: translateY(-50%);
   width: 52px;
   height: min(188px, var(--pad-size));
@@ -2319,7 +2312,7 @@ textarea[lang="zh-Hans"] {
   }
   .study-card .drawing-stage {
     container-type: normal;
-    height: calc(var(--mobile-pad-size) + 48px);
+    height: calc(var(--mobile-pad-size) + 56px);
     padding-bottom: 0;
     align-items: end;
   }
@@ -2330,7 +2323,7 @@ textarea[lang="zh-Hans"] {
   .study-card .drawing-actions,
   .study-card.revealed .drawing-active .drawing-actions {
     top: auto;
-    bottom: 0;
+    bottom: var(--history-space);
     transform: none;
     width: 52px;
     height: auto;
@@ -2343,17 +2336,7 @@ textarea[lang="zh-Hans"] {
   }
   .study-card .drawing-surfaces {
     --pad-size: var(--mobile-pad-size);
-  }
-  .drawing-history[data-placement="above"] {
-    left: 0;
-    right: auto;
-    top: -48px;
-    width: var(--pad-size);
-    height: 48px;
-    flex-direction: row;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding-right: 0;
+    --preview-size: var(--preview-max);
   }
   .study-card .answer {
     display: flex;
@@ -2403,7 +2386,7 @@ textarea[lang="zh-Hans"] {
     --mobile-pad-size: min(
       220px,
       calc(100cqw - 64px),
-      max(112px, calc(100cqh - 128px))
+      max(112px, calc(100cqh - 136px))
     );
     flex-shrink: 0;
   }
@@ -2429,24 +2412,22 @@ textarea[lang="zh-Hans"] {
     grid-template-rows: minmax(0, 1fr);
   }
   .study-card:not(.revealed) .drawing-board {
-    --mobile-pad-size: min(
-      180px,
-      calc((100cqw - 140px) / 2),
-      max(64px, calc(100cqh - 36px))
-    );
+    --preview-max: 28px;
   }
   .study-card:not(.revealed) .drawing-stage {
+    container-type: size;
     height: 100%;
   }
+  .study-card:not(.revealed) .drawing-surfaces {
+    --pad-size: min(180px, 100cqw, calc(100cqh - var(--history-space)));
+  }
   .study-card:not(.revealed) .drawing-actions {
-    grid-template-rows: repeat(4, min(44px, calc((100cqh - 12px) / 4)));
+    grid-template-rows: repeat(
+      4,
+      min(44px, calc((var(--pad-size) - 12px) / 4))
+    );
   }
   .study-card:not(.revealed) .drawing-actions button {
     height: 100%;
-  }
-  .study-card:not(.revealed) .drawing-history[data-placement="above"] {
-    --preview-max: 28px;
-    top: -36px;
-    height: 36px;
   }
 }

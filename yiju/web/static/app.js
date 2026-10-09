@@ -86,10 +86,6 @@ function initializeStudy() {
   requestAnimationFrame(layoutStudy);
 }
 
-document.addEventListener("yiju:drawing-history", () =>
-  requestAnimationFrame(layoutStudy),
-);
-
 let preparedCards = Array.from(
   document.querySelector("#study-prepared")?.content.children || [],
 );
