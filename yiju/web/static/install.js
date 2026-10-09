@@ -3,24 +3,15 @@
   let installed = false;
   let prompting = false;
   const standalone = window.matchMedia("(display-mode: standalone)");
-  const ios =
-    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-  const androidFirefox =
-    /Android/.test(navigator.userAgent) &&
-    /Firefox\//.test(navigator.userAgent);
 
   function update() {
     const panel = document.querySelector("[data-install-panel]");
     if (!panel) return;
     const active = installed || standalone.matches || navigator.standalone;
-    panel.hidden = active || (!installPrompt && !ios && !androidFirefox);
+    panel.hidden = active || !installPrompt;
     const button = panel.querySelector("[data-install-button]");
     button.hidden = !installPrompt;
     button.disabled = prompting;
-    panel.querySelector("[data-install-ios]").hidden = !ios || !!installPrompt;
-    panel.querySelector("[data-install-firefox]").hidden =
-      !androidFirefox || !!installPrompt;
   }
 
   window.addEventListener("beforeinstallprompt", (event) => {

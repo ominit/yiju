@@ -35,7 +35,9 @@ def test_pages_include_install_metadata_and_settings_controls(
     assert b'name="apple-mobile-web-app-capable" content="yes"' in response.data
     assert b"/static/install.js" in response.data
     assert b"data-install-button hidden" in response.data
-    assert b"In Safari, tap Share, then Add to Home Screen." in response.data
+    assert b"data-install-ios" not in response.data
+    assert b"data-install-firefox" not in response.data
+    assert b"data-install-insecure" not in response.data
     icon = client.get("/static/icons/apple-touch-icon.png")
     assert icon.status_code == 200
     assert struct.unpack(">II", icon.data[16:24]) == (180, 180)

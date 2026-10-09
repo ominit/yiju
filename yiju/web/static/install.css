@@ -5,10 +5,6 @@
   margin-top: 24px;
 }
 
-.install-panel p + p {
-  margin-top: 0;
-}
-
 @media (display-mode: standalone) {
   body:not(.study-layout) {
     padding-top: env(safe-area-inset-top);
