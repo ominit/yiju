@@ -75,12 +75,17 @@
       if (!flags.has(word))
         flags.set(word, button.getAttribute("aria-pressed") === "true");
       const flagged = flags.get(word);
+      const session = button.closest("#study-session");
+      const concealed =
+        session &&
+        session.dataset.direction !== "recognition" &&
+        !session.querySelector(".study-card.revealed");
       button.setAttribute("aria-pressed", String(flagged));
       button.setAttribute(
         "aria-label",
-        `${flagged ? "Unflag" : "Flag"} ${word}`,
+        `${flagged ? "Unflag" : "Flag"} ${concealed ? "card" : word}`,
       );
-      button.title = `${flagged ? "Unflag" : "Flag for correction"} ${word}`;
+      button.title = `${flagged ? "Unflag" : "Flag for correction"}${concealed ? "" : ` ${word}`}`;
       button.disabled = pendingFlags.has(word);
     });
   }
@@ -142,7 +147,29 @@
     audioURL = url;
     player = new Audio(url);
     player.preload = "auto";
+    const current = player;
+    player.addEventListener("playing", () => {
+      if (current !== player) return;
+      listeningStatus("Playing…");
+      document.querySelectorAll("[data-audio-failed]").forEach((button) => {
+        delete button.dataset.audioFailed;
+      });
+    });
+    player.addEventListener("ended", () => {
+      if (current === player) listeningStatus("");
+    });
+    player.addEventListener("error", () => {
+      if (current === player)
+        listeningStatus("Audio unavailable. Tap to retry.");
+    });
     player.load();
+  }
+
+  function listeningStatus(message) {
+    const status = document.querySelector("[data-listening-status]");
+    if (!status) return;
+    status.hidden = !message;
+    status.textContent = message;
   }
 
   function playAudio() {
@@ -153,12 +180,18 @@
     if (current.readyState) current.currentTime = 0;
     current.play().catch((error) => {
       if (current !== player || muted || error.name === "AbortError") return;
-      const button = document.querySelector("[data-audio-replay]");
-      if (button) {
-        button.title = "Audio unavailable. Click to retry.";
-        button.setAttribute("aria-label", "Retry pronunciation");
-        button.dataset.audioFailed = "true";
+      if (error.name === "NotAllowedError") {
+        listeningStatus("");
+        return;
       }
+      listeningStatus("Audio unavailable. Tap to retry.");
+      document
+        .querySelectorAll("[data-audio-replay], [data-listening-play]")
+        .forEach((button) => {
+          button.title = "Audio unavailable. Click to retry.";
+          button.setAttribute("aria-label", "Retry pronunciation");
+          button.dataset.audioFailed = "true";
+        });
     });
   }
 
@@ -521,6 +554,11 @@
     syncAudio();
     stopAudio();
     prepareAudio();
+    if (
+      document.querySelector("#study-session")?.dataset.direction ===
+      "listening"
+    )
+      playAudio();
     mountBoard();
     mountPronunciation();
   }
@@ -535,6 +573,7 @@
     board = null;
   });
   document.addEventListener("yiju:revealed", () => {
+    syncFlags();
     syncAudio();
     playAudio();
     schedulePronunciation();
@@ -595,8 +634,12 @@
       if (muted) stopAudio();
       else if (document.querySelector(".study-card.revealed")) playAudio();
       else prepareAudio();
+      document.dispatchEvent(
+        new CustomEvent("yiju:audio-changed", { detail: { muted } }),
+      );
     }
-    if (button.matches("[data-audio-replay]")) {
+    if (button.matches("[data-audio-replay], [data-listening-play]")) {
+      if (player?.error) stopAudio();
       if (button.dataset.audioFailed) {
         stopAudio();
         delete button.dataset.audioFailed;

@@ -5,6 +5,8 @@
      tabindex="-1"
      data-card-id="{{ card.id if card else '' }}"
      data-card-version="{{ card.version if card else '' }}"
+     data-card-family="{{ card_family if card else '' }}"
+     data-include-listening="{{ 'true' if include_listening|default(true) else 'false' }}"
      data-audio-url="{{ url_for('audio.pronunciation', card_id=card.id) if card else '' }}"
      data-direction="{{ card.direction if card else '' }}">
   {% for message in get_flashed_messages() %}<div class="notice" role="status">{{ message }}</div>{% endfor %}
@@ -21,7 +23,7 @@
           {{ review_undo(last_review, csrf) }}
         </div>
         <div class="practice-controls">
-          {{ flag(card.word, card.word in flagged_words, csrf) }}
+          {{ flag(card.word, card.word in flagged_words, csrf, concealed=not answer and card.direction != 'recognition') }}
           <button class="icon-button"
                   type="button"
                   data-audio-replay
@@ -40,7 +42,7 @@
         </div>
       </div>
       <div class="study-scroll">
-        <div class="study-body {% if card.direction == 'production' %}drawing-active{% endif %}">
+        <div class="study-body {% if card.direction in ['production', 'listening'] %}drawing-active{% endif %}">
           <div class="question">
             <div class="question-content">
               {% if card.direction == 'production' %}
@@ -54,14 +56,28 @@
                        {% if answer %}hidden{% endif %}>{{ definition(word_definition, include_examples=false) }}</div>
                 {% endif %}
               {% endif %}
+              {% if card.direction == 'listening' %}
+                <div class="listening-prompt"
+                     data-hide-answer
+                     {% if answer %}hidden{% endif %}>
+                  <button class="listening-play"
+                          type="button"
+                          data-listening-play
+                          aria-label="Play audio">
+                    {{ icon("audio") }}
+                    <span data-listening-label>Play audio</span>
+                  </button>
+                  <p class="small muted" data-listening-status role="status" hidden></p>
+                </div>
+              {% endif %}
               <p class="chinese question-text {% if card.sentence_id %}sentence-text{% endif %}"
                  data-reveal-answer
-                 {% if card.direction == 'production' and not answer %}hidden{% endif %}
+                 {% if card.direction != 'recognition' and not answer %}hidden{% endif %}
                  lang="zh-Hans">{{ pronounced(card.chinese or card.word, card.sentence_pinyin if card.sentence_id else card.word_pinyin, answer, stroke_glyphs) }}</p>
               <p class="small muted" data-stroke-feedback role="status" hidden></p>
             </div>
           </div>
-          {% if card.direction == 'production' %}
+          {% if card.direction in ['production', 'listening'] %}
             <section class="drawing-board" aria-label="Handwriting practice">
               <div class="drawing-stage">
                 <div class="drawing-surfaces">
@@ -213,6 +229,15 @@
     <section class="empty-state panel">
       <h1>No cards due</h1>
       {{ review_undo(last_review, csrf) }}
+      <button class="icon-button"
+              type="button"
+              data-audio-toggle
+              aria-pressed="false"
+              aria-label="Mute pronunciation"
+              title="Mute pronunciation">
+        <span data-audio-on>{{ icon("audio") }}</span>
+        <span data-audio-off hidden>{{ icon("muted") }}</span>
+      </button>
       <div class="actions">
         <a class="button" href="{{ url_for('pages.home') }}">Back to overview</a>
         <a class="button secondary" href="{{ url_for('pages.sentences') }}">Browse sentences</a>

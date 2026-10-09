@@ -12,7 +12,7 @@ from yiju.core.scheduling import intervals, now_utc
 from yiju.core.selection import analyze
 from yiju.storage.database import settings, vocabulary_words
 from yiju.storage.learning import known_words
-from yiju.storage.queue import study_queue
+from yiju.storage.queue import card_family, study_queue
 
 from . import database
 from .strokes import available_strokes
@@ -68,6 +68,7 @@ def _card_context(
         )
     return {
         "card": card,
+        "card_family": card_family(card),
         "flagged_words": {
             row["word"] for row in connection.execute("SELECT word FROM word_flags")
         },
@@ -92,16 +93,26 @@ def study_response() -> str | Response:
     )
     connection = database()
     now = now_utc()
-    queue = study_queue(connection, now)
+    include_listening = (
+        request.headers.get("X-Yiju-Audio", request.args.get("audio")) != "muted"
+    )
+    card_id = request.args.get("card")
+    queue = study_queue(
+        connection,
+        now,
+        include_listening=include_listening,
+        preferred_card_id=card_id,
+    )
     last_review = connection.execute(
         "SELECT id FROM reviews WHERE undone = 0 ORDER BY id DESC LIMIT 1"
     ).fetchone()
-    card_id = request.args.get("card")
     card = next(
         (row for row in queue if row["id"] == card_id), queue[0] if queue else None
     )
     if card_id is not None and (card is None or card_id != card["id"]):
-        return redirect(url_for("pages.study"))
+        return redirect(
+            url_for("pages.study", audio="muted" if not include_listening else None)
+        )
     batch = ([card] if card is not None else []) + [
         row for row in queue if card is not None and row["id"] != card["id"]
     ][:11]
@@ -114,12 +125,16 @@ def study_response() -> str | Response:
             count=max(1, len(queue) - index),
             answer=False,
             last_review=last_review,
+            include_listening=include_listening,
         )
         for index, row in enumerate(batch)
     ]
     if request.headers.get("X-Yiju-Buffer") == "1":
         return jsonify(
-            cards=prepared, review_id=last_review["id"] if last_review else None
+            cards=prepared,
+            review_id=last_review["id"] if last_review else None,
+            count=len(queue),
+            include_listening=include_listening,
         )
     return render_template(
         template,
@@ -130,4 +145,5 @@ def study_response() -> str | Response:
         answer=request.args.get("answer") == "1",
         last_review=last_review,
         prepared=prepared[1:],
+        include_listening=include_listening,
     )

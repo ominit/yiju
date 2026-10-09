@@ -79,6 +79,13 @@
     </div>
     <button class="button">Save settings</button>
   </form>
+  <section class="panel install-panel" data-install-panel hidden>
+    <h2>Add to home screen</h2>
+    <p class="muted">Open Yiju in its own window from your home screen.</p>
+    <button class="button secondary" type="button" data-install-button hidden>Install Yiju</button>
+    <p class="small muted" data-install-ios hidden>In Safari, tap Share, then Add to Home Screen.</p>
+    <p class="small muted" data-install-status role="status" hidden></p>
+  </section>
   <section class="panel backup-panel">
     <h2>Backup</h2>
     <a class="button secondary" href="{{ url_for('actions.backup') }}">Download backup</a>

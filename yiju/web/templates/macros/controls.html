@@ -43,12 +43,12 @@
     </button>
   </form>
 {% endmacro %}
-{% macro flag(word, flagged, csrf) %}
+{% macro flag(word, flagged, csrf, concealed=false) %}
   <button type="button"
           class="icon-button flag-button"
           data-flag-word="{{ word }}"
           data-csrf="{{ csrf }}"
           aria-pressed="{{ 'true' if flagged else 'false' }}"
-          aria-label="{{ 'Unflag' if flagged else 'Flag' }} {{ word }}"
-          title="{{ 'Unflag' if flagged else 'Flag for correction' }} {{ word }}">{{ icon("flag") }}</button>
+          aria-label="{{ 'Unflag' if flagged else 'Flag' }} {{ 'card' if concealed else word }}"
+          title="{{ 'Unflag' if flagged else 'Flag for correction' }}{{ '' if concealed else ' ' ~ word }}">{{ icon("flag") }}</button>
 {% endmacro %}

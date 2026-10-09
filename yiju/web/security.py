@@ -54,6 +54,7 @@ def response_headers(response: Response) -> Response:
         response.headers["Cache-Control"] = "no-store"
         response.vary.add("X-Yiju-Partial")
         response.vary.add("X-Yiju-Buffer")
+        response.vary.add("X-Yiju-Audio")
     response.vary.add("Accept-Encoding")
     if (
         request.accept_encodings["gzip"] > 0

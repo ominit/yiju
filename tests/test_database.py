@@ -143,7 +143,7 @@ def test_migration_activates_pending_sentences_and_preserves_progress(
                 db.execute(
                     "SELECT count(*) FROM cards WHERE sentence_id IS NOT NULL"
                 ).fetchone()[0]
-                == 4
+                == 6
             )
             assert (
                 dict(

@@ -25,11 +25,15 @@ pages = Blueprint("pages", __name__)
 def home() -> str:
     connection = database()
     now = now_utc()
+    include_listening = (
+        request.headers.get("X-Yiju-Audio", request.args.get("audio")) != "muted"
+    )
     upcoming = connection.execute(
-        "SELECT min(due) FROM cards WHERE reviews > 0 AND suspended = 0 AND due > ?",
-        (now.isoformat(),),
+        "SELECT min(due) FROM cards WHERE reviews > 0 AND suspended = 0 AND due > ? "
+        "AND (? OR direction != 'listening')",
+        (now.isoformat(), include_listening),
     ).fetchone()[0]
-    stats = overview(connection, now)
+    stats = overview(connection, now, include_listening=include_listening)
     learning = (
         connection.execute(
             "SELECT count(*) FROM knowledge WHERE word IN (SELECT word FROM entries)"

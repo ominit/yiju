@@ -19,7 +19,8 @@ def test_new_words_mix_directions_before_daily_limit(
     for _ in range(10):
         queue = study_queue(connection, now)
         assert len(queue) == 2
-        assert {card["direction"] for card in queue} == {"recognition", "production"}
+        assert len({card["direction"] for card in queue}) == 2
+        assert len({card["word"] for card in queue}) == 2
         assert all(card["sentence_id"] is None for card in queue)
 
 
@@ -32,13 +33,19 @@ def test_fresh_decks_do_not_follow_one_fixed_order(
     now = datetime.now(UTC) + timedelta(seconds=1)
     orders = [study_queue(connection, now) for _ in range(20)]
     assert len({tuple(card["id"] for card in order) for order in orders}) > 1
-    assert {order[0]["direction"] for order in orders} == {"recognition", "production"}
+    assert {order[0]["direction"] for order in orders} == {
+        "recognition",
+        "production",
+        "listening",
+    }
     expected = {
-        row["id"]
-        for row in connection.execute("SELECT id FROM cards WHERE sentence_id IS NULL")
+        row["word"]
+        for row in connection.execute(
+            "SELECT word FROM cards WHERE sentence_id IS NULL"
+        )
     }
     for order in orders:
-        assert {card["id"] for card in order} == expected
+        assert {card["word"] for card in order} == expected
         assert len(order) == len(expected)
     assert connection.execute("SELECT count(*) FROM reviews").fetchone()[0] == 0
 
@@ -49,7 +56,8 @@ def test_reviews_keep_due_order_and_can_validate_any_prepared_new_card(
     import_xml(connection, xml_export, "words.xml")
     now = datetime.now(UTC) + timedelta(seconds=1)
     cards = connection.execute(
-        "SELECT * FROM cards WHERE sentence_id IS NULL ORDER BY id"
+        "SELECT * FROM cards WHERE sentence_id IS NULL "
+        "AND direction = 'recognition' ORDER BY id"
     ).fetchall()
     for index, card in enumerate(cards[:2]):
         review_card(connection, card["id"], card["version"], 3, now)

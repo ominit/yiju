@@ -34,7 +34,10 @@
   async function requestPage(url, options = {}) {
     const response = await fetch(url, {
       ...options,
-      headers: { "X-Yiju-Partial": "page" },
+      headers: {
+        "X-Yiju-Partial": "page",
+        ...window.yijuStudy.audioHeaders(),
+      },
     });
     if (!response.ok) {
       const data = response.headers

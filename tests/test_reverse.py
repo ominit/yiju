@@ -59,11 +59,11 @@ def test_reverse_word_schedule_is_independent_and_both_reviews_share_progress(
     undo_review(connection, latest - 1)
     assert connection.execute("SELECT count(*) FROM knowledge").fetchone()[0] == 0
     seed_known_word(connection, "我", now)
-    queue = study_queue(connection, now)
+    queue = study_queue(connection, now, card_id=reverse["id"])
     assert any(row["id"] == reverse["id"] for row in queue)
     assert not any(row["id"] == forward["id"] for row in queue)
     import_xml(connection, xml_export, "again.xml")
-    assert connection.execute("SELECT count(*) FROM cards").fetchone()[0] == 10
+    assert connection.execute("SELECT count(*) FROM cards").fetchone()[0] == 15
 
 
 def test_sentence_directions_contribute_to_one_learned_count(
@@ -122,11 +122,12 @@ def test_reverse_sentence_still_appears_after_words_become_familiar(
     connection.execute("DELETE FROM knowledge WHERE word = '去'")
     connection.commit()
     seed_known_word(connection, "去", now)
-    assert any(
-        row["sentence_id"] == forward["sentence_id"]
-        and row["direction"] == "production"
-        for row in study_queue(connection, now)
-    )
+    reverse = connection.execute(
+        "SELECT * FROM cards WHERE sentence_id = ? AND direction = 'production'",
+        (forward["sentence_id"],),
+    ).fetchone()
+    assert not study_queue(connection, now, card_id=reverse["id"])
+    assert study_queue(connection, now + timedelta(days=1), card_id=reverse["id"])
 
 
 def test_reverse_cards_require_a_definition_without_answer_hints(
@@ -165,7 +166,7 @@ def test_upgrade_adds_reverse_cards_without_changing_existing_progress(
         ).fetchone()
         review_card(db, card["id"], card["version"], 3, now)
         db.execute("UPDATE cards SET suspended = 1 WHERE word = '学习'")
-        db.execute("DELETE FROM cards WHERE direction = 'production'")
+        db.execute("DELETE FROM cards WHERE direction != 'recognition'")
         db.execute("ALTER TABLE cards DROP COLUMN direction")
         db.execute("PRAGMA user_version = 4")
         before = {row["id"]: dict(row) for row in db.execute("SELECT * FROM cards")}
@@ -181,7 +182,7 @@ def test_upgrade_adds_reverse_cards_without_changing_existing_progress(
         initialize(path)
         with connect(path) as db:
             assert db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
-            assert db.execute("SELECT count(*) FROM cards").fetchone()[0] == 10
+            assert db.execute("SELECT count(*) FROM cards").fetchone()[0] == 15
             for row in db.execute(
                 "SELECT * FROM cards WHERE direction = 'recognition'"
             ):
@@ -302,4 +303,4 @@ def test_library_does_not_duplicate_words_and_pauses_both_directions(
             for row in db.execute(
                 "SELECT suspended FROM cards WHERE word = '去' AND sentence_id IS NULL"
             )
-        ] == [1, 1]
+        ] == [1, 1, 1]

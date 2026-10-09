@@ -4,6 +4,11 @@
     <head>
       <meta charset="utf-8">
       <meta name="color-scheme" content="dark">
+      <meta name="theme-color" content="#101417">
+      <meta name="mobile-web-app-capable" content="yes">
+      <meta name="apple-mobile-web-app-capable" content="yes">
+      <meta name="apple-mobile-web-app-title" content="Yiju">
+      <meta name="apple-mobile-web-app-status-bar-style" content="black">
       <meta name="viewport"
             content="width=device-width, initial-scale=1, viewport-fit=cover">
       <meta name="description" content="Chinese vocabulary and sentence study.">
@@ -11,7 +16,13 @@
       <link rel="icon"
             href="{{ url_for('static', filename='favicon.svg') }}"
             type="image/svg+xml">
+      <link rel="manifest" href="{{ url_for('install.manifest') }}">
+      <link rel="apple-touch-icon"
+            href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
       <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+      <link rel="stylesheet"
+            href="{{ url_for('static', filename='install.css') }}">
+      <script src="{{ url_for('static', filename='install.js') }}" defer></script>
       <script src="{{ url_for('static', filename='app.js') }}" defer></script>
       <script src="{{ url_for('static', filename='practice.js') }}" defer></script>
       <script src="{{ url_for('static', filename='vendor/hanzi-writer.min.js') }}"

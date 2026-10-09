@@ -29,7 +29,7 @@ def test_import_is_repeatable_and_keeps_reviews(
     first = study_queue(connection, now)[0]
     review_card(connection, first["id"], first["version"], 3, now)
     assert import_xml(connection, xml_export, "renamed.xml") == batch
-    assert connection.execute("SELECT count(*) FROM cards").fetchone()[0] == 10
+    assert connection.execute("SELECT count(*) FROM cards").fetchone()[0] == 15
     assert connection.execute("SELECT count(*) FROM reviews").fetchone()[0] == 1
     assert connection.execute("SELECT count(*) FROM sentences").fetchone()[0] == 2
     second = import_xml(
@@ -101,7 +101,7 @@ def test_new_sentences_wait_for_a_known_word_but_reviews_continue(
     seed_known_word(connection, "学习", now)
     assert all(row["sentence_id"] is None for row in study_queue(connection, now))
     seed_known_word(connection, "我", now)
-    assert any(row["id"] == card["id"] for row in study_queue(connection, now))
+    assert study_queue(connection, now, card_id=card["id"])
     review_card(connection, card["id"], card["version"], 1, now)
     assert "我" not in known_words(connection, now)
     assert any(
@@ -258,12 +258,17 @@ def test_multiple_dictionary_senses_share_card_without_losing_definitions(
     import_xml(connection, modified, "second.xml")
     now = datetime.now(UTC) + timedelta(seconds=1)
     cards = [
-        row
-        for row in study_queue(connection, now)
-        if row["word"] == "我" and row["sentence_id"] is None
+        study_queue(connection, now, card_id=row["id"])[0]
+        for row in connection.execute(
+            "SELECT id FROM cards WHERE word = '我' AND sentence_id IS NULL"
+        )
     ]
-    assert {card["direction"] for card in cards} == {"recognition", "production"}
-    assert len(cards) == 2
+    assert {card["direction"] for card in cards} == {
+        "recognition",
+        "production",
+        "listening",
+    }
+    assert len(cards) == 3
     for card in cards:
         assert "pronoun I; me" in card["definition"]
         assert "another meaning" in card["definition"]

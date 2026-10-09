@@ -82,7 +82,7 @@
           <div class="card-directions">
             {% for card in item.cards %}
               <div>
-                <span>{{ 'Characters → meaning' if card.direction == 'recognition' else 'Meaning → characters' }}</span>
+                <span>{{ {'recognition': 'Characters → meaning', 'production': 'Meaning → characters', 'listening': 'Audio → characters'}[card.direction] }}</span>
                 <span class="small muted">{{ card.reviews }} reviews · {{ 'Paused' if card.suspended else 'New' if not card.reviews else 'Due ' ~ card.due[:10] }}</span>
               </div>
             {% endfor %}

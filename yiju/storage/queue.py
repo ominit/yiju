@@ -1,7 +1,6 @@
 import json
 import sqlite3
-from datetime import datetime
-from itertools import zip_longest
+from datetime import UTC, datetime, timedelta
 from random import SystemRandom
 from typing import cast
 
@@ -29,40 +28,94 @@ CARD_QUERY = (
     "FROM cards c JOIN entries e ON e.id = c.entry_id "
     "LEFT JOIN sentences s ON s.id = c.sentence_id "
 )
+ELIGIBLE_FILTER = (
+    "WHERE c.suspended = 0 AND c.due <= ? "
+    "AND NOT EXISTS (SELECT 1 FROM reviews r "
+    "JOIN cards sibling ON sibling.id = r.card_id "
+    "WHERE r.undone = 0 AND r.created >= ? AND r.created < ? "
+    "AND r.card_id != c.id AND "
+    "((c.sentence_id IS NULL AND sibling.sentence_id IS NULL "
+    "AND sibling.word = c.word) OR "
+    "(c.sentence_id IS NOT NULL AND sibling.sentence_id = c.sentence_id))) "
+)
 
 
-def _new_word_order(cards: list[sqlite3.Row]) -> list[sqlite3.Row]:
+def card_family(card: sqlite3.Row) -> str:
+    return (
+        f"sentence:{card['sentence_id']}"
+        if card["sentence_id"] is not None
+        else f"word:{card['word']}"
+    )
+
+
+def _new_card_order(cards: list[sqlite3.Row]) -> list[sqlite3.Row]:
     random = SystemRandom()
     random.shuffle(cards)
     directions = [
         [card for card in cards if card["direction"] == direction]
-        for direction in ("recognition", "production")
+        for direction in ("recognition", "production", "listening")
     ]
     random.shuffle(directions)
-    return [
-        card for pair in zip_longest(*directions) for card in pair if card is not None
-    ]
+    ordered = []
+    siblings = []
+    seen: set[str] = set()
+    while any(directions):
+        for direction in directions:
+            while direction and card_family(direction[-1]) in seen:
+                siblings.append(direction.pop())
+            if direction:
+                card = direction.pop()
+                ordered.append(card)
+                seen.add(card_family(card))
+    return ordered + siblings
+
+
+def _family_cards(
+    cards: list[sqlite3.Row], preferred_card_id: str | None
+) -> list[sqlite3.Row]:
+    if preferred_card_id is not None:
+        cards.sort(key=lambda row: row["id"] != preferred_card_id)
+    seen: set[str] = set()
+    selected = []
+    for card in cards:
+        family = card_family(card)
+        if family not in seen:
+            selected.append(card)
+            seen.add(family)
+    return selected
 
 
 def study_queue(
-    connection: sqlite3.Connection, now: datetime, *, card_id: str | None = None
+    connection: sqlite3.Connection,
+    now: datetime,
+    *,
+    card_id: str | None = None,
+    include_listening: bool = True,
+    preferred_card_id: str | None = None,
 ) -> list[sqlite3.Row]:
+    now = now.astimezone(UTC)
+    day_start = now.date().isoformat()
+    day_end = (now.date() + timedelta(days=1)).isoformat()
     config = settings(connection)
     known = known_words(connection, now)
     started = connection.execute(
-        "SELECT count(*) FROM reviews WHERE undone = 0 AND created >= ? "
+        "SELECT count(*) FROM reviews WHERE undone = 0 "
+        "AND created >= ? AND created < ? "
         "AND json_extract(card_before, '$.reviews') = 0",
-        (now.date().isoformat(),),
+        (day_start, day_end),
     ).fetchone()[0]
     remaining = max(0, int(config["new_per_day"]) - started)
     due = cast(
         "list[sqlite3.Row]",
         connection.execute(
             CARD_QUERY
-            + "WHERE c.suspended = 0 AND c.due <= ? "
+            + ELIGIBLE_FILTER
+            + ("AND c.direction != 'listening' " if not include_listening else "")
             + ("AND c.id = ? " if card_id is not None else "")
             + "ORDER BY (c.reviews = 0), c.due, c.id",
-            (now.isoformat(), card_id) if card_id is not None else (now.isoformat(),),
+            (now.isoformat(), day_start, day_end, card_id)
+            if card_id is not None
+            else (now.isoformat(), day_start, day_end),
         ).fetchall(),
     )
     vocabulary = vocabulary_words(connection)
@@ -74,7 +127,7 @@ def study_queue(
             or all(token in vocabulary for token in json.loads(row["tokens"]))
         )
         and (
-            row["direction"] == "recognition"
+            row["direction"] != "production"
             or (
                 bool(row["translation"].strip())
                 and not contains_han(row["translation"])
@@ -90,7 +143,7 @@ def study_queue(
         if row["reviews"]:
             continue
         if row["sentence_id"] is None:
-            if row["word"] not in known or row["direction"] == "production":
+            if row["word"] not in known or row["direction"] != "recognition":
                 new_words.append(row)
         else:
             analysis = analyze(
@@ -104,15 +157,21 @@ def study_queue(
             )
             if analysis.eligible:
                 new_sentences.append((analysis.score, row))
-    new_words = _new_word_order(new_words)
-    new_sentences.sort(
-        key=lambda item: (-item[0], item[1]["direction"] == "production", item[1]["id"])
+    sentence_scores = {row["id"]: score for score, row in new_sentences}
+    sentences = _new_card_order([row for _, row in new_sentences])
+    sentences.sort(key=lambda row: -sentence_scores[row["id"]])
+    selected = _family_cards(
+        reviews + sentences + _new_card_order(new_words), preferred_card_id
     )
-    return reviews + ([row for _, row in new_sentences] + new_words)[:remaining]
+    return [row for row in selected if row["reviews"]] + [
+        row for row in selected if not row["reviews"]
+    ][:remaining]
 
 
-def overview(connection: sqlite3.Connection, now: datetime) -> dict[str, int]:
-    queue = study_queue(connection, now)
+def overview(
+    connection: sqlite3.Connection, now: datetime, *, include_listening: bool = True
+) -> dict[str, int]:
+    queue = study_queue(connection, now, include_listening=include_listening)
     return {
         "words": connection.execute(
             "SELECT count(DISTINCT word) FROM entries"

@@ -453,6 +453,36 @@ input[type="file"]::file-selector-button {
   background: var(--accent-soft);
   color: var(--accent);
 }
+.listening-prompt {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+}
+.listening-play {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 20px 28px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--input);
+  color: var(--accent);
+  font-size: 20px;
+}
+.listening-play:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.listening-play svg {
+  width: 30px;
+  height: 30px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .question {
   text-align: center;
   min-width: 0;

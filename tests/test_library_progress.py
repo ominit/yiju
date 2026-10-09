@@ -54,7 +54,7 @@ def test_sentence_progress_counts_days_once_and_contributes_to_word_progress(
     word = next(item for item in library.words() if item.text == "去")
     sentence = next(item for item in library.sentences() if item.text == "我去。")
     assert word.state == "learning"
-    assert word.reviews == 2
+    assert word.reviews == 3
     assert word.progress.days == 1
     assert sentence.progress.days == 1
     assert sentence.state == "learning"
@@ -242,9 +242,9 @@ def test_library_word_cards_do_not_load_sentence_schedules(
     connection.set_trace_callback(statements.append)
     library = Library(connection, datetime.now(UTC))
     words = library.words()
-    assert all(len(word.cards) == 2 for word in words)
+    assert all(len(word.cards) == 3 for word in words)
     card_queries = [query for query in statements if "SELECT * FROM cards" in query]
     assert len(card_queries) == 1
     assert "WHERE sentence_id IS NULL" in card_queries[0]
     sentences = library.sentences()
-    assert all(len(sentence.cards) == 2 for sentence in sentences)
+    assert all(len(sentence.cards) == 3 for sentence in sentences)

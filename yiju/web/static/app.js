@@ -2,6 +2,14 @@ let studyPending = false;
 let studyObserver;
 let studyUpdating;
 let studyDeparting = false;
+let studyMuted = false;
+try {
+  studyMuted = sessionStorage.getItem("yiju-muted") === "true";
+} catch {}
+
+function audioHeaders() {
+  return { "X-Yiju-Audio": studyMuted ? "muted" : "enabled" };
+}
 
 function layoutDrawing(body) {
   const surfaces = body.querySelector(".drawing-surfaces");
@@ -156,6 +164,11 @@ function syncStudyControls() {
 }
 
 function replaceStudy(next) {
+  if (studyMuted && next.dataset.direction === "listening") {
+    next.querySelector(".study-card").hidden = true;
+    next.querySelector(".reveal-area").hidden = true;
+    next.querySelector(".rating-area").hidden = true;
+  }
   document.dispatchEvent(new Event("yiju:unmount"));
   document.querySelector("#study-session").replaceWith(next);
   initializeStudy();
@@ -177,7 +190,11 @@ function parseStudy(html) {
 async function studyFetch(url, options = {}) {
   const response = await fetch(url, {
     ...options,
-    headers: { "X-Yiju-Partial": "study", ...options.headers },
+    headers: {
+      "X-Yiju-Partial": "study",
+      ...audioHeaders(),
+      ...options.headers,
+    },
   });
   if (!response.ok) {
     const data = response.headers
@@ -210,7 +227,11 @@ async function prepareStudy() {
   const revision = studyRevision;
   preparing = (async () => {
     try {
-      const response = await studyFetch("/study", {
+      const currentId =
+        document.querySelector("#study-session")?.dataset.cardId;
+      const url = new URL("/study", location.origin);
+      if (currentId && !waitingForCard) url.searchParams.set("card", currentId);
+      const response = await studyFetch(url, {
         headers: { "X-Yiju-Buffer": "1" },
       });
       const batch = await response.json();
@@ -227,9 +248,14 @@ async function prepareStudy() {
         .filter(
           (card) =>
             card &&
+            (!studyMuted || card.dataset.direction !== "listening") &&
             !consumedCards.has(cardKey(card)) &&
-            (waitingForCard || cardKey(card) !== cardKey(current)),
+            (waitingForCard ||
+              card.dataset.cardFamily !== current.dataset.cardFamily),
         );
+      current.dataset.includeListening = String(batch.include_listening);
+      const count = current.querySelector("[data-card-count]");
+      if (count && !waitingForCard) count.textContent = `${batch.count} cards`;
       document.dispatchEvent(
         new CustomEvent("yiju:prepared", { detail: { cards: preparedCards } }),
       );
@@ -314,6 +340,11 @@ function rateStudy(form, submitter) {
   document.dispatchEvent(new Event("yiju:changed"));
   consumedCards.add(key);
   studyRevision++;
+  preparedCards = preparedCards.filter(
+    (card) =>
+      card.dataset.cardFamily !== session.dataset.cardFamily &&
+      (!studyMuted || card.dataset.direction !== "listening"),
+  );
   if (preparedCards.length) replaceStudy(preparedCards.shift());
   else {
     waitingForCard = true;
@@ -358,7 +389,12 @@ async function performStudyUpdate(url, options = {}) {
     studyPending = false;
     syncStudyControls();
   }
-  if (!studyFailure) prepareStudy();
+  if (!studyFailure) {
+    const current = document.querySelector("#study-session");
+    if (current.dataset.includeListening !== String(!studyMuted))
+      queueMicrotask(reconcileAudioQueue);
+    else prepareStudy();
+  }
 }
 
 async function retryStudy() {
@@ -499,7 +535,7 @@ function mountPage() {
   if (!document.querySelector("#study-session")) return;
   preparedCards = Array.from(
     document.querySelector("#study-prepared")?.content.children || [],
-  );
+  ).filter((card) => !studyMuted || card.dataset.direction !== "listening");
   consumedCards.clear();
   lastReview = document.querySelector("[name=review_id]")?.value || "";
   waitingForCard = false;
@@ -520,9 +556,47 @@ function mountPage() {
       new Error("Could not recover unsaved ratings from session storage."),
     );
   }
+  if (
+    document.querySelector("#study-session").dataset.includeListening !==
+    String(!studyMuted)
+  )
+    reconcileAudioQueue();
 }
 
+async function reconcileAudioQueue() {
+  if (studyUpdating) await studyUpdating;
+  const current = document.querySelector("#study-session");
+  if (!current || studyDeparting) return;
+  studyRevision++;
+  preparedCards = preparedCards.filter(
+    (card) => !studyMuted || card.dataset.direction !== "listening",
+  );
+  if (studyMuted && current.dataset.direction === "listening") {
+    if (preparedCards.length) replaceStudy(preparedCards.shift());
+    else {
+      waitingForCard = true;
+      current.querySelector(".study-card").hidden = true;
+      current.querySelector(".reveal-area").hidden = true;
+      current.querySelector(".rating-area").hidden = true;
+    }
+  } else if (!current.dataset.cardId) {
+    waitingForCard = true;
+  }
+  syncStudyControls();
+  if (preparing) await preparing;
+  if (saving) await saving;
+  if (outbox.length) await saveRatings();
+  if (!studyFailure && !studyDeparting) await prepareStudy();
+}
+
+document.addEventListener("yiju:audio-changed", (event) => {
+  studyMuted = event.detail.muted;
+  document.dispatchEvent(new Event("yiju:changed"));
+  reconcileAudioQueue();
+});
+
 window.yijuStudy = {
+  audioHeaders,
   preparedCards() {
     return preparedCards;
   },
@@ -547,6 +621,15 @@ window.yijuStudy = {
   cancelNavigation() {
     studyDeparting = false;
     syncStudyControls();
+    const current = document.querySelector("#study-session");
+    if (
+      current &&
+      (current.dataset.includeListening !== String(!studyMuted) ||
+        (studyMuted && current.dataset.direction === "listening"))
+    ) {
+      reconcileAudioQueue();
+      return;
+    }
     if (
       document.querySelector("#study-session") &&
       !studyFailure &&

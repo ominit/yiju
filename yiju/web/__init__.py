@@ -53,6 +53,7 @@ def create_app(database_path: Path | None = None) -> Flask:
     from .actions import actions
     from .audio import audio
     from .flags import flags
+    from .install import install
     from .pages import pages
     from .strokes import strokes
 
@@ -60,5 +61,6 @@ def create_app(database_path: Path | None = None) -> Flask:
     app.register_blueprint(actions)
     app.register_blueprint(audio)
     app.register_blueprint(flags)
+    app.register_blueprint(install)
     app.register_blueprint(strokes)
     return app
