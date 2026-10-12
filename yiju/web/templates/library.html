@@ -12,18 +12,23 @@
       <a class="button" href="{{ url_for('pages.import_page') }}">{{ icon('upload', 18) }}Import</a>
     </div>
   </header>
-
   <nav class="segmented" aria-label="Library content">
-    <a href="{{ url_for('pages.library') }}" {% if kind == 'words' %}aria-current="page"{% endif %}>Words <span>{{ word_count }}</span></a>
-    <a href="{{ url_for('pages.sentences') }}" {% if kind == 'sentences' %}aria-current="page"{% endif %}>Sentences <span>{{ sentence_count }}</span></a>
+    <a href="{{ url_for('pages.library') }}"
+       {% if kind == 'words' %}aria-current="page"{% endif %}>Words <span>{{ word_count }}</span></a>
+    <a href="{{ url_for('pages.sentences') }}"
+       {% if kind == 'sentences' %}aria-current="page"{% endif %}>Sentences <span>{{ sentence_count }}</span></a>
   </nav>
-
   <form class="toolbar" method="get" role="search" data-live-search>
     <input type="hidden" name="filter" value="{{ state }}">
     <label class="search">
       {{ icon('search', 18) }}
       <span class="sr-only">Search {{ kind }}</span>
-      <input type="search" name="q" value="{{ q }}" placeholder="{{ 'Characters, pinyin or meaning' if kind == 'words' else 'Chinese or translation' }}" autocomplete="off" spellcheck="false">
+      <input type="search"
+             name="q"
+             value="{{ q }}"
+             placeholder="{{ 'Characters, pinyin or meaning' if kind == 'words' else 'Chinese or translation' }}"
+             autocomplete="off"
+             spellcheck="false">
     </label>
     <label class="select">
       <span class="sr-only">Sort</span>
@@ -31,43 +36,46 @@
         {% for key, label in sorts.items() %}<option value="{{ key }}" {% if sort == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
       </select>
     </label>
-    <noscript><button class="button" type="submit">Search</button></noscript>
+    <noscript>
+      <button class="button" type="submit">Search</button>
+    </noscript>
   </form>
-
   <div data-results>
-  <nav class="chips" aria-label="Filter">
-    {% for key, label in filters %}
-      <a href="{{ url_for(endpoint, filter=key, q=q or none, sort=sort if sort != 'learning' else none) }}" {% if state == key %}aria-current="page"{% endif %}>{{ label }}<span>{{ counts[key] }}</span></a>
-    {% endfor %}
-  </nav>
-
-  {% if items %}
-    <ul class="list {{ kind }}">
-      {% for item in items %}
-        {% with details = details if (item.text if kind == 'words' else item.row.id) == opened else none %}
-          {% include 'library_item.html' %}
-        {% endwith %}
+    <nav class="chips" aria-label="Filter">
+      {% for key, label in filters %}
+        <a href="{{ url_for(endpoint, filter=key, q=q or none, sort=sort if sort != 'learning' else none) }}"
+           {% if state == key %}aria-current="page"{% endif %}>{{ label }}<span>{{ counts[key] }}</span></a>
       {% endfor %}
-    </ul>
-    {% if pages > 1 %}
-      <nav class="pager" aria-label="Pages">
-        {% if page > 1 %}<a class="button" href="{{ url_for(endpoint, filter=state, q=q or none, sort=sort, page=page - 1) }}">{{ icon('back', 18) }}Previous</a>{% else %}<span></span>{% endif %}
-        <span class="muted small">{{ total }} {{ kind }} · page {{ page }} of {{ pages }}</span>
-        {% if page < pages %}<a class="button" href="{{ url_for(endpoint, filter=state, q=q or none, sort=sort, page=page + 1) }}">Next{{ icon('next', 18) }}</a>{% else %}<span></span>{% endif %}
-      </nav>
-    {% else %}
-      <p class="list-count muted small">{{ total }} {{ kind if total != 1 else kind[:-1] }}</p>
-    {% endif %}
-  {% else %}
-    <section class="empty compact">
-      {% if q or state != 'all' %}
-        <h2>No matches</h2>
-        <a class="button" href="{{ url_for(endpoint) }}">Clear filters</a>
+    </nav>
+    {% if items %}
+      <ul class="list {{ kind }}">
+        {% for item in items %}
+          {% with details = details if (item.text if kind == 'words' else item.row.id) == opened else none %}
+            {% include 'library_item.html' %}
+          {% endwith %}
+        {% endfor %}
+      </ul>
+      {% if pages > 1 %}
+        <nav class="pager" aria-label="Pages">
+          {% if page > 1 %}<a class="button"
+   href="{{ url_for(endpoint, filter=state, q=q or none, sort=sort, page=page - 1) }}">{{ icon('back', 18) }}Previous</a>{% else %}<span></span>{% endif %}
+          <span class="muted small">{{ total }} {{ kind }} · page {{ page }} of {{ pages }}</span>
+          {% if page < pages %}<a class="button"
+   href="{{ url_for(endpoint, filter=state, q=q or none, sort=sort, page=page + 1) }}">Next{{ icon('next', 18) }}</a>{% else %}<span></span>{% endif %}
+        </nav>
       {% else %}
-        <h2>No {{ kind }} yet</h2>
-        <a class="button primary" href="{{ url_for('pages.import_page') }}">{{ icon('upload', 18) }}Import words</a>
+        <p class="list-count muted small">{{ total }} {{ kind if total != 1 else kind[:-1] }}</p>
       {% endif %}
-    </section>
-  {% endif %}
+    {% else %}
+      <section class="empty compact">
+        {% if q or state != 'all' %}
+          <h2>No matches</h2>
+          <a class="button" href="{{ url_for(endpoint) }}">Clear filters</a>
+        {% else %}
+          <h2>No {{ kind }} yet</h2>
+          <a class="button primary" href="{{ url_for('pages.import_page') }}">{{ icon('upload', 18) }}Import words</a>
+        {% endif %}
+      </section>
+    {% endif %}
   </div>
 {% endblock %}

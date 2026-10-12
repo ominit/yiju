@@ -12,7 +12,15 @@
         <label for="{{ name }}">{{ label }}</label>
         <p class="muted small">{{ help }}</p>
       </div>
-      <input id="{{ name }}" name="{{ name }}" type="number" inputmode="decimal" min="{{ min }}" max="{{ max }}" step="{{ step }}" value="{{ config[name] }}" required>
+      <input id="{{ name }}"
+             name="{{ name }}"
+             type="number"
+             inputmode="decimal"
+             min="{{ min }}"
+             max="{{ max }}"
+             step="{{ step }}"
+             value="{{ config[name] }}"
+             required>
     </div>
   {% endmacro %}
   <form method="post" action="{{ url_for('actions.save_settings') }}">
@@ -30,7 +38,10 @@
           <span class="label">Include fully familiar sentences</span>
           <span class="muted small">Also introduce sentences where you already know every word.</span>
         </span>
-        <input name="include_zero" type="checkbox" role="switch" {% if config.include_zero %}checked{% endif %}>
+        <input name="include_zero"
+               type="checkbox"
+               role="switch"
+               {% if config.include_zero %}checked{% endif %}>
       </label>
     </section>
     <section class="panel settings-group">
@@ -44,7 +55,6 @@
       <button class="button primary" type="submit">Save settings</button>
     </div>
   </form>
-
   <section class="panel settings-group">
     <h2>Data</h2>
     <div class="field">

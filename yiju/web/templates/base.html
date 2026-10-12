@@ -3,20 +3,24 @@
 <html lang="en">
   <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="color-scheme" content="dark">
     <meta name="theme-color" content="#0e1012">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="Yiju">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-status-bar-style"
+          content="black-translucent">
     <meta name="description" content="Chinese vocabulary and sentence study.">
     <meta name="csrf" content="{{ csrf }}">
-    <meta name="hanzi-writer" content="{{ asset('vendor/hanzi-writer.min.js') }}">
+    <meta name="hanzi-writer"
+          content="{{ asset('vendor/hanzi-writer.min.js') }}">
     <title>{% block title %}Yiju{% endblock %}</title>
     <link rel="icon" href="{{ asset('favicon.svg') }}" type="image/svg+xml">
     <link rel="manifest" href="{{ url_for('install.manifest') }}">
-    <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
+    <link rel="apple-touch-icon"
+          href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
     <link rel="stylesheet" href="{{ asset('app.css') }}">
     <script src="{{ asset('app.js') }}" type="module"></script>
     {% block head %}{% endblock %}
@@ -25,20 +29,25 @@
     {% block chrome %}
       <a class="skip-link" href="#main">Skip to content</a>
       <header class="topbar">
-        <a class="brand" href="{{ url_for('pages.home') }}" aria-label="Yiju home">
+        <a class="brand"
+           href="{{ url_for('pages.home') }}"
+           aria-label="Yiju home">
           <img src="{{ asset('favicon.svg') }}" alt="" width="28" height="28">
           <span>yiju</span>
         </a>
         <nav class="tabs" aria-label="Main">
           {% for key, endpoint, label in [('home', 'pages.home', 'Today'), ('study', 'study.page', 'Study'), ('library', 'pages.library', 'Library'), ('settings', 'pages.preferences', 'Settings')] %}
-            <a href="{{ url_for(endpoint) }}" {% if section == key %}aria-current="page"{% endif %}>
+            <a href="{{ url_for(endpoint) }}"
+               {% if section == key %}aria-current="page"{% endif %}>
               {{ icon(key, 22) }}<span>{{ label }}</span>
             </a>
           {% endfor %}
         </nav>
       </header>
     {% endblock %}
-    <main id="main" class="{% block main_class %}page{% endblock %}" tabindex="-1">
+    <main id="main"
+          class="{% block main_class %}page{% endblock %}"
+          tabindex="-1">
       {% block flashes %}
         {% with messages = get_flashed_messages() %}
           {% if messages %}

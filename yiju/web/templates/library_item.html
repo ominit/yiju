@@ -1,8 +1,12 @@
 {% from 'macros/ui.html' import icon, hanzi, senses, status, sentence_status, progress_panel, card_table %}
 {% set key = item.text if kind == 'words' else item.row.id %}
 {% set url = url_for('pages.word_detail', word=item.text) if kind == 'words' else url_for('pages.sentence_detail', sentence_id=item.row.id) %}
-<li class="item{% if details %} open{% endif %}" data-item="{{ key }}" data-url="{{ url }}">
-  <button class="row" type="button" aria-expanded="{{ 'true' if details else 'false' }}">
+<li class="item{% if details %} open{% endif %}"
+    data-item="{{ key }}"
+    data-url="{{ url }}">
+  <button class="row"
+          type="button"
+          aria-expanded="{{ 'true' if details else 'false' }}">
     {% if kind == 'words' %}
       <span class="row-hanzi" lang="zh-Hans">{{ item.text }}</span>
       <span class="row-body">
@@ -10,7 +14,9 @@
         <span class="row-meaning">{{ item.meaning }}</span>
       </span>
       <span class="row-meta">
-        <span class="flagged" title="Flagged" {% if item.text not in flags %}hidden{% endif %}>{{ icon('flag', 16) }}</span>
+        <span class="flagged"
+              title="Flagged"
+              {% if item.text not in flags %}hidden{% endif %}>{{ icon('flag', 16) }}</span>
         {{ status(item.state, item.hidden) }}
         <span class="row-chevron">{{ icon('next', 18) }}</span>
       </span>
@@ -36,17 +42,32 @@
             {% if details.traditional %}<p class="muted small">Traditional <span lang="zh-Hant">{{ details.traditional }}</span></p>{% endif %}
           </div>
           <div class="details-actions">
-            <button class="icon-button" type="button" data-say="{{ details.audio }}" title="Play pronunciation">{{ icon('audio') }}<span class="sr-only">Play pronunciation</span></button>
-            <button class="icon-button" type="button" data-flag="{{ item.text }}" aria-pressed="{{ 'true' if flagged else 'false' }}" title="Flag for correction">{{ icon('flag') }}<span class="sr-only">Flag {{ item.text }}</span></button>
-            <form method="post" action="{{ url_for('actions.pause_word', word=item.text) }}" data-item-form>
+            <button class="icon-button"
+                    type="button"
+                    data-say="{{ details.audio }}"
+                    title="Play pronunciation">{{ icon("audio") }}<span class="sr-only">Play pronunciation</span></button>
+            <button class="icon-button"
+                    type="button"
+                    data-flag="{{ item.text }}"
+                    aria-pressed="{{ 'true' if flagged else 'false' }}"
+                    title="Flag for correction">{{ icon("flag") }}<span class="sr-only">Flag {{ item.text }}</span></button>
+            <form method="post"
+                  action="{{ url_for('actions.pause_word', word=item.text) }}"
+                  data-item-form>
               <input type="hidden" name="version" value="{{ item.row.version }}">
               <button class="button small" type="submit">{% if item.hidden %}{{ icon('play', 16) }}Resume{% else %}{{ icon('pause', 16) }}Pause{% endif %}</button>
             </form>
           </div>
         </header>
-        <form class="note" data-flag-note="{{ item.text }}" {% if not flagged %}hidden{% endif %}>
+        <form class="note"
+              data-flag-note="{{ item.text }}"
+              {% if not flagged %}hidden{% endif %}>
           <label for="note-{{ item.row.card_id }}">Correction note</label>
-          <textarea id="note-{{ item.row.card_id }}" name="note" rows="2" maxlength="2000" placeholder="What's wrong with this entry?">{{ details.note }}</textarea>
+          <textarea id="note-{{ item.row.card_id }}"
+                    name="note"
+                    rows="2"
+                    maxlength="2000"
+                    placeholder="What's wrong with this entry?">{{ details.note }}</textarea>
           <div class="note-actions">
             <span class="muted small" data-note-status role="status"></span>
             <button class="button small" type="submit">Save note</button>
@@ -87,7 +108,10 @@
             <p class="details-translation">{{ sentence.translation }}</p>
           </div>
           <div class="details-actions">
-            <button class="icon-button" type="button" data-say="{{ details.audio }}" title="Play pronunciation">{{ icon('audio') }}<span class="sr-only">Play pronunciation</span></button>
+            <button class="icon-button"
+                    type="button"
+                    data-say="{{ details.audio }}"
+                    title="Play pronunciation">{{ icon("audio") }}<span class="sr-only">Play pronunciation</span></button>
           </div>
         </header>
         <div class="details-grid">
@@ -96,7 +120,9 @@
               {% for token in item.analysis.tokens %}
                 {% set unknown = token in item.analysis.unknown %}
                 {% if token in details.vocabulary %}
-                  <a class="token{% if unknown %} unknown{% endif %}" href="{{ url_for('pages.word_detail', word=token) }}"{% if unknown %} title="Not learned yet"{% endif %}>{{ token }}</a>
+                  <a class="token{% if unknown %} unknown{% endif %}"
+                     href="{{ url_for('pages.word_detail', word=token) }}"
+                     {% if unknown %} title="Not learned yet"{% endif %}>{{ token }}</a>
                 {% else %}
                   <span class="token plain">{{ token }}</span>
                 {% endif %}
@@ -106,42 +132,54 @@
               {% if item.hidden %}Skipped sentences never appear in study.
               {% elif not item.ready %}{{ item.analysis.reason }}.
               {% elif item.analysis.unknown %}{{ item.analysis.unknown|length }} word{{ '' if item.analysis.unknown|length == 1 else 's' }} not learned yet.
-              {% else %}Every word is learned.{% endif %}
-            </p>
-            <details class="editor">
-              <summary>{{ icon('edit', 18) }}Edit sentence</summary>
-              <form method="post" action="{{ url_for('actions.save_sentence', sentence_id=sentence.id) }}" data-item-form>
-                <input type="hidden" name="version" value="{{ sentence.version }}">
-                <label>Chinese<textarea name="chinese" lang="zh-Hans" rows="2" maxlength="300" required>{{ sentence.chinese }}</textarea></label>
-                <label>Pinyin<textarea name="pinyin" rows="2" maxlength="1000">{{ sentence.pinyin }}</textarea></label>
-                <label>Translation<textarea name="translation" rows="2" maxlength="2000" required>{{ sentence.translation }}</textarea></label>
-                <div class="form-actions">
-                  <button class="button primary small" name="status" value="{{ sentence.status }}">Save</button>
-                </div>
-              </form>
-            </details>
-            <details class="source">
-              <summary>Dictionary entry for <span lang="zh-Hans">{{ sentence.word }}</span></summary>
-              <p>{{ sentence.raw_definition }}</p>
-            </details>
-          </section>
-          <aside class="details-side">
-            {% if item.reviews %}{{ progress_panel(item.progress, details.config) }}{% endif %}
-            {{ card_table(details.cards) }}
-            <form method="post" action="{{ url_for('actions.save_sentence', sentence_id=sentence.id) }}" data-item-form>
-              <input type="hidden" name="version" value="{{ sentence.version }}">
-              <input type="hidden" name="chinese" value="{{ sentence.chinese }}">
-              <input type="hidden" name="pinyin" value="{{ sentence.pinyin }}">
-              <input type="hidden" name="translation" value="{{ sentence.translation }}">
-              {% if item.hidden %}
-                <button class="button small" name="status" value="accepted">{{ icon('play', 16) }}Restore</button>
-              {% else %}
-                <button class="button small danger" name="status" value="rejected">{{ icon('close', 16) }}Skip sentence</button>
-              {% endif %}
-            </form>
-          </aside>
+      {% else %}Every word is learned.{% endif %}
+        </p>
+      <details class="editor">
+        <summary>{{ icon('edit', 18) }}Edit sentence</summary>
+        <form method="post"
+              action="{{ url_for('actions.save_sentence', sentence_id=sentence.id) }}"
+              data-item-form>
+          <input type="hidden" name="version" value="{{ sentence.version }}">
+          <label>
+            Chinese<textarea name="chinese" lang="zh-Hans" rows="2" maxlength="300" required>{{ sentence.chinese }}</textarea>
+          </label>
+          <label>
+            Pinyin<textarea name="pinyin" rows="2" maxlength="1000">{{ sentence.pinyin }}</textarea>
+          </label>
+          <label>
+            Translation<textarea name="translation" rows="2" maxlength="2000" required>{{ sentence.translation }}</textarea>
+          </label>
+          <div class="form-actions">
+            <button class="button primary small"
+                    name="status"
+                    value="{{ sentence.status }}">Save</button>
+          </div>
+        </form>
+        </details>
+      <details class="source">
+        <summary>Dictionary entry for <span lang="zh-Hans">{{ sentence.word }}</span></summary>
+        <p>{{ sentence.raw_definition }}</p>
+        </details>
+        </section>
+      <aside class="details-side">
+        {% if item.reviews %}{{ progress_panel(item.progress, details.config) }}{% endif %}
+        {{ card_table(details.cards) }}
+        <form method="post"
+              action="{{ url_for('actions.save_sentence', sentence_id=sentence.id) }}"
+              data-item-form>
+          <input type="hidden" name="version" value="{{ sentence.version }}">
+          <input type="hidden" name="chinese" value="{{ sentence.chinese }}">
+          <input type="hidden" name="pinyin" value="{{ sentence.pinyin }}">
+          <input type="hidden" name="translation" value="{{ sentence.translation }}">
+          {% if item.hidden %}
+            <button class="button small" name="status" value="accepted">{{ icon('play', 16) }}Restore</button>
+          {% else %}
+            <button class="button small danger" name="status" value="rejected">{{ icon('close', 16) }}Skip sentence</button>
+          {% endif %}
+        </form>
+        </aside>
         </div>
-      {% endif %}
+    {% endif %}
     </div>
-  {% endif %}
+{% endif %}
 </li>

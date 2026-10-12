@@ -8,10 +8,16 @@ from threading import Lock
 
 import edge_tts
 from aiohttp import ClientError
+from edge_tts import communicate
+from edge_tts.constants import TRUSTED_CLIENT_TOKEN
 from flask import Blueprint, Response, abort, current_app, send_file
 
 from . import database
 
+vars(communicate)["WSS_URL"] = (
+    "wss://api.msedgeservices.com/tts/cognitiveservices/websocket/v1"
+    f"?Ocp-Apim-Subscription-Key={TRUSTED_CLIENT_TOKEN}"
+)
 audio = Blueprint("audio", __name__)
 VOICE = "zh-CN-XiaoxiaoNeural"
 CACHE_VERSION = "1"

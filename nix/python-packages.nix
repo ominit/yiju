@@ -27,15 +27,22 @@
       program = "${pythonSet.mkVirtualEnv "yiju" workspace.deps.default}/bin/yiju";
       meta.description = "Private Chinese vocabulary and sentence study";
     };
-    checks.python = pkgs.runCommand "yiju-checks" {nativeBuildInputs = [environment];} ''
-      cp -r ${../.} source
-      chmod -R u+w source
-      cd source
-      export HOME="$TMPDIR"
-      ruff check .
-      ty check --python ${environment}/bin/python
-      pytest -p no:cacheprovider
-      touch "$out"
-    '';
+    checks.python =
+      pkgs.runCommand "yiju-checks" {
+        nativeBuildInputs = [environment];
+        PLAYWRIGHT_BROWSERS_PATH = pkgs.playwright-driver.browsers;
+        PLAYWRIGHT_NODEJS_PATH = "${pkgs.nodejs}/bin/node";
+        PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
+        FONTCONFIG_FILE = pkgs.makeFontsConf {fontDirectories = [pkgs.dejavu_fonts];};
+      } ''
+        cp -r ${../.} source
+        chmod -R u+w source
+        cd source
+        export HOME="$TMPDIR"
+        ruff check .
+        ty check --python ${environment}/bin/python
+        pytest -p no:cacheprovider
+        touch "$out"
+      '';
   };
 }

@@ -22,7 +22,7 @@ version = "0.1.0"
 yiju = "yiju.cli:main"
 
 [dependency-groups]
-dev = ["pytest==9.1.1", "ruff==0.16.10", "ty==0.0.85"]
+dev = ["playwright==1.63.0", "pytest==9.1.1", "ruff==0.16.10", "ty==0.0.85"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["yiju"]

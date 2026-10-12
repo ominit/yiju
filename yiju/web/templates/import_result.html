@@ -13,10 +13,30 @@
   </div>
   <section class="panel">
     <dl class="facts">
-      <div><dt>Entries read</dt><dd>{{ summary.parsed }}</dd></div>
-      <div><dt>Already in library</dt><dd>{{ summary.duplicates }}</dd></div>
-      <div><dt>Unsupported</dt><dd>{{ summary.skipped }}</dd></div>
-      <div><dt>Invalid</dt><dd>{{ summary.issues|length }}</dd></div>
+      <div>
+        <dt>Entries read</dt>
+        <dd>
+          {{ summary.parsed }}
+        </dd>
+      </div>
+      <div>
+        <dt>Already in library</dt>
+        <dd>
+          {{ summary.duplicates }}
+        </dd>
+      </div>
+      <div>
+        <dt>Unsupported</dt>
+        <dd>
+          {{ summary.skipped }}
+        </dd>
+      </div>
+      <div>
+        <dt>Invalid</dt>
+        <dd>
+          {{ summary.issues|length }}
+        </dd>
+      </div>
     </dl>
     {% if summary.issues %}
       <details class="issues">

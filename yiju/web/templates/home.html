@@ -11,7 +11,7 @@
       <p class="empty-glyph" lang="zh-Hans">一句</p>
       <h2>Start with your Pleco flashcards</h2>
       <p class="muted">Export a card list from Pleco as XML and import it. Yiju builds word and sentence cards from the dictionary examples.</p>
-      <a class="button primary" href="{{ url_for('pages.import_page') }}">{{ icon('upload') }}Import words</a>
+      <a class="button primary" href="{{ url_for('pages.import_page') }}">{{ icon("upload") }}Import words</a>
     </section>
   {% else %}
     <section class="hero">
@@ -29,101 +29,114 @@
           <p class="hero-title">{{ icon('check', 22) }} All caught up</p>
           <p class="muted">
             {% if upcoming %}Next review <time datetime="{{ upcoming }}" data-relative>{{ upcoming[:16].replace('T', ' ') }}</time>{% else %}Nothing scheduled{% endif %}
-            {% if stats.today %} · {{ stats.today }} done today{% endif %}
+            {% if stats.today %}· {{ stats.today }} done today{% endif %}
           </p>
         </div>
       {% endif %}
     </section>
-
     <div class="dashboard">
-    <div class="stats">
-      <a class="stat" href="{{ url_for('pages.library', filter='learned') }}">
-        <span class="stat-label">Words learned</span>
-        <span class="stat-value">{{ stats.known }}<small> / {{ stats.words }}</small></span>
-      </a>
-      <a class="stat" href="{{ url_for('pages.sentences', filter='learned') }}">
-        <span class="stat-label">Sentences learned</span>
-        <span class="stat-value">{{ stats.learned_sentences }}<small> / {{ stats.sentences }}</small></span>
-      </a>
-      <div class="stat" title="Hard, Good or Easy on cards seen before, last 30 days">
-        <span class="stat-label">Recall</span>
-        <span class="stat-value">{{ activity.recall if activity.recall is not none else '—' }}{% if activity.recall is not none %}<small>%</small>{% endif %}</span>
+      <div class="stats">
+        <a class="stat" href="{{ url_for('pages.library', filter='learned') }}">
+          <span class="stat-label">Words learned</span>
+          <span class="stat-value">{{ stats.known }}<small>/ {{ stats.words }}</small></span>
+        </a>
+        <a class="stat"
+           href="{{ url_for('pages.sentences', filter='learned') }}">
+          <span class="stat-label">Sentences learned</span>
+          <span class="stat-value">{{ stats.learned_sentences }}<small>/ {{ stats.sentences }}</small></span>
+        </a>
+        <div class="stat"
+             title="Hard, Good or Easy on cards seen before, last 30 days">
+          <span class="stat-label">Recall</span>
+          <span class="stat-value">{{ activity.recall if activity.recall is not none else '—' }}{% if activity.recall is not none %}<small>%</small>{% endif %}</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Study days</span>
+          <span class="stat-value">{{ activity.study_days }}<small>/ 30</small></span>
+        </div>
       </div>
-      <div class="stat">
-        <span class="stat-label">Study days</span>
-        <span class="stat-value">{{ activity.study_days }}<small> / 30</small></span>
+      <div class="split">
+        <section class="panel">
+          <header class="panel-head">
+            <h2>Vocabulary</h2>
+            <a class="link" href="{{ url_for('pages.library') }}">Library</a>
+          </header>
+          {% set parts = [('learned', 'Learned', stats.known), ('learning', 'Learning', learning), ('new', 'New', unstarted)] %}
+          <svg class="stack"
+               viewBox="0 0 100 10"
+               preserveAspectRatio="none"
+               role="img"
+               aria-label="{{ stats.known }} learned, {{ learning }} learning, {{ unstarted }} new">
+            {% set ns = namespace(x=0) %}
+            {% for key, label, count in parts %}
+              {% set width = count / stats.words * 100 %}
+              {% if width > 0 %}<rect class="fill-{{ key }}" x="{{ ns.x }}" width="{{ width }}" height="10" />{% endif %}
+              {% set ns.x = ns.x + width %}
+            {% endfor %}
+          </svg>
+          <ul class="legend">
+            {% for key, label, count in parts %}
+              <li><a href="{{ url_for('pages.library', filter=key) }}"><i class="dot fill-{{ key }}"></i>{{ label }}<strong>{{ count }}</strong></a></li>
+            {% endfor %}
+          </ul>
+        </section>
+        <section class="panel">
+          <header class="panel-head">
+            <h2>Coming up</h2>
+            <span class="muted small">Next 7 days</span>
+          </header>
+          <ol class="forecast" aria-label="Reviews due over the next seven days">
+            {% for day in forecast %}
+              <li title="{{ day.date.strftime('%A') }} · {{ day.count }} due">
+                <span class="forecast-value">{{ day.count if day.count else '' }}</span>
+                <svg class="forecast-bar"
+                     viewBox="0 0 10 100"
+                     preserveAspectRatio="none"
+                     aria-hidden="true">
+                  {% if day.count %}
+                    {% set height = [day.count / forecast_max * 100, 6] | max %}<rect class="{{ 'today' if loop.first else '' }}" y="{{ 100 - height }}" width="10" height="{{ height }}" />
+                  {% endif %}
+                </svg>
+                <span class="forecast-day">{{ 'Today' if loop.first else day.date.strftime("%a") }}</span>
+              </li>
+            {% endfor %}
+          </ol>
+        </section>
       </div>
-    </div>
-
-    <div class="split">
       <section class="panel">
         <header class="panel-head">
-          <h2>Vocabulary</h2>
-          <a class="link" href="{{ url_for('pages.library') }}">Library</a>
+          <h2>Last 30 days</h2>
+          <span class="muted small">{{ activity.reviews }} reviews · {{ activity.rate }} new words/day</span>
         </header>
-        {% set parts = [('learned', 'Learned', stats.known), ('learning', 'Learning', learning), ('new', 'New', unstarted)] %}
-        <svg class="stack" viewBox="0 0 100 10" preserveAspectRatio="none" role="img" aria-label="{{ stats.known }} learned, {{ learning }} learning, {{ unstarted }} new">
-          {% set ns = namespace(x=0) %}
-          {% for key, label, count in parts %}
-            {% set width = count / stats.words * 100 %}
-            {% if width > 0 %}<rect class="fill-{{ key }}" x="{{ ns.x }}" width="{{ width }}" height="10" />{% endif %}
-            {% set ns.x = ns.x + width %}
-          {% endfor %}
-        </svg>
-        <ul class="legend">
-          {% for key, label, count in parts %}
-            <li><a href="{{ url_for('pages.library', filter=key) }}"><i class="dot fill-{{ key }}"></i>{{ label }}<strong>{{ count }}</strong></a></li>
-          {% endfor %}
-        </ul>
-      </section>
-
-      <section class="panel">
-        <header class="panel-head">
-          <h2>Coming up</h2>
-          <span class="muted small">Next 7 days</span>
-        </header>
-        <ol class="forecast" aria-label="Reviews due over the next seven days">
-          {% for day in forecast %}
-            <li title="{{ day.date.strftime('%A') }} · {{ day.count }} due">
-              <span class="forecast-value">{{ day.count if day.count else '' }}</span>
-              <svg class="forecast-bar" viewBox="0 0 10 100" preserveAspectRatio="none" aria-hidden="true">
-                {% if day.count %}{% set height = [day.count / forecast_max * 100, 6] | max %}<rect class="{{ 'today' if loop.first else '' }}" y="{{ 100 - height }}" width="10" height="{{ height }}" />{% endif %}
-              </svg>
-              <span class="forecast-day">{{ 'Today' if loop.first else day.date.strftime('%a') }}</span>
-            </li>
-          {% endfor %}
-        </ol>
-      </section>
-    </div>
-
-    <section class="panel">
-      <header class="panel-head">
-        <h2>Last 30 days</h2>
-        <span class="muted small">{{ activity.reviews }} reviews · {{ activity.rate }} new words/day</span>
-      </header>
-      <svg class="activity" viewBox="0 0 600 120" preserveAspectRatio="none" role="img" aria-label="Daily reviews over the last 30 days">
-        <path class="grid" d="M0 0.5H600M0 60H600M0 119.5H600" />
-        {% for bar in activity.bars %}
-          {% set x = loop.index0 * 20 + 4 %}
-          <g>
+        <svg class="activity"
+             viewBox="0 0 600 120"
+             preserveAspectRatio="none"
+             role="img"
+             aria-label="Daily reviews over the last 30 days">
+          <path class="grid" d="M0 0.5H600M0 60H600M0 119.5H600" />
+          {% for bar in activity.bars %}
+            {% set x = loop.index0 * 20 + 4 %}
+            <g>
             <title>{{ bar.day }} · {{ bar.total }} review{{ '' if bar.total == 1 else 's' }}</title>
             <rect class="hit" x="{{ x - 4 }}" y="0" width="20" height="120" />
             {% if not bar.total %}<rect class="bar-empty" x="{{ x }}" y="118" width="12" height="2" />{% endif %}
             {% for segment in bar.segments %}
-              {% if segment.height %}<rect class="rating-{{ segment.rating }}" x="{{ x }}" y="{{ segment.y - 20 }}" width="12" height="{{ segment.height }}" />{% endif %}
+              {% if segment.height %}
+                <rect class="rating-{{ segment.rating }}" x="{{ x }}" y="{{ segment.y - 20 }}" width="12" height="{{ segment.height }}" />
+              {% endif %}
             {% endfor %}
-          </g>
-        {% endfor %}
-      </svg>
-      <div class="axis-row" aria-hidden="true">
-        {% for bar in activity.bars %}{% if loop.index0 in [0, 10, 20] %}<span>{{ bar.day }}</span>{% endif %}{% endfor %}<span>Today</span>
-      </div>
-      <ul class="legend inline">
-        {% for value, label in [(1, 'Again'), (2, 'Hard'), (3, 'Good'), (4, 'Easy')] %}
-          <li><i class="dot rating-{{ value }}"></i>{{ label }}</li>
-        {% endfor %}
-      </ul>
-    </section>
+            </g>
+          {% endfor %}
+        </svg>
+        <div class="axis-row" aria-hidden="true">
+          {% for bar in activity.bars %}{% if loop.index0 in [0, 10, 20] %}<span>{{ bar.day }}</span>{% endif %}{% endfor %}<span>Today</span>
+        </div>
+        <ul class="legend inline">
+          {% for value, label in [(1, 'Again'), (2, 'Hard'), (3, 'Good'), (4, 'Easy')] %}
+            <li><i class="dot rating-{{ value }}"></i>{{ label }}</li>
+          {% endfor %}
+        </ul>
+      </section>
     </div>
   {% endif %}
 {% endblock %}

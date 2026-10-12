@@ -50,13 +50,16 @@ function h(tag, attributes = {}, ...children) {
     if (value === null || value === undefined || value === false) continue;
     if (name === "class") element.className = value;
     else if (name === "dataset") Object.assign(element.dataset, value);
-    else if (name.startsWith("on")) element.addEventListener(name.slice(2), value);
+    else if (name.startsWith("on"))
+      element.addEventListener(name.slice(2), value);
     else element.setAttribute(name, value === true ? "" : value);
   }
   element.append(
     ...children
       .flat()
-      .filter((child) => child !== null && child !== undefined && child !== false),
+      .filter(
+        (child) => child !== null && child !== undefined && child !== false,
+      ),
   );
   return element;
 }
@@ -79,11 +82,17 @@ function plural(count, word) {
 function hanzi(reading) {
   const element = h("span", { class: "hanzi", lang: "zh-Hans" });
   if (reading.length === 1 && reading[0][0].length > 4 && reading[0][1]) {
-    element.append(h("span", { class: "reading" }, reading[0][1]), ...strokes.glyphs(reading[0][0]));
+    element.append(
+      h("span", { class: "reading" }, reading[0][1]),
+      ...strokes.glyphs(reading[0][0]),
+    );
     return element;
   }
   for (const [text, syllable] of reading) {
-    if (syllable) element.append(h("ruby", {}, ...strokes.glyphs(text), h("rt", {}, syllable)));
+    if (syllable)
+      element.append(
+        h("ruby", {}, ...strokes.glyphs(text), h("rt", {}, syllable)),
+      );
     else element.append(...strokes.glyphs(text));
   }
   return element;
@@ -101,7 +110,12 @@ function senseItems(senses) {
     h(
       "li",
       {},
-      h("p", {}, sense.pos ? h("span", { class: "pos" }, sense.pos) : null, sense.meaning),
+      h(
+        "p",
+        {},
+        sense.pos ? h("span", { class: "pos" }, sense.pos) : null,
+        sense.meaning,
+      ),
     ),
   );
 }
@@ -115,7 +129,9 @@ function senseList(senses, { examples = false, limit = Infinity } = {}) {
       senseItems(visible.slice(0, limit)),
     ),
   ];
-  const samples = examples ? senses.flatMap((sense) => sense.examples || []) : [];
+  const samples = examples
+    ? senses.flatMap((sense) => sense.examples || [])
+    : [];
   if (samples.length) {
     nodes.push(
       h(
@@ -130,7 +146,9 @@ function senseList(senses, { examples = false, limit = Infinity } = {}) {
               "li",
               {},
               h("p", { class: "example-zh", lang: "zh-Hans" }, example.chinese),
-              example.pinyin ? h("p", { class: "example-py" }, example.pinyin) : null,
+              example.pinyin
+                ? h("p", { class: "example-py" }, example.pinyin)
+                : null,
               example.translation
                 ? h("p", { class: "example-en" }, example.translation)
                 : null,
@@ -187,7 +205,12 @@ function flagToggle(word) {
 function sayButton() {
   return h(
     "button",
-    { type: "button", class: "say", title: "Replay pronunciation (R)", dataset: { play: "" } },
+    {
+      type: "button",
+      class: "say",
+      title: "Replay pronunciation (R)",
+      dataset: { play: "" },
+    },
     icon("audio"),
     h("span", { class: "sr-only" }, "Replay pronunciation"),
   );
@@ -195,7 +218,12 @@ function sayButton() {
 
 function sentenceEditor(card) {
   const field = (name, label, value, attributes = {}) =>
-    h("label", {}, label, h("textarea", { name, rows: 2, ...attributes }, value));
+    h(
+      "label",
+      {},
+      label,
+      h("textarea", { name, rows: 2, ...attributes }, value),
+    );
   const status = h("p", { class: "muted small", role: "status" });
   return h(
     "form",
@@ -206,14 +234,25 @@ function sentenceEditor(card) {
         saveSentence(event.target, status);
       },
     },
-    field("chinese", "Chinese", card.text, { lang: "zh-Hans", maxlength: 300, required: true }),
+    field("chinese", "Chinese", card.text, {
+      lang: "zh-Hans",
+      maxlength: 300,
+      required: true,
+    }),
     field("pinyin", "Pinyin", card.sentence.pinyin || "", { maxlength: 1000 }),
-    field("translation", "Translation", card.translation, { maxlength: 2000, required: true }),
+    field("translation", "Translation", card.translation, {
+      maxlength: 2000,
+      required: true,
+    }),
     h(
       "div",
       { class: "form-actions" },
       status,
-      h("button", { type: "button", class: "button small", dataset: { editCancel: "" } }, "Cancel"),
+      h(
+        "button",
+        { type: "button", class: "button small", dataset: { editCancel: "" } },
+        "Cancel",
+      ),
       h("button", { type: "submit", class: "button primary small" }, "Save"),
     ),
   );
@@ -226,7 +265,9 @@ function renderCard(card) {
   face.append(
     h(
       "div",
-      { class: `headword${sentence ? " sentence" : ""}${sentence && card.text.length > 16 ? " long" : ""}` },
+      {
+        class: `headword${sentence ? " sentence" : ""}${sentence && card.text.length > 16 ? " long" : ""}`,
+      },
       hanzi(card.reading),
       sayButton(),
     ),
@@ -241,7 +282,8 @@ function renderCard(card) {
 
   const answer = h("div", { class: "answer" });
   if (sentence) {
-    if (!writing) answer.append(h("p", { class: "translation" }, card.translation));
+    if (!writing)
+      answer.append(h("p", { class: "translation" }, card.translation));
     if (card.words.length) {
       answer.append(
         h(
@@ -255,7 +297,9 @@ function renderCard(card) {
                 "div",
                 { class: "word-note-head" },
                 h("span", { class: "word-note-word" }, hanzi(word.reading)),
-                word.unknown ? h("span", { class: "word-note-tag" }, "Not learned") : null,
+                word.unknown
+                  ? h("span", { class: "word-note-tag" }, "Not learned")
+                  : null,
                 h(
                   "span",
                   { class: "word-note-tools" },
@@ -281,8 +325,16 @@ function renderCard(card) {
       h(
         "p",
         { class: "sentence-tools" },
-        h("button", { type: "button", class: "link", dataset: { edit: "" } }, "Edit sentence"),
-        h("button", { type: "button", class: "link danger", dataset: { skip: "" } }, "Skip sentence"),
+        h(
+          "button",
+          { type: "button", class: "link", dataset: { edit: "" } },
+          "Edit sentence",
+        ),
+        h(
+          "button",
+          { type: "button", class: "link danger", dataset: { skip: "" } },
+          "Skip sentence",
+        ),
       ),
     );
   } else {
@@ -311,7 +363,11 @@ function renderActions() {
     dom.actions.replaceChildren(
       h(
         "button",
-        { type: "button", class: "button primary reveal", dataset: { reveal: "" } },
+        {
+          type: "button",
+          class: "button primary reveal",
+          dataset: { reveal: "" },
+        },
         "Show answer",
         h("kbd", {}, "Space"),
       ),
@@ -325,9 +381,22 @@ function renderActions() {
       ratings.map(([value, label]) =>
         h(
           "button",
-          { type: "button", class: `rating rating-${value}`, dataset: { rating: value } },
-          h("span", { class: "rating-label" }, h("kbd", {}, String(value)), label),
-          h("span", { class: "rating-interval" }, state.current.intervals[value]),
+          {
+            type: "button",
+            class: `rating rating-${value}`,
+            dataset: { rating: value },
+          },
+          h(
+            "span",
+            { class: "rating-label" },
+            h("kbd", {}, String(value)),
+            label,
+          ),
+          h(
+            "span",
+            { class: "rating-interval" },
+            state.current.intervals[value],
+          ),
         ),
       ),
     ),
@@ -341,7 +410,8 @@ function updateChrome() {
     state.count - state.ratedSinceFetch,
   );
   dom.remaining.textContent = String(remaining);
-  dom.undo.disabled = !state.lastReview || state.outbox.length > 0 || Boolean(state.failure);
+  dom.undo.disabled =
+    !state.lastReview || state.outbox.length > 0 || Boolean(state.failure);
   dom.flag.disabled = !state.current;
   if (state.current) {
     const flagged = isFlagged(state.current.word);
@@ -354,7 +424,10 @@ function updateChrome() {
   dom.audio.querySelector('[data-when="on"]').hidden = !state.autoplay;
   dom.audio.querySelector('[data-when="off"]').hidden = state.autoplay;
   for (const button of document.querySelectorAll("[data-flag-word]"))
-    button.setAttribute("aria-pressed", String(isFlagged(button.dataset.flagWord)));
+    button.setAttribute(
+      "aria-pressed",
+      String(isFlagged(button.dataset.flagWord)),
+    );
 }
 
 function clearCard() {
@@ -435,7 +508,11 @@ function renderDone() {
 function renderLoading() {
   clearCard();
   dom.stage.replaceChildren(
-    h("div", { class: "loading", "aria-busy": "true" }, h("span", { class: "spinner" })),
+    h(
+      "div",
+      { class: "loading", "aria-busy": "true" },
+      h("span", { class: "spinner" }),
+    ),
   );
   dom.actions.replaceChildren();
 }
@@ -455,12 +532,16 @@ async function api(url, options = {}) {
     headers: {
       "X-CSRF-Token": csrf(),
       Accept: "application/json",
-      ...(typeof options.body === "string" ? { "Content-Type": "application/json" } : {}),
+      ...(typeof options.body === "string"
+        ? { "Content-Type": "application/json" }
+        : {}),
     },
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const error = new Error(data.error || `Request failed (${response.status}).`);
+    const error = new Error(
+      data.error || `Request failed (${response.status}).`,
+    );
     error.status = response.status;
     throw error;
   }
@@ -495,14 +576,19 @@ function dismiss() {
 
 function flush() {
   if (state.saving) return state.saving;
-  state.saving = (async () => {
+  const request = (async () => {
+    await Promise.resolve();
     try {
       while (state.outbox.length) {
         const item = state.outbox[0];
         try {
           const data = await api("/api/reviews", {
             method: "POST",
-            body: JSON.stringify({ card: item.card, version: item.version, rating: item.rating }),
+            body: JSON.stringify({
+              card: item.card,
+              version: item.version,
+              rating: item.rating,
+            }),
           });
           state.lastReview = data.review;
         } catch (error) {
@@ -517,10 +603,11 @@ function flush() {
       fail(error, refill);
       return false;
     } finally {
-      state.saving = null;
+      if (state.saving === request) state.saving = null;
     }
   })();
-  return state.saving;
+  state.saving = request;
+  return request;
 }
 
 function fetchBatch() {
@@ -534,7 +621,8 @@ function fetchBatch() {
       state.ratedSinceFetch = 0;
       state.lastReview = batch.lastReview;
       state.queue = batch.cards.filter(
-        (card) => card.id !== state.current?.id && !state.consumed.has(key(card)),
+        (card) =>
+          card.id !== state.current?.id && !state.consumed.has(key(card)),
       );
       prefetchStrokes(state.queue);
       return true;
@@ -731,7 +819,8 @@ function drawStrokes(context, lines, size, lineWidth, color) {
     context.beginPath();
     context.moveTo(stroke[0][0] * size, stroke[0][1] * size);
     for (const [x, y] of stroke.slice(1)) context.lineTo(x * size, y * size);
-    if (stroke.length === 1) context.lineTo(stroke[0][0] * size + 0.1, stroke[0][1] * size);
+    if (stroke.length === 1)
+      context.lineTo(stroke[0][0] * size + 0.1, stroke[0][1] * size);
     context.stroke();
   }
 }
@@ -741,8 +830,15 @@ class Pad {
     this.drawings = [[]];
     this.index = 0;
     this.pointer = null;
-    this.canvas = h("canvas", { class: "pad-canvas", "aria-label": "Handwriting pad" });
-    this.thumbs = h("div", { class: "pad-thumbs", role: "group", "aria-label": "Characters" });
+    this.canvas = h("canvas", {
+      class: "pad-canvas",
+      "aria-label": "Handwriting pad",
+    });
+    this.thumbs = h("div", {
+      class: "pad-thumbs",
+      role: "group",
+      "aria-label": "Characters",
+    });
     this.overview = h("div", { class: "pad-overview", hidden: true });
     this.undoButton = this.tool("undo", "Undo stroke (Z)", () => this.undo());
     this.clearButton = this.tool("erase", "Clear", () => this.clear());
@@ -776,7 +872,13 @@ class Pad {
   tool(name, label, handler) {
     return h(
       "button",
-      { type: "button", class: "icon-button", title: label, "aria-label": label, onclick: handler },
+      {
+        type: "button",
+        class: "icon-button",
+        title: label,
+        "aria-label": label,
+        onclick: handler,
+      },
       icon(name),
     );
   }
@@ -807,7 +909,8 @@ class Pad {
     if (event.pointerId !== this.pointer) return;
     event.preventDefault();
     const stroke = this.strokes.at(-1);
-    for (const sample of event.getCoalescedEvents?.() || [event]) stroke.push(this.point(sample));
+    for (const sample of event.getCoalescedEvents?.() || [event])
+      stroke.push(this.point(sample));
     this.paint();
   }
 
@@ -833,7 +936,9 @@ class Pad {
 
   advance() {
     if (!this.strokes.length) return;
-    const empty = this.drawings.findIndex((drawing, index) => index > this.index && !drawing.length);
+    const empty = this.drawings.findIndex(
+      (drawing, index) => index > this.index && !drawing.length,
+    );
     if (empty === -1) {
       this.drawings.push([]);
       this.index = this.drawings.length - 1;
@@ -861,7 +966,13 @@ class Pad {
     this.canvas.width = this.canvas.height = Math.round(size * ratio);
     const context = this.canvas.getContext("2d");
     context.scale(ratio, ratio);
-    drawStrokes(context, this.strokes, size, Math.max(3, size / 64), getComputedStyle(this.canvas).color);
+    drawStrokes(
+      context,
+      this.strokes,
+      size,
+      Math.max(3, size / 64),
+      getComputedStyle(this.canvas).color,
+    );
   }
 
   thumb(index, color) {
@@ -899,12 +1010,18 @@ class Pad {
       return;
     }
     const color = getComputedStyle(this.canvas).color;
-    const capacity = Math.max(2, Math.floor((this.width + thumbGap) / (thumbSize + thumbGap)));
+    const capacity = Math.max(
+      2,
+      Math.floor((this.width + thumbGap) / (thumbSize + thumbGap)),
+    );
     let shown = indices;
     let hidden = 0;
     if (indices.length > capacity) {
       const position = indices.indexOf(this.index);
-      const end = Math.min(indices.length, Math.max(position + 1, capacity - 1));
+      const end = Math.min(
+        indices.length,
+        Math.max(position + 1, capacity - 1),
+      );
       shown = indices.slice(end - (capacity - 1), end);
       hidden = indices.length - shown.length;
     }
@@ -930,7 +1047,9 @@ class Pad {
 
   renderOverview() {
     const color = getComputedStyle(this.canvas).color;
-    this.overview.replaceChildren(...this.visible().map((index) => this.thumb(index, color)));
+    this.overview.replaceChildren(
+      ...this.visible().map((index) => this.thumb(index, color)),
+    );
   }
 
   toggleOverview() {
@@ -946,7 +1065,9 @@ class Pad {
   closeOverview() {
     if (this.overview.hidden) return;
     this.overview.hidden = true;
-    this.thumbs.querySelector(".pad-more")?.setAttribute("aria-expanded", "false");
+    this.thumbs
+      .querySelector(".pad-more")
+      ?.setAttribute("aria-expanded", "false");
   }
 
   destroy() {
@@ -955,7 +1076,8 @@ class Pad {
 }
 
 function onClick(event) {
-  if (pad && !event.target.closest(".pad-overview, .pad-more")) pad.closeOverview();
+  if (pad && !event.target.closest(".pad-overview, .pad-more"))
+    pad.closeOverview();
   const target = event.target.closest("button");
   if (!dom || !target || !dom.root.contains(target)) return;
   if (target.matches("[data-reveal]")) reveal();
@@ -963,8 +1085,10 @@ function onClick(event) {
   else if (target.matches("[data-play]")) playAudio();
   else if (target.matches("[data-skip]")) skipSentence();
   else if (target.matches("[data-edit]")) editSentence();
-  else if (target.matches("[data-edit-cancel]")) show(state.current, { revealed: true });
-  else if (target.matches("[data-flag-word]")) toggleFlag(target.dataset.flagWord);
+  else if (target.matches("[data-edit-cancel]"))
+    show(state.current, { revealed: true });
+  else if (target.matches("[data-flag-word]"))
+    toggleFlag(target.dataset.flagWord);
   else if (target === dom.flag && state.current) toggleFlag(state.current.word);
   else if (target === dom.undo) undo();
   else if (target === dom.audio) toggleAutoplay();
@@ -977,7 +1101,8 @@ function onClick(event) {
 
 function onKey(event) {
   if (event.altKey || event.ctrlKey || event.metaKey || event.repeat) return;
-  if (event.target.closest("input, textarea, select, [contenteditable]")) return;
+  if (event.target.closest("input, textarea, select, [contenteditable]"))
+    return;
   if (event.key === "Escape") pad?.closeOverview();
   else if (event.code === "Space" && state.current && !state.revealed) {
     event.preventDefault();
@@ -1012,7 +1137,9 @@ export function mount(root) {
   state.ratedSinceFetch = 0;
   state.failure = null;
   state.current = null;
-  state.consumed = new Set(state.outbox.map((item) => `${item.card}:${item.version}`));
+  state.consumed = new Set(
+    state.outbox.map((item) => `${item.card}:${item.version}`),
+  );
   state.queue = batch.cards;
   prefetchStrokes(state.queue);
   if (state.outbox.length) {
@@ -1034,5 +1161,8 @@ export function unmount() {
 
 export function leave() {
   if (!state.outbox.length) return Promise.resolve();
-  return Promise.race([flush(), new Promise((resolve) => setTimeout(resolve, 1500))]);
+  return Promise.race([
+    flush(),
+    new Promise((resolve) => setTimeout(resolve, 1500)),
+  ]);
 }

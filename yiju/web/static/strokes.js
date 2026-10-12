@@ -34,12 +34,16 @@ function library() {
 }
 
 async function fetchCharacter(character) {
-  if (loading >= parallel) await new Promise((resolve) => waiting.push(resolve));
+  if (loading >= parallel)
+    await new Promise((resolve) => waiting.push(resolve));
   loading += 1;
   try {
-    const response = await fetch(`/strokes/characters/${encodeURIComponent(character)}`);
+    const response = await fetch(
+      `/strokes/characters/${encodeURIComponent(character)}`,
+    );
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || "Stroke order is unavailable.");
+    if (!response.ok)
+      throw new Error(data.error || "Stroke order is unavailable.");
     return data;
   } finally {
     loading -= 1;
@@ -76,7 +80,9 @@ export function glyph(character) {
 }
 
 export function glyphs(text) {
-  return [...text].map((character) => (han.test(character) ? glyph(character) : character));
+  return [...text].map((character) =>
+    han.test(character) ? glyph(character) : character,
+  );
 }
 
 function draw(element, data) {
@@ -100,7 +106,9 @@ function draw(element, data) {
 }
 
 export function render(root) {
-  for (const element of root.querySelectorAll(".glyph:not(.stroke-ready, .stroke-fallback)")) {
+  for (const element of root.querySelectorAll(
+    ".glyph:not(.stroke-ready, .stroke-fallback)",
+  )) {
     const character = element.dataset.strokes;
     const data = ready.get(character);
     if (data) {
@@ -128,7 +136,8 @@ export function enhance(root) {
   for (const container of root.querySelectorAll("[data-strokes-text]")) {
     const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
       acceptNode: (node) =>
-        node.parentElement.closest("rt, .reading, .glyph") || !han.test(node.data)
+        node.parentElement.closest("rt, .reading, .glyph") ||
+        !han.test(node.data)
           ? NodeFilter.FILTER_REJECT
           : NodeFilter.FILTER_ACCEPT,
     });

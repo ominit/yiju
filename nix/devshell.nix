@@ -4,6 +4,9 @@
       packages = with pkgs; [python312 uv just nushell];
       UV_PYTHON = "${pkgs.python312}/bin/python3.12";
       UV_PYTHON_DOWNLOADS = "never";
+      PLAYWRIGHT_BROWSERS_PATH = pkgs.playwright-driver.browsers;
+      PLAYWRIGHT_NODEJS_PATH = "${pkgs.nodejs}/bin/node";
+      PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
     };
   };
 }

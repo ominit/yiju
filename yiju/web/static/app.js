@@ -11,7 +11,10 @@ const units = [
 ];
 const native = /^\/(static|audio|strokes|backup|flags\/words\/export|manifest)/;
 
+const scrollKey = "yiju-scroll";
+const positions = new Map();
 let page = null;
+let navigating = false;
 let visiting = 0;
 let installPrompt = null;
 let speaker = null;
@@ -25,13 +28,16 @@ function formatTimes(root = document) {
     const date = new Date(element.dateTime);
     if (Number.isNaN(date.getTime())) continue;
     const seconds = (date - Date.now()) / 1000;
-    const [unit, size] = units.find(([, size]) => Math.abs(seconds) >= size) || ["minute", 60];
+    const [unit, size] = units.find(
+      ([, size]) => Math.abs(seconds) >= size,
+    ) || ["minute", 60];
     element.textContent = relative.format(Math.round(seconds / size), unit);
     element.title = date.toLocaleString();
   }
   for (const element of root.querySelectorAll("time[data-local]")) {
     const date = new Date(element.dateTime);
-    if (!Number.isNaN(date.getTime())) element.textContent = date.toLocaleString();
+    if (!Number.isNaN(date.getTime()))
+      element.textContent = date.toLocaleString();
   }
 }
 
@@ -102,8 +108,10 @@ const progress = {
 async function mountPage() {
   formatTimes();
   enhance(document);
-  for (const button of document.querySelectorAll("[data-back]")) button.hidden = history.length < 2;
-  for (const item of document.querySelectorAll(".toast")) setTimeout(() => item.remove(), 4000);
+  for (const button of document.querySelectorAll("[data-back]"))
+    button.hidden = history.length < 2;
+  for (const item of document.querySelectorAll(".toast"))
+    setTimeout(() => item.remove(), 4000);
   const install = document.querySelector("[data-install]");
   if (install) install.hidden = !installPrompt;
   const stage = document.querySelector("[data-stage]");
@@ -130,12 +138,55 @@ function render(doc) {
   mountPage();
 }
 
-function saveScroll() {
-  history.replaceState({ ...history.state, scroll: scrollY }, "");
+function entry() {
+  return history.state?.key;
 }
 
-async function visit(url, { method = "GET", body = null, push = true, scroll = 0 } = {}) {
+function newEntry() {
+  return { key: crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}` };
+}
+
+function remember() {
+  if (!navigating && entry()) positions.set(entry(), scrollY);
+}
+
+function persistPositions() {
+  try {
+    sessionStorage.setItem(
+      scrollKey,
+      JSON.stringify([...positions].slice(-100)),
+    );
+  } catch {}
+}
+
+function restorePositions() {
+  try {
+    for (const [key, value] of JSON.parse(
+      sessionStorage.getItem(scrollKey) || "[]",
+    ))
+      positions.set(key, value);
+  } catch {}
+}
+
+async function refreshCounts() {
+  const chips = document.querySelector(".chips");
+  if (!chips) return;
+  try {
+    const response = await fetch(location.href);
+    const next = new DOMParser()
+      .parseFromString(await response.text(), "text/html")
+      .querySelector(".chips");
+    if (next && chips.isConnected) chips.replaceWith(next);
+  } catch {}
+}
+
+async function visit(
+  url,
+  { method = "GET", body = null, push = true, scroll = 0 } = {},
+) {
   const ticket = ++visiting;
+  if (push) remember();
+  navigating = true;
   progress.start();
   try {
     await page?.leave();
@@ -149,23 +200,32 @@ async function visit(url, { method = "GET", body = null, push = true, scroll = 0
       location.assign(response.url);
       return;
     }
-    const doc = new DOMParser().parseFromString(await response.text(), "text/html");
+    const doc = new DOMParser().parseFromString(
+      await response.text(),
+      "text/html",
+    );
     if (ticket !== visiting) return;
     const destination = new URL(response.url);
     if (push) {
-      saveScroll();
-      if (destination.href === location.href) history.replaceState({}, "", destination);
-      else history.pushState({}, "", destination);
+      if (destination.href === location.href)
+        history.replaceState(history.state || newEntry(), "", destination);
+      else history.pushState(newEntry(), "", destination);
     }
     render(doc);
-    const target = destination.hash && document.getElementById(decodeURIComponent(destination.hash.slice(1)));
+    const target =
+      destination.hash &&
+      document.getElementById(decodeURIComponent(destination.hash.slice(1)));
     if (target) target.scrollIntoView();
     else scrollTo(0, scroll);
     document.querySelector("#main")?.focus({ preventScroll: true });
   } catch {
     if (ticket === visiting) location.assign(url);
   } finally {
-    if (ticket === visiting) progress.done();
+    if (ticket === visiting) {
+      navigating = false;
+      remember();
+      progress.done();
+    }
   }
 }
 
@@ -213,14 +273,19 @@ async function submitItem(form, submitter) {
   const data = new FormData(form, submitter);
   for (const button of form.querySelectorAll("button")) button.disabled = true;
   try {
-    const next = await fragment(form.action, { method: "POST", body: new URLSearchParams(data) });
+    const next = await fragment(form.action, {
+      method: "POST",
+      body: new URLSearchParams(data),
+    });
     next.classList.add("open");
     item.replaceWith(next);
     formatTimes(next);
     enhance(next);
+    refreshCounts();
   } catch (error) {
     toast(error.message);
-    for (const button of form.querySelectorAll("button")) button.disabled = false;
+    for (const button of form.querySelectorAll("button"))
+      button.disabled = false;
   }
 }
 
@@ -240,7 +305,10 @@ async function toggleFlag(button) {
     const item = button.closest(".item");
     const marker = item?.querySelector(".row .flagged");
     if (marker) marker.hidden = !flagged;
-    const note = (item || document).querySelector(`[data-flag-note="${CSS.escape(word)}"]`);
+    if (item) refreshCounts();
+    const note = (item || document).querySelector(
+      `[data-flag-note="${CSS.escape(word)}"]`,
+    );
     if (note) {
       note.hidden = !flagged;
       if (flagged) note.querySelector("textarea").focus();
@@ -274,14 +342,21 @@ const search = {
     const url = new URL(form.action || location.href);
     url.search = "";
     for (const [name, value] of new FormData(form)) {
-      if (value && !(name === "filter" && value === "all") && !(name === "sort" && value === "learning"))
+      if (
+        value &&
+        !(name === "filter" && value === "all") &&
+        !(name === "sort" && value === "learning")
+      )
         url.searchParams.set(name, value);
     }
     this.controller?.abort();
     this.controller = new AbortController();
     try {
       const response = await fetch(url, { signal: this.controller.signal });
-      const html = new DOMParser().parseFromString(await response.text(), "text/html");
+      const html = new DOMParser().parseFromString(
+        await response.text(),
+        "text/html",
+      );
       const next = html.querySelector("[data-results]");
       const current = document.querySelector("[data-results]");
       if (!next || !current) return;
@@ -329,7 +404,12 @@ document.addEventListener("click", (event) => {
     return;
   const url = new URL(link.href);
   if (!routable(url)) return;
-  if (url.hash && url.pathname === location.pathname && url.search === location.search) return;
+  if (
+    url.hash &&
+    url.pathname === location.pathname &&
+    url.search === location.search
+  )
+    return;
   event.preventDefault();
   visit(url.href);
 });
@@ -369,7 +449,10 @@ document.addEventListener("submit", (event) => {
   } else {
     visit(url.href, {
       method: "POST",
-      body: form.enctype === "multipart/form-data" ? data : new URLSearchParams(data),
+      body:
+        form.enctype === "multipart/form-data"
+          ? data
+          : new URLSearchParams(data),
     });
   }
 });
@@ -382,11 +465,14 @@ document.addEventListener("input", (event) => {
 });
 
 document.addEventListener("change", (event) => {
-  if (event.target.matches("[data-auto-submit]")) event.target.form.requestSubmit();
+  if (event.target.matches("[data-auto-submit]"))
+    event.target.form.requestSubmit();
   if (event.target.matches("[data-dropzone] input[type=file]")) {
     const label = event.target.closest("[data-dropzone]");
     const file = event.target.files[0];
-    label.querySelector("[data-file-name]").textContent = file ? file.name : "Choose a Pleco XML export";
+    label.querySelector("[data-file-name]").textContent = file
+      ? file.name
+      : "Choose a Pleco XML export";
     label.classList.toggle("has-file", Boolean(file));
   }
 });
@@ -414,8 +500,18 @@ window.addEventListener("appinstalled", () => {
 });
 
 window.addEventListener("popstate", (event) => {
-  visit(location.href, { push: false, scroll: event.state?.scroll || 0 });
+  visit(location.href, {
+    push: false,
+    scroll: positions.get(event.state?.key) || 0,
+  });
 });
 
+window.addEventListener("scroll", remember, { passive: true });
+window.addEventListener("pagehide", persistPositions);
+
 history.scrollRestoration = "manual";
+restorePositions();
+if (!entry()) history.replaceState({ ...history.state, ...newEntry() }, "");
+const initial = positions.get(entry());
 mountPage();
+if (initial) scrollTo(0, initial);

@@ -20,8 +20,13 @@
   --new: #3d454c;
   --radius: 14px;
   --radius-sm: 10px;
-  --sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Noto Sans CJK SC", "PingFang SC", sans-serif;
-  --han: "LXGW WenKai", "Kaiti SC", "STKaiti", "KaiTi", "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --sans:
+    "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Noto Sans", "Noto Sans CJK SC", "PingFang SC", sans-serif;
+  --han:
+    "LXGW WenKai", "Kaiti SC", "STKaiti", "KaiTi", "Noto Serif CJK SC",
+    "Source Han Serif SC", "Songti SC", "Noto Sans CJK SC", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
   --topbar: 60px;
   --safe-top: env(safe-area-inset-top, 0px);
@@ -204,7 +209,9 @@ kbd {
   border-radius: var(--radius-sm);
   color: var(--muted);
   font-weight: 500;
-  transition: color 0.15s, background-color 0.15s;
+  transition:
+    color 0.15s,
+    background-color 0.15s;
 }
 
 .tabs a:hover {
@@ -334,7 +341,10 @@ kbd {
   color: var(--ink);
   font-weight: 550;
   white-space: nowrap;
-  transition: background-color 0.15s, border-color 0.15s, transform 0.1s;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s,
+    transform 0.1s;
 }
 
 .button:hover {
@@ -381,7 +391,9 @@ kbd {
   border-radius: var(--radius-sm);
   background: none;
   color: var(--ink-2);
-  transition: background-color 0.15s, color 0.15s;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
 }
 
 .icon-button:hover:not(:disabled) {
@@ -466,7 +478,9 @@ textarea:focus {
 select {
   appearance: none;
   padding-right: 34px;
-  background: var(--bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a9198' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 10 5 5 5-5'/%3E%3C/svg%3E") no-repeat right 10px center / 16px;
+  background: var(--bg)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a9198' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 10 5 5 5-5'/%3E%3C/svg%3E")
+    no-repeat right 10px center / 16px;
 }
 
 /* Surfaces */
@@ -580,7 +594,11 @@ select {
   border: 1px solid var(--line);
   border-radius: 18px;
   background:
-    radial-gradient(120% 140% at 100% 0%, rgb(142 211 177 / 0.1), transparent 55%),
+    radial-gradient(
+      120% 140% at 100% 0%,
+      rgb(142 211 177 / 0.1),
+      transparent 55%
+    ),
     var(--surface);
 }
 
@@ -1716,7 +1734,9 @@ input[type="checkbox"][role="switch"]::after {
   height: 20px;
   border-radius: 50%;
   background: var(--ink-2);
-  transition: transform 0.15s, background-color 0.15s;
+  transition:
+    transform 0.15s,
+    background-color 0.15s;
 }
 
 input[type="checkbox"][role="switch"]:checked {
@@ -1760,7 +1780,9 @@ input[type="checkbox"][role="switch"]:checked::after {
   color: var(--muted);
   text-align: center;
   cursor: pointer;
-  transition: border-color 0.15s, background-color 0.15s;
+  transition:
+    border-color 0.15s,
+    background-color 0.15s;
 }
 
 .dropzone:hover,
@@ -1969,7 +1991,9 @@ main.study {
   border-radius: 50%;
   background: var(--surface);
   color: var(--ink-2);
-  transition: background-color 0.15s, border-color 0.15s;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
 }
 
 .say:hover {
@@ -2010,7 +2034,9 @@ main.study {
   color: var(--muted);
   font-size: 13px;
   font-weight: 550;
-  transition: color 0.15s, border-color 0.15s;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
 }
 
 .more-senses:hover {
@@ -2190,8 +2216,18 @@ main.study {
   border: 1px solid var(--line-strong);
   border-radius: 18px;
   background:
-    linear-gradient(to right, transparent calc(50% - 0.5px), var(--line) calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
-    linear-gradient(to bottom, transparent calc(50% - 0.5px), var(--line) calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
+    linear-gradient(
+      to right,
+      transparent calc(50% - 0.5px),
+      var(--line) calc(50% - 0.5px) calc(50% + 0.5px),
+      transparent calc(50% + 0.5px)
+    ),
+    linear-gradient(
+      to bottom,
+      transparent calc(50% - 0.5px),
+      var(--line) calc(50% - 0.5px) calc(50% + 0.5px),
+      transparent calc(50% + 0.5px)
+    ),
     var(--surface);
   overflow: hidden;
 }
@@ -2245,7 +2281,9 @@ main.study {
   border-radius: 9px;
   background: var(--surface);
   color: var(--ink-2);
-  transition: border-color 0.15s, background-color 0.15s;
+  transition:
+    border-color 0.15s,
+    background-color 0.15s;
 }
 
 .pad-thumb:hover,
@@ -2329,7 +2367,10 @@ main.study {
   border: 1px solid var(--line-strong);
   border-radius: 14px;
   background: var(--surface);
-  transition: background-color 0.15s, border-color 0.15s, transform 0.1s;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s,
+    transform 0.1s;
 }
 
 .rating:active {
@@ -2394,7 +2435,9 @@ main.study {
 .nav-progress.done {
   opacity: 0;
   transform: scaleX(1);
-  transition: transform 0.2s ease, opacity 0.3s ease 0.15s;
+  transition:
+    transform 0.2s ease,
+    opacity 0.3s ease 0.15s;
 }
 
 @media (max-width: 859px) {
