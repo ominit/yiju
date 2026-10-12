@@ -1,16 +1,11 @@
-import io
-import re
 import sqlite3
 from datetime import UTC, datetime, timedelta, timezone
-from pathlib import Path
 
 import pytest
-from conftest import csrf, seed_known_word
-from flask import Flask
+from conftest import import_export, seed_known_word
 from flask.testing import FlaskClient
 
 from yiju.storage.cards import create_sentence_cards
-from yiju.storage.database import connect
 from yiju.storage.importing import import_xml
 from yiju.storage.learning import review_card, undo_review
 from yiju.storage.queue import card_family, overview, study_queue
@@ -27,19 +22,17 @@ def large_export() -> bytes:
     return f'<plecoflash formatversion="2"><cards>{cards}</cards></plecoflash>'.encode()
 
 
-@pytest.mark.parametrize("include_listening", [False, True])
 def test_family_selection_fills_daily_limit(
-    connection: sqlite3.Connection, large_export: bytes, *, include_listening: bool
+    connection: sqlite3.Connection, large_export: bytes
 ) -> None:
     import_xml(connection, large_export, "words.xml")
     now = datetime.now(UTC) + timedelta(seconds=1)
-    queue = study_queue(connection, now, include_listening=include_listening)
+    queue = study_queue(connection, now)
     assert len(queue) == 20
     assert len({card_family(card) for card in queue}) == 20
-    assert any(card["direction"] == "listening" for card in queue) == include_listening
     for card in queue:
         assert study_queue(connection, now, card_id=card["id"])
-    assert overview(connection, now, include_listening=include_listening)["new"] == 20
+    assert overview(connection, now)["new"] == 20
 
 
 def test_due_family_does_not_consume_the_new_card_quota(
@@ -49,7 +42,7 @@ def test_due_family_does_not_consume_the_new_card_quota(
     now = datetime.now(UTC) + timedelta(seconds=1)
     connection.execute(
         "UPDATE cards SET reviews = 1 WHERE id = "
-        "(SELECT id FROM cards WHERE direction = 'listening' LIMIT 1)"
+        "(SELECT id FROM cards WHERE direction = 'production' LIMIT 1)"
     )
     connection.commit()
     queue = study_queue(connection, now)
@@ -69,7 +62,7 @@ def test_review_buries_siblings_but_allows_repeats_and_undo(
         "SELECT * FROM cards WHERE word = ? AND (sentence_id IS NOT NULL) = ?",
         ("我" if sentence else "去", sentence),
     ).fetchall()
-    card = next(row for row in cards if row["direction"] == "listening")
+    card = next(row for row in cards if row["direction"] == "production")
     review = review_card(connection, card["id"], card["version"], 1, now)
     due = datetime.fromisoformat(
         connection.execute(
@@ -149,53 +142,13 @@ def test_due_family_representative_is_stable_and_targeted_lookup_remains_valid(
         assert study_queue(connection, now, card_id=card["id"])
 
 
-def test_muted_buffer_refills_and_preserves_requested_card(
-    client: FlaskClient, app: Flask, large_export: bytes
+def test_batch_fills_with_distinct_families(
+    client: FlaskClient, large_export: bytes
 ) -> None:
-    client.post(
-        "/import",
-        data={"csrf": csrf(client), "file": (io.BytesIO(large_export), "words.xml")},
-    )
-    with connect(Path(app.config["DATABASE"])) as db:
-        card = db.execute(
-            "SELECT * FROM cards WHERE direction = 'production' ORDER BY id LIMIT 1"
-        ).fetchone()
-    headers = {"X-Yiju-Partial": "study", "X-Yiju-Buffer": "1", "X-Yiju-Audio": "muted"}
-    response = client.get(f"/study?card={card['id']}", headers=headers)
-    assert response.status_code == 200
-    batch = response.json
+    import_export(client, large_export)
+    batch = client.get("/api/study").json
     assert batch is not None
-    assert batch["include_listening"] is False
     assert batch["count"] == 20
     assert len(batch["cards"]) == 12
-    assert f'data-card-id="{card["id"]}"' in batch["cards"][0]
-    families = []
-    for prepared in batch["cards"]:
-        assert 'data-direction="listening"' not in prepared
-        match = re.search(r'data-card-family="([^"]+)"', prepared)
-        assert match is not None
-        families.append(match[1])
+    families = [card["family"] for card in batch["cards"]]
     assert len(set(families)) == len(families)
-
-
-def test_audio_query_fallback_filters_listening(client: FlaskClient) -> None:
-    response = client.get("/study?audio=muted", headers={"X-Yiju-Buffer": "1"})
-    assert response.json is not None
-    assert response.json["include_listening"] is False
-
-
-def test_overview_respects_muted_eligibility(
-    client: FlaskClient, app: Flask, xml_export: bytes
-) -> None:
-    client.post(
-        "/import",
-        data={"csrf": csrf(client), "file": (io.BytesIO(xml_export), "words.xml")},
-    )
-    with connect(Path(app.config["DATABASE"])) as db:
-        db.execute("UPDATE cards SET suspended = (direction != 'listening')")
-        db.commit()
-    assert b"3 new cards available" in client.get("/").data
-    assert (
-        b"0 new cards available"
-        in client.get("/", headers={"X-Yiju-Audio": "muted"}).data
-    )

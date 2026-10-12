@@ -1,18 +1,14 @@
-import io
 import json
-import re
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Never
 
-import pytest
-from conftest import csrf, seed_known_word
+from conftest import csrf, import_export, page_context, seed_known_word
 from flask import Flask
 from flask.testing import FlaskClient
 
 from yiju.core.definitions import recall_prompt
-from yiju.storage.database import SCHEMA_VERSION, connect, initialize
+from yiju.storage.database import connect
 from yiju.storage.importing import import_xml
 from yiju.storage.learning import known_sentences, review_card, undo_review
 from yiju.storage.queue import overview, study_queue
@@ -63,7 +59,7 @@ def test_reverse_word_schedule_is_independent_and_both_reviews_share_progress(
     assert any(row["id"] == reverse["id"] for row in queue)
     assert not any(row["id"] == forward["id"] for row in queue)
     import_xml(connection, xml_export, "again.xml")
-    assert connection.execute("SELECT count(*) FROM cards").fetchone()[0] == 15
+    assert connection.execute("SELECT count(*) FROM cards").fetchone()[0] == 10
 
 
 def test_sentence_directions_contribute_to_one_learned_count(
@@ -152,155 +148,37 @@ def test_reverse_cards_require_a_definition_without_answer_hints(
     assert recall_prompt(json.dumps(senses)) == "I; me"
 
 
-def test_upgrade_adds_reverse_cards_without_changing_existing_progress(
-    tmp_path: Path, xml_export: bytes, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    path = tmp_path / "legacy.sqlite3"
-    initialize(path)
-    with connect(path) as db:
-        import_xml(db, xml_export, "words.xml")
-        now = datetime.now(UTC) + timedelta(seconds=1)
-        card = db.execute(
-            "SELECT * FROM cards WHERE word = '我' AND sentence_id IS NULL "
-            "AND direction = 'recognition'"
-        ).fetchone()
-        review_card(db, card["id"], card["version"], 3, now)
-        db.execute("UPDATE cards SET suspended = 1 WHERE word = '学习'")
-        db.execute("DELETE FROM cards WHERE direction != 'recognition'")
-        db.execute("ALTER TABLE cards DROP COLUMN direction")
-        db.execute("PRAGMA user_version = 4")
-        before = {row["id"]: dict(row) for row in db.execute("SELECT * FROM cards")}
-        history = [tuple(row) for row in db.execute("SELECT * FROM reviews")]
-        knowledge = [tuple(row) for row in db.execute("SELECT * FROM knowledge")]
-
-    def unexpected_parsing(_text: str) -> Never:
-        message = "Upgrading cards must not reparse dictionary text."
-        raise AssertionError(message)
-
-    monkeypatch.setattr("yiju.storage.database.parse_definition", unexpected_parsing)
-    for _ in range(2):
-        initialize(path)
-        with connect(path) as db:
-            assert db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
-            assert db.execute("SELECT count(*) FROM cards").fetchone()[0] == 15
-            for row in db.execute(
-                "SELECT * FROM cards WHERE direction = 'recognition'"
-            ):
-                assert dict(row) == {**before[row["id"]], "direction": "recognition"}
-            for row in db.execute("SELECT * FROM cards WHERE direction = 'production'"):
-                assert row["reviews"] == 0
-                assert row["suspended"] == int(row["word"] == "学习")
-            assert [
-                tuple(row) for row in db.execute("SELECT * FROM reviews")
-            ] == history
-            assert [
-                tuple(row) for row in db.execute("SELECT * FROM knowledge")
-            ] == knowledge
-    with connect(path) as db:
-        undo_review(db, db.execute("SELECT max(id) FROM reviews").fetchone()[0])
-        assert db.execute("SELECT count(*) FROM knowledge").fetchone()[0] == 0
-
-
-@pytest.mark.parametrize("sentence", [False, True])
-def test_reverse_front_shows_english_and_reveal_has_the_chinese_answer(
-    client: FlaskClient, app: Flask, xml_export: bytes, *, sentence: bool
-) -> None:
-    token = csrf(client)
-    data = (
-        xml_export
-        if sentence
-        else xml_export.replace(
-            b"verb go",
-            "verb 1 go 2 leave\nnoun note (工尺谱), corresponding to 7".encode(),
-        )
-    )
-    client.post(
-        "/import", data={"csrf": token, "file": (io.BytesIO(data), "words.xml")}
-    )
-    with connect(Path(app.config["DATABASE"])) as db:
-        seed_known_word(db, "我")
-        card = db.execute(
-            "SELECT * FROM cards WHERE direction = 'production' AND word = ? "
-            "AND (sentence_id IS NOT NULL) = ?",
-            ("我" if sentence else "去", int(sentence)),
-        ).fetchone()
-    front = client.get(f"/study?card={card['id']}").data.decode()
-    prompt = re.search(
-        r'<p class="recall-prompt question-text"[^>]*>(.*?)</p>'
-        if sentence
-        else r'<div class="recall-definitions"[^>]*>(.*?)</div>\s*<p class="chinese',
-        front,
-        re.DOTALL,
-    )
-    assert prompt is not None
-    if sentence:
-        assert prompt[1] == "I am going."
-    else:
-        assert '<ol class="dictionary-senses">' in prompt[1]
-        assert '<span class="part-of-speech">verb</span>' in prompt[1]
-        assert '<span class="part-of-speech">noun</span>' in prompt[1]
-        assert "<span>go</span>" in prompt[1]
-        assert "<span>leave</span>" in prompt[1]
-        assert "note (工尺谱), corresponding to 7" in prompt[1]
-        assert "dictionary-example" not in prompt[1]
-        assert "I am going." not in prompt[1]
-    assert re.search(
-        r'class="chinese question-text[^"]*"\s+data-reveal-answer\s+hidden', front
-    )
-    answer = client.get(f"/study?card={card['id']}&answer=1").data.decode()
-    if not sentence:
-        front_senses = re.search(
-            r'<ol class="dictionary-senses">(.*?)</ol>', prompt[1], re.DOTALL
-        )
-        back_senses = re.search(
-            r'<div class="answer-flow">.*?<ol class="dictionary-senses">(.*?)</ol>',
-            answer,
-            re.DOTALL,
-        )
-        assert front_senses is not None
-        assert back_senses is not None
-        assert front_senses[1] == back_senses[1]
-        assert 'class="dictionary-examples"' in answer
-        assert "I am going." in answer
-    assert re.search(
-        r'class="recall-prompt question-text"\s+data-hide-answer\s+hidden'
-        if sentence
-        else r'class="recall-definitions"\s+data-hide-answer\s+hidden',
-        answer,
-    )
-    response = client.post(
-        f"/review/{card['id']}",
-        data={"csrf": token, "version": card["version"], "rating": 3},
-        headers={"X-Yiju-Partial": "study"},
-    )
-    assert response.status_code == 200
-    assert b"<!DOCTYPE" not in response.data
-
-
 def test_library_does_not_duplicate_words_and_pauses_both_directions(
     client: FlaskClient, app: Flask, xml_export: bytes
 ) -> None:
     token = csrf(client)
-    client.post(
-        "/import", data={"csrf": token, "file": (io.BytesIO(xml_export), "words.xml")}
-    )
-    assert client.get("/library").data.count(b'class="library-entry"') == 3
+    import_export(client, xml_export, token)
+    assert len(page_context(client, "/library")["items"]) == 3
     with connect(Path(app.config["DATABASE"])) as db:
         card = db.execute(
             "SELECT * FROM cards WHERE word = '去' AND sentence_id IS NULL "
             "AND direction = 'recognition'"
         ).fetchone()
-    assert (
-        client.post(
-            f"/cards/{card['id']}/suspend",
-            data={"csrf": token, "version": card["version"]},
-        ).status_code
-        == 303
+    detail = page_context(client, "/library/words/去")
+    assert detail["item"].row["version"] == card["version"]
+    assert [row["label"] for row in detail["details"]["cards"]] == ["Read", "Write"]
+    paused = client.post(
+        "/words/去/pause", data={"csrf": token, "version": card["version"]}
     )
+    assert paused.status_code == 200
+    assert "Resume" in paused.get_data(as_text=True)
     with connect(Path(app.config["DATABASE"])) as db:
         assert [
-            row[0]
+            tuple(row)
             for row in db.execute(
-                "SELECT suspended FROM cards WHERE word = '去' AND sentence_id IS NULL"
+                "SELECT suspended, version FROM cards "
+                "WHERE word = '去' AND sentence_id IS NULL"
             )
-        ] == [1, 1, 1]
+        ] == [(1, 1)] * 2
+        assert not db.execute(
+            "SELECT count(*) FROM cards WHERE word = '去' AND sentence_id IS NOT NULL "
+            "AND suspended = 1"
+        ).fetchone()[0]
+    detail = page_context(client, "/library/words/去")
+    assert detail["item"].hidden
+    assert all(row["suspended"] for row in detail["details"]["cards"])

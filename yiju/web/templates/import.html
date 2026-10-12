@@ -1,24 +1,22 @@
 {% extends 'base.html' %}
-{% block title %}Import words · Yiju{% endblock %}
-{% block page_class %}narrow{% endblock %}
+{% from 'macros/ui.html' import icon %}
+{% block title %}Import · Yiju{% endblock %}
+{% block main_class %}page narrow{% endblock %}
 {% block content %}
-  <div class="page-heading">
+  <a class="back" href="{{ url_for('pages.library') }}">{{ icon('back', 18) }}Library</a>
+  <header class="page-head">
     <h1>Import words</h1>
-  </div>
-  <form class="panel import-form"
-        method="post"
-        enctype="multipart/form-data"
-        data-busy>
+  </header>
+  <form class="panel import" method="post" enctype="multipart/form-data" data-busy="Importing…">
     <input type="hidden" name="csrf" value="{{ csrf }}">
-    <label class="upload-area" for="file">
-      <strong>Pleco XML export</strong>
-      <input id="file"
-             name="file"
-             type="file"
-             accept=".xml,text/xml,application/xml"
-             required>
+    <label class="dropzone" data-dropzone>
+      {{ icon('upload', 28) }}
+      <span class="dropzone-title" data-file-name>Choose a Pleco XML export</span>
+      <span class="muted small">In Pleco: Flashcards → Import/Export → Export cards, format XML</span>
+      <input name="file" type="file" accept=".xml,text/xml,application/xml" required>
     </label>
-    <button class="button" type="submit">Import</button>
-    <p class="busy-message" role="status" hidden>Importing…</p>
+    <div class="form-actions">
+      <button class="button primary" type="submit">Import</button>
+    </div>
   </form>
 {% endblock %}

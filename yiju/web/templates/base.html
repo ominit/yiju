@@ -1,71 +1,54 @@
-{% if request.headers.get('X-Yiju-Partial') != 'page' %}
-  <!DOCTYPE html>
-  <html lang="en">
-    <head>
-      <meta charset="utf-8">
-      <meta name="color-scheme" content="dark">
-      <meta name="theme-color" content="#101417">
-      <meta name="mobile-web-app-capable" content="yes">
-      <meta name="apple-mobile-web-app-capable" content="yes">
-      <meta name="apple-mobile-web-app-title" content="Yiju">
-      <meta name="apple-mobile-web-app-status-bar-style" content="black">
-      <meta name="viewport"
-            content="width=device-width, initial-scale=1, viewport-fit=cover">
-      <meta name="description" content="Chinese vocabulary and sentence study.">
-      <title>{% block title %}Yiju · 一句{% endblock %}</title>
-      <link rel="icon"
-            href="{{ url_for('static', filename='favicon.svg') }}"
-            type="image/svg+xml">
-      <link rel="manifest" href="{{ url_for('install.manifest') }}">
-      <link rel="apple-touch-icon"
-            href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
-      <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
-      <link rel="stylesheet"
-            href="{{ url_for('static', filename='install.css') }}">
-      <script src="{{ url_for('static', filename='install.js') }}" defer></script>
-      <script src="{{ url_for('static', filename='app.js') }}" defer></script>
-      <script src="{{ url_for('static', filename='practice.js') }}" defer></script>
-      <script src="{{ url_for('static', filename='vendor/hanzi-writer.min.js') }}"
-              defer></script>
-      <script src="{{ url_for('static', filename='strokes.js') }}" defer></script>
-      <script src="{{ url_for('static', filename='navigation.js') }}" defer></script>
-      <script src="{{ url_for('static', filename='library.js') }}" defer></script>
-    </head>
-    <body class="{% block body_class %}{% endblock %}">
+{% from 'macros/ui.html' import icon %}
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="color-scheme" content="dark">
+    <meta name="theme-color" content="#0e1012">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Yiju">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="description" content="Chinese vocabulary and sentence study.">
+    <meta name="csrf" content="{{ csrf }}">
+    <meta name="hanzi-writer" content="{{ asset('vendor/hanzi-writer.min.js') }}">
+    <title>{% block title %}Yiju{% endblock %}</title>
+    <link rel="icon" href="{{ asset('favicon.svg') }}" type="image/svg+xml">
+    <link rel="manifest" href="{{ url_for('install.manifest') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
+    <link rel="stylesheet" href="{{ asset('app.css') }}">
+    <script src="{{ asset('app.js') }}" type="module"></script>
+    {% block head %}{% endblock %}
+  </head>
+  <body class="{% block body_class %}{% endblock %}">
+    {% block chrome %}
       <a class="skip-link" href="#main">Skip to content</a>
-      <header class="site-header">
-        <a class="brand" href="{{ url_for('pages.home') }}">
-          <img class="brand-seal"
-               src="{{ url_for('static', filename='favicon.svg') }}"
-               alt="句"
-               width="37"
-               height="37">
-          yiju
+      <header class="topbar">
+        <a class="brand" href="{{ url_for('pages.home') }}" aria-label="Yiju home">
+          <img src="{{ asset('favicon.svg') }}" alt="" width="28" height="28">
+          <span>yiju</span>
         </a>
-        <nav aria-label="Main navigation">
-          <a href="{{ url_for('pages.home') }}"
-             {% if request.endpoint == 'pages.home' %}aria-current="page"{% endif %}>Overview</a>
-          <a href="{{ url_for('pages.study') }}"
-             {% if request.endpoint == 'pages.study' %}aria-current="page"{% endif %}>Study</a>
-          <a href="{{ url_for('pages.library') }}"
-             {% if request.endpoint in ['pages.library','pages.sentences','pages.sentence_detail'] %}aria-current="page"{% endif %}>Library</a>
-          <a href="{{ url_for('pages.preferences') }}"
-             {% if request.endpoint == 'pages.preferences' %}aria-current="page"{% endif %}>Settings</a>
+        <nav class="tabs" aria-label="Main">
+          {% for key, endpoint, label in [('home', 'pages.home', 'Today'), ('study', 'study.page', 'Study'), ('library', 'pages.library', 'Library'), ('settings', 'pages.preferences', 'Settings')] %}
+            <a href="{{ url_for(endpoint) }}" {% if section == key %}aria-current="page"{% endif %}>
+              {{ icon(key, 22) }}<span>{{ label }}</span>
+            </a>
+          {% endfor %}
         </nav>
       </header>
-{% endif %}
-<main id="main"
-      class="page {% block page_class %} {% endblock %}"
-      tabindex="-1"
-      data-title="{{ self.title() |striptags|trim }}"
-      data-body-class="{{ self.body_class() |trim }}"
-      data-navigation="{{ navigation }}">
-  {% for message in get_flashed_messages() %}
-    <div class="notice" role="status">{{ message }}</div>
-  {% endfor %}
-  {% block content %}{% endblock %}
-</main>
-{% if request.headers.get('X-Yiju-Partial') != 'page' %}
+    {% endblock %}
+    <main id="main" class="{% block main_class %}page{% endblock %}" tabindex="-1">
+      {% block flashes %}
+        {% with messages = get_flashed_messages() %}
+          {% if messages %}
+            <div class="toasts" role="status">
+              {% for message in messages %}<p class="toast">{{ message }}</p>{% endfor %}
+            </div>
+          {% endif %}
+        {% endwith %}
+      {% endblock %}
+      {% block content %}{% endblock %}
+    </main>
   </body>
-  </html>
-{% endif %}
+</html>

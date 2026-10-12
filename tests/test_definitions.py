@@ -1,4 +1,6 @@
-from yiju.core.definitions import parse_definition, recall_prompt
+import json
+
+from yiju.core.definitions import parse_definition, prompt_senses, recall_prompt
 
 
 def test_separates_numbered_senses_parts_of_speech_and_examples() -> None:
@@ -72,3 +74,80 @@ def test_recall_prompt_includes_all_meanings_without_character_hints() -> None:
         "noun see 工作\nnoun note (工尺谱)\nverb work"
     )
     assert recall_prompt(definition.to_json()) == "work\noperate\nwork; job\nnote"
+
+
+def test_see_references_follow_the_meaning() -> None:
+    definition = parse_definition("noun 1 moon 2 fullmoon-shaped; round See 月饼")
+    assert [sense.meaning for sense in definition.senses] == [
+        "moon",
+        "fullmoon-shaped; round (see 月饼)",
+    ]
+    assert prompt_senses(definition.to_json()) == (
+        ("noun", "moon"),
+        ("noun", "fullmoon-shaped; round"),
+    )
+
+
+def test_numbered_senses_may_start_with_a_parenthesis() -> None:
+    definition = parse_definition("verb 1 (of a person) go 2 (of time) pass")
+    assert [sense.meaning for sense in definition.senses] == [
+        "(of a person) go",
+        "(of time) pass",
+    ]
+
+
+def test_register_label_is_applied_to_each_numbered_sense() -> None:
+    definition = parse_definition(
+        "classical 1 [used as a pronoun] he 2 [used as a particle] it"
+    )
+    assert [sense.meaning for sense in definition.senses] == [
+        "classical [used as a pronoun] he",
+        "classical [used as a particle] it",
+    ]
+    unlabeled = parse_definition("noun a large lead 3 1 big; large")
+    assert [sense.meaning for sense in unlabeled.senses] == [
+        "a large lead 3 1 big; large"
+    ]
+
+
+def test_prompt_senses_skip_references_and_duplicates_and_strip_hints() -> None:
+    values = "\n".join(
+        [
+            parse_definition("see 我 [wo3]\nverb go (去)").to_json(),
+            parse_definition("verb go\nnoun note (工尺谱), seven").to_json(),
+        ]
+    )
+    assert prompt_senses(values) == (("verb", "go"), ("noun", "note, seven"))
+    assert recall_prompt(values) == "go\nnote, seven"
+
+
+def test_prompt_senses_mask_character_hints_inside_usage_notes() -> None:
+    meanings = [
+        "[used alone, esp. in contrast to 上] below",
+        "big (opp. 小)",
+        "note , seven 七",
+        "come 来 去 go",
+        "上 above; on （上面）",
+        "go [去]",
+    ]
+    values = json.dumps(
+        {
+            "version": 1,
+            "senses": [
+                {"part_of_speech": "noun", "meaning": meaning, "examples": []}
+                for meaning in meanings
+            ],
+        }
+    )
+    assert [meaning for _, meaning in prompt_senses(values)] == [
+        "[used alone, esp. in contrast to …] below",
+        "big (opp. …)",
+        "note, seven",
+        "come … go",
+        "above; on",
+        "go",
+    ]
+    assert recall_prompt(values).splitlines()[:2] == [
+        "[used alone, esp. in contrast to …] below",
+        "big (opp. …)",
+    ]

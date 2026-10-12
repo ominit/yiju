@@ -36,7 +36,6 @@ def test_fresh_decks_do_not_follow_one_fixed_order(
     assert {order[0]["direction"] for order in orders} == {
         "recognition",
         "production",
-        "listening",
     }
     expected = {
         row["word"]

@@ -1,15 +1,23 @@
 import asyncio
 import io
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
-from conftest import csrf
+from conftest import csrf, import_export
 from flask import Flask
 from flask.testing import FlaskClient
 
 from yiju.storage.database import connect
 from yiju.web import audio
+
+JSON = {"Accept": "application/json"}
+
+
+@pytest.fixture(autouse=True)
+def reset_outage(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(audio, "_outage", audio.Outage())
 
 
 @pytest.fixture
@@ -119,8 +127,52 @@ def test_unavailable_voice_returns_retryable_error(
         raise OSError(message)
 
     monkeypatch.setattr(audio, "synthesize", unavailable)
-    response = client.get(f"/audio/cards/{card_id}", headers={"X-Yiju-Partial": "page"})
+    response = client.get(f"/audio/cards/{card_id}", headers=JSON)
     assert response.status_code == 503
     assert response.json is not None
     assert "unavailable" in response.json["error"]
     assert list((Path(app.config["DATABASE"]).parent / "audio").iterdir()) == []
+
+
+def test_repeated_failures_pause_synthesis_but_serve_cached_audio(
+    client: FlaskClient,
+    app: Flask,
+    xml_export: bytes,
+    recorded_texts: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import_export(client, xml_export)
+    with connect(Path(app.config["DATABASE"])) as db:
+        cached, uncached = (
+            row[0]
+            for row in db.execute(
+                "SELECT id FROM cards WHERE sentence_id IS NULL "
+                "AND direction = 'recognition' AND word IN ('我', '去') ORDER BY word"
+            )
+        )
+    assert client.get(f"/audio/cards/{cached}").status_code == 200
+    attempts = 0
+
+    async def unavailable(_text: str, _path: Path) -> None:
+        nonlocal attempts
+        attempts += 1
+        message = "Voice service is unavailable"
+        raise OSError(message)
+
+    monkeypatch.setattr(audio, "synthesize", unavailable)
+    for _ in range(audio.OUTAGE_THRESHOLD):
+        assert client.get(f"/audio/cards/{uncached}").status_code == 503
+    assert attempts == audio.OUTAGE_THRESHOLD
+    response = client.get(f"/audio/cards/{uncached}", headers=JSON)
+    assert response.status_code == 503
+    assert response.json is not None
+    assert "few minutes" in response.json["error"]
+    assert attempts == audio.OUTAGE_THRESHOLD
+    served = client.get(f"/audio/cards/{cached}")
+    assert served.status_code == 200
+    assert served.data == b"ID3" + "去".encode()
+    assert recorded_texts == ["去"]
+    later = time.monotonic() + audio.OUTAGE_SECONDS + 1
+    monkeypatch.setattr(audio.time, "monotonic", lambda: later)
+    assert client.get(f"/audio/cards/{uncached}").status_code == 503
+    assert attempts == audio.OUTAGE_THRESHOLD + 1

@@ -1,10 +1,13 @@
 {% extends 'base.html' %}
 {% block title %}{{ title }} · Yiju{% endblock %}
-{% block page_class %}narrow{% endblock %}
+{% block main_class %}page narrow{% endblock %}
 {% block content %}
-  <section class="empty-state panel">
+  <section class="empty">
     <h1>{{ title }}</h1>
-    <p>{{ message }}</p>
-    <a class="button" href="{{ url_for('pages.home') }}">Back to overview</a>
+    <p class="muted">{{ message }}</p>
+    <div class="form-actions center">
+      <button class="button" type="button" data-back hidden>Go back</button>
+      <a class="button primary" href="{{ url_for('pages.home') }}">Today</a>
+    </div>
   </section>
 {% endblock %}

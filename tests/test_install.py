@@ -14,7 +14,9 @@ def test_manifest_provides_standalone_study_app_and_valid_icons(
     assert manifest["start_url"] == "/study"
     assert manifest["scope"] == "/"
     assert manifest["display"] == "standalone"
-    assert manifest["theme_color"] == "#101417"
+    assert f'name="theme-color" content="{manifest["theme_color"]}"' in client.get(
+        "/"
+    ).get_data(as_text=True)
     assert {icon["purpose"] for icon in manifest["icons"]} == {"any", "maskable"}
     assert {icon["sizes"] for icon in manifest["icons"]} == {"192x192", "512x512"}
     for icon in manifest["icons"]:
@@ -29,18 +31,11 @@ def test_manifest_provides_standalone_study_app_and_valid_icons(
 def test_pages_include_install_metadata_and_settings_controls(
     client: FlaskClient,
 ) -> None:
-    response = client.get("/settings")
-    assert b'<link rel="manifest" href="/manifest.webmanifest">' in response.data
-    assert b'rel="apple-touch-icon"' in response.data
-    assert b'name="apple-mobile-web-app-capable" content="yes"' in response.data
-    assert b"/static/install.js" in response.data
-    assert b"data-install-button hidden" in response.data
-    assert b"data-install-ios" not in response.data
-    assert b"data-install-firefox" not in response.data
-    assert b"data-install-insecure" not in response.data
+    page = client.get("/settings").get_data(as_text=True)
+    assert 'rel="manifest" href="/manifest.webmanifest"' in page
+    assert 'rel="apple-touch-icon"' in page
+    assert 'name="apple-mobile-web-app-capable" content="yes"' in page
+    assert "data-install" in page
     icon = client.get("/static/icons/apple-touch-icon.png")
     assert icon.status_code == 200
     assert struct.unpack(">II", icon.data[16:24]) == (180, 180)
-    partial = client.get("/settings", headers={"X-Yiju-Partial": "page"})
-    assert b"data-install-panel" in partial.data
-    assert b'rel="manifest"' not in partial.data

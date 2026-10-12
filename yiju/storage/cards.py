@@ -26,7 +26,6 @@ def _create_cards(
     for direction, card_kind in [
         ("recognition", kind),
         ("production", kind + "-reverse"),
-        ("listening", kind + "-listening"),
     ]:
         card_id = identity(card_kind, text)
         connection.execute(

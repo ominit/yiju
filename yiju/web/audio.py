@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import os
 import tempfile
+import time
 from pathlib import Path
 from threading import Lock
 
@@ -15,6 +16,29 @@ audio = Blueprint("audio", __name__)
 VOICE = "zh-CN-XiaoxiaoNeural"
 CACHE_VERSION = "1"
 _locks = tuple(Lock() for _ in range(16))
+OUTAGE_THRESHOLD = 3
+OUTAGE_SECONDS = 120
+
+
+class Outage:
+    def __init__(self) -> None:
+        self.failures = 0
+        self.until = 0.0
+
+    def active(self) -> bool:
+        return time.monotonic() < self.until
+
+    def failed(self) -> None:
+        self.failures += 1
+        if self.failures >= OUTAGE_THRESHOLD:
+            self.failures = 0
+            self.until = time.monotonic() + OUTAGE_SECONDS
+
+    def recovered(self) -> None:
+        self.failures = 0
+
+
+_outage = Outage()
 
 
 async def synthesize(text: str, destination: Path) -> None:
@@ -22,10 +46,14 @@ async def synthesize(text: str, destination: Path) -> None:
     await asyncio.wait_for(speech.save(str(destination)), timeout=20)
 
 
-def cached_audio(text: str, directory: Path) -> Path:
+def audio_path(text: str, directory: Path) -> Path:
     key = hashlib.sha256(f"{CACHE_VERSION}:{VOICE}:{text}".encode()).hexdigest()
-    destination = directory / f"{key}.mp3"
-    with _locks[int(key[:2], 16) % len(_locks)]:
+    return directory / f"{key}.mp3"
+
+
+def cached_audio(text: str, directory: Path) -> Path:
+    destination = audio_path(text, directory)
+    with _locks[int(destination.stem[:2], 16) % len(_locks)]:
         if destination.is_file():
             return destination
         directory.mkdir(parents=True, exist_ok=True)
@@ -57,10 +85,11 @@ def pronunciation(card_id: str) -> Response:
     if row is None:
         abort(404)
     text = row["chinese"] or row["word"]
+    directory = Path(current_app.config["DATABASE"]).resolve().parent / "audio"
+    if _outage.active() and not audio_path(text, directory).is_file():
+        abort(503, "Pronunciation is unavailable. Try again in a few minutes.")
     try:
-        path = cached_audio(
-            text, Path(current_app.config["DATABASE"]).resolve().parent / "audio"
-        )
+        path = cached_audio(text, directory)
     except (
         OSError,
         TimeoutError,
@@ -68,6 +97,8 @@ def pronunciation(card_id: str) -> Response:
         edge_tts.exceptions.EdgeTTSException,
         ValueError,
     ):
+        _outage.failed()
         current_app.logger.exception("Could not generate pronunciation audio")
         abort(503, "Pronunciation is unavailable. Try replaying it in a moment.")
+    _outage.recovered()
     return send_file(path, mimetype="audio/mpeg", conditional=True)

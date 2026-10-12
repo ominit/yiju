@@ -13,9 +13,12 @@ PART_OF_SPEECH = re.compile(
     r"particle|interjection|number|auxiliary|music)\b\s*",
     re.IGNORECASE,
 )
-SENSE_NUMBER = re.compile(r"(?:^|\s)(\d{1,2})\s+(?=[A-Za-z\[])")
+SENSE_NUMBER = re.compile(r"(?:^|\s)(\d{1,2})\s+(?=[A-Za-z\[(])")
+LABEL = re.compile(r"[a-z]+(?: [a-z]+)?")
 SUBSENSE = re.compile(r"(?:^|\s)[a-z]\s+(?=\[)")
 REFERENCE = re.compile(r"^(?:see|variant of|same as)\b", re.IGNORECASE)
+INLINE_REFERENCE = re.compile(rf"\bSee\s+([{HAN}]+)")
+SEE_ALSO = re.compile(r"\s*\(see [^)]*\)")
 FORMAT_VERSION = 1
 
 
@@ -71,38 +74,48 @@ def combine_definitions(values: str) -> Definition:
     )
 
 
+def _prompt_meaning(meaning: str) -> str:
+    meaning = SEE_ALSO.sub("", meaning)
+    meaning = re.sub(f"[{HAN}]+", "…", meaning)
+    meaning = re.sub(r"\([\s…]*\)|\[[\s…]*\]|\uff08[\s…]*\uff09", "", meaning)
+    meaning = re.sub(r"…(?:\s*…)+", "…", meaning)
+    meaning = re.sub(r"\s+([,;.])", r"\1", " ".join(meaning.split()))
+    return meaning.strip(" ;,…")
+
+
 @lru_cache(maxsize=2048)
+def prompt_senses(values: str) -> tuple[tuple[str, str], ...]:
+    senses: dict[str, str] = {}
+    for sense in combine_definitions(values).senses:
+        if not sense.meaning or REFERENCE.match(sense.meaning):
+            continue
+        meaning = _prompt_meaning(sense.meaning)
+        if meaning and meaning not in senses:
+            senses[meaning] = sense.part_of_speech
+    return tuple((part, meaning) for meaning, part in senses.items())
+
+
 def recall_prompt(values: str) -> str:
-    meanings = (
-        re.sub(
-            r"\(\s*\)|\[\s*\]|\uff08\s*\uff09",
-            "",
-            re.sub(f"[{HAN}]+", "", sense.meaning),
-        ).strip()
-        for sense in combine_definitions(values).senses
-        if sense.meaning and not REFERENCE.match(sense.meaning)
-    )
-    return "\n".join(dict.fromkeys(meaning for meaning in meanings if meaning))
+    return "\n".join(meaning for _, meaning in prompt_senses(values))
 
 
 def _sections(text: str) -> tuple[str, ...]:
     boundaries = []
     next_number = 1
     for match in SENSE_NUMBER.finditer(text):
-        if next_number == 1 and text[: match.start()].strip():
+        prefix = text[: match.start()].strip()
+        if next_number == 1 and prefix and not LABEL.fullmatch(prefix):
             continue
         if int(match[1]) == next_number:
             boundaries.append((match.start(), match.end()))
             next_number += 1
     if not boundaries:
         return (text,)
+    label = text[: boundaries[0][0]].strip()
     sections = []
-    prefix = text[: boundaries[0][0]].strip()
-    if prefix:
-        sections.append(prefix)
     for index, (_, start) in enumerate(boundaries):
         end = boundaries[index + 1][0] if index + 1 < len(boundaries) else len(text)
-        sections.append(text[start:end].strip())
+        sections.append(f"{label} {text[start:end].strip()}".strip())
     return tuple(sections)
 
 
@@ -121,6 +134,15 @@ def _subsections(text: str) -> tuple[str, ...]:
 def _meaning(text: str) -> str:
     if REFERENCE.match(text):
         return text.strip()
+    references = INLINE_REFERENCE.findall(text)
+    text = INLINE_REFERENCE.sub(" ", text)
+    prefix = _leading_meaning(text)
+    if references and prefix:
+        prefix += f" (see {', '.join(dict.fromkeys(references))})"
+    return prefix
+
+
+def _leading_meaning(text: str) -> str:
     prefix = text
     for chinese in re.finditer(f"[{HAN}]", text):
         lead = text[: chinese.start()]

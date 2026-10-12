@@ -53,7 +53,7 @@ def _new_card_order(cards: list[sqlite3.Row]) -> list[sqlite3.Row]:
     random.shuffle(cards)
     directions = [
         [card for card in cards if card["direction"] == direction]
-        for direction in ("recognition", "production", "listening")
+        for direction in ("recognition", "production")
     ]
     random.shuffle(directions)
     ordered = []
@@ -90,7 +90,6 @@ def study_queue(
     now: datetime,
     *,
     card_id: str | None = None,
-    include_listening: bool = True,
     preferred_card_id: str | None = None,
 ) -> list[sqlite3.Row]:
     now = now.astimezone(UTC)
@@ -110,7 +109,6 @@ def study_queue(
         connection.execute(
             CARD_QUERY
             + ELIGIBLE_FILTER
-            + ("AND c.direction != 'listening' " if not include_listening else "")
             + ("AND c.id = ? " if card_id is not None else "")
             + "ORDER BY (c.reviews = 0), c.due, c.id",
             (now.isoformat(), day_start, day_end, card_id)
@@ -168,10 +166,8 @@ def study_queue(
     ][:remaining]
 
 
-def overview(
-    connection: sqlite3.Connection, now: datetime, *, include_listening: bool = True
-) -> dict[str, int]:
-    queue = study_queue(connection, now, include_listening=include_listening)
+def overview(connection: sqlite3.Connection, now: datetime) -> dict[str, int]:
+    queue = study_queue(connection, now)
     return {
         "words": connection.execute(
             "SELECT count(DISTINCT word) FROM entries"

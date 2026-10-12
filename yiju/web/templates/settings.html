@@ -1,90 +1,79 @@
 {% extends 'base.html' %}
+{% from 'macros/ui.html' import icon %}
 {% block title %}Settings · Yiju{% endblock %}
-{% block page_class %}narrow{% endblock %}
+{% block main_class %}page narrow{% endblock %}
 {% block content %}
-  <div class="page-heading">
+  <header class="page-head">
     <h1>Settings</h1>
-  </div>
-  <form class="panel settings-form"
-        method="post"
-        action="{{ url_for('actions.save_settings') }}">
+  </header>
+  {% macro number(name, label, help, min, max, step=1) %}
+    <div class="field">
+      <div class="field-text">
+        <label for="{{ name }}">{{ label }}</label>
+        <p class="muted small">{{ help }}</p>
+      </div>
+      <input id="{{ name }}" name="{{ name }}" type="number" inputmode="decimal" min="{{ min }}" max="{{ max }}" step="{{ step }}" value="{{ config[name] }}" required>
+    </div>
+  {% endmacro %}
+  <form method="post" action="{{ url_for('actions.save_settings') }}">
     <input type="hidden" name="csrf" value="{{ csrf }}">
-    <h2>Study</h2>
-    <div class="setting-row">
-      <label for="new_per_day">New cards per day</label>
-      <input id="new_per_day"
-             name="new_per_day"
-             type="number"
-             min="0"
-             max="200"
-             value="{{ config.new_per_day }}"
-             required>
+    <section class="panel settings-group">
+      <h2>Study</h2>
+      {{ number('new_per_day', 'New cards per day', 'Maximum cards you see for the first time each day.', 0, 200) }}
+      {{ number('retention', 'Target retention', 'How likely you should be to remember a card when it comes due. Higher means more reviews.', 0.7, 0.99, 0.01) }}
+    </section>
+    <section class="panel settings-group">
+      <h2>Sentences</h2>
+      {{ number('max_unknown', 'Unfamiliar words allowed', 'A sentence is introduced only when it has at most this many words you have not learned.', 1, 5) }}
+      <label class="field toggle">
+        <span class="field-text">
+          <span class="label">Include fully familiar sentences</span>
+          <span class="muted small">Also introduce sentences where you already know every word.</span>
+        </span>
+        <input name="include_zero" type="checkbox" role="switch" {% if config.include_zero %}checked{% endif %}>
+      </label>
+    </section>
+    <section class="panel settings-group">
+      <h2>When a word counts as learned</h2>
+      <p class="muted small">All three must hold. Learned words unlock sentences.</p>
+      {{ number('known_days', 'Successful days', 'Separate days with a passing review since the last failure.', 1, 30) }}
+      {{ number('known_stability', 'Memory strength (days)', 'FSRS stability: days until recall drops to 90%.', 1, 365) }}
+      {{ number('known_retrievability', 'Recall right now', 'Estimated probability that you would remember it today.', 0.5, 0.99, 0.01) }}
+    </section>
+    <div class="form-actions sticky">
+      <button class="button primary" type="submit">Save settings</button>
     </div>
-    <div class="setting-row">
-      <label for="retention">Desired retention</label>
-      <input id="retention"
-             name="retention"
-             type="number"
-             min="0.7"
-             max="0.99"
-             step="0.01"
-             value="{{ config.retention }}"
-             required>
-    </div>
-    <h2>Sentences</h2>
-    <div class="setting-row">
-      <label for="max_unknown">Maximum unfamiliar words</label>
-      <input id="max_unknown"
-             name="max_unknown"
-             type="number"
-             min="1"
-             max="5"
-             value="{{ config.max_unknown }}"
-             required>
-    </div>
-    <label class="checkbox-row"><input name="include_zero"
-       type="checkbox"
-       {% if config.include_zero %}checked{% endif %}> Include fully familiar sentences</label>
-    <h2>Word familiarity</h2>
-    <div class="setting-row">
-      <label for="known_days">Successful review days</label>
-      <input id="known_days"
-             name="known_days"
-             type="number"
-             min="1"
-             max="30"
-             value="{{ config.known_days }}"
-             required>
-    </div>
-    <div class="setting-row">
-      <label for="known_stability">Minimum stability, days</label>
-      <input id="known_stability"
-             name="known_stability"
-             type="number"
-             min="1"
-             max="365"
-             value="{{ config.known_stability }}"
-             required>
-    </div>
-    <div class="setting-row">
-      <label for="known_retrievability">Minimum recall probability</label>
-      <input id="known_retrievability"
-             name="known_retrievability"
-             type="number"
-             min="0.5"
-             max="0.99"
-             step="0.01"
-             value="{{ config.known_retrievability }}"
-             required>
-    </div>
-    <button class="button">Save settings</button>
   </form>
-  <section class="panel install-panel" data-install-panel hidden>
-    <button class="button secondary" type="button" data-install-button hidden>Install Yiju</button>
-    <p class="small muted" data-install-status role="status" hidden></p>
-  </section>
-  <section class="panel backup-panel">
-    <h2>Backup</h2>
-    <a class="button secondary" href="{{ url_for('actions.backup') }}">Download backup</a>
+
+  <section class="panel settings-group">
+    <h2>Data</h2>
+    <div class="field">
+      <div class="field-text">
+        <span class="label">Import words</span>
+        <p class="muted small">Add cards from a Pleco XML flashcard export. Duplicates are skipped.</p>
+      </div>
+      <a class="button" href="{{ url_for('pages.import_page') }}">{{ icon('upload', 18) }}Import</a>
+    </div>
+    <div class="field">
+      <div class="field-text">
+        <span class="label">Backup</span>
+        <p class="muted small">Download the whole database as a SQLite file.</p>
+      </div>
+      <a class="button" href="{{ url_for('actions.backup') }}">{{ icon('download', 18) }}Download</a>
+    </div>
+    <div class="field">
+      <div class="field-text">
+        <span class="label">Flagged words</span>
+        <p class="muted small">Export flagged entries with your notes as JSON.</p>
+      </div>
+      <a class="button" href="{{ url_for('flags.export_flags') }}" download>{{ icon('download', 18) }}Export</a>
+    </div>
+    <div class="field" data-install hidden>
+      <div class="field-text">
+        <span class="label">Install app</span>
+        <p class="muted small" data-install-status>Add Yiju to your home screen for a full-screen study app.</p>
+      </div>
+      <button class="button" type="button" data-install-button>Install</button>
+    </div>
   </section>
 {% endblock %}

@@ -6,7 +6,7 @@ import pytest
 from conftest import seed_known_word
 from fsrs import Card, Rating, State
 
-from yiju.core.scheduling import is_known, new_card, scheduler
+from yiju.core.scheduling import interval_label, is_known, new_card, scheduler
 from yiju.storage.cards import identity
 from yiju.storage.database import vocabulary_words
 from yiju.storage.importing import import_xml
@@ -29,7 +29,7 @@ def test_import_is_repeatable_and_keeps_reviews(
     first = study_queue(connection, now)[0]
     review_card(connection, first["id"], first["version"], 3, now)
     assert import_xml(connection, xml_export, "renamed.xml") == batch
-    assert connection.execute("SELECT count(*) FROM cards").fetchone()[0] == 15
+    assert connection.execute("SELECT count(*) FROM cards").fetchone()[0] == 10
     assert connection.execute("SELECT count(*) FROM reviews").fetchone()[0] == 1
     assert connection.execute("SELECT count(*) FROM sentences").fetchone()[0] == 2
     second = import_xml(
@@ -266,9 +266,8 @@ def test_multiple_dictionary_senses_share_card_without_losing_definitions(
     assert {card["direction"] for card in cards} == {
         "recognition",
         "production",
-        "listening",
     }
-    assert len(cards) == 3
+    assert len(cards) == 2
     for card in cards:
         assert "pronoun I; me" in card["definition"]
         assert "another meaning" in card["definition"]
@@ -442,3 +441,20 @@ def test_sentence_review_updates_each_word_once_and_undo_restores_all(
     ).fetchone()
     assert restored["scheduling"] == card["scheduling"]
     assert restored["reviews"] == card["reviews"]
+
+
+@pytest.mark.parametrize(
+    ("seconds", "label"),
+    [
+        (10, "1m"),
+        (600, "10m"),
+        (6 * 3600, "6h"),
+        (86400 * 8, "8d"),
+        (86400 * 45, "1.5mo"),
+        (86400 * 60, "2mo"),
+        (86400 * 365, "1y"),
+        (86400 * 550, "1.5y"),
+    ],
+)
+def test_interval_labels_are_compact(seconds: float, label: str) -> None:
+    assert interval_label(seconds) == label

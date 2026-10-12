@@ -1,0 +1,144 @@
+{% macro icon(name, size=20) -%}
+  <svg class="icon" viewBox="0 0 24 24" width="{{ size }}" height="{{ size }}" aria-hidden="true" focusable="false">
+    {%- if name == 'home' -%}
+      <path d="M4 10.5 12 4l8 6.5V19a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1z" />
+    {%- elif name == 'study' -%}
+      <rect x="3.5" y="6" width="13" height="14" rx="2" /><path d="M7.5 3.5h11a2 2 0 0 1 2 2v12" />
+    {%- elif name == 'library' -%}
+      <path d="M5 4h4v16H5zM11 4h4v16h-4zM16.5 5.2l3.6-.9 3.4 15.3-3.6.9z" transform="translate(-1.5 0)" />
+    {%- elif name == 'settings' -%}
+      <circle cx="12" cy="12" r="3" /><path d="M12 2.5v3M12 18.5v3M4.4 4.4l2.1 2.1M17.5 17.5l2.1 2.1M2.5 12h3M18.5 12h3M4.4 19.6l2.1-2.1M17.5 6.5l2.1-2.1" />
+    {%- elif name == 'flag' -%}
+      <path d="M5.5 21V4.5m0 0c4.5-3 8.5 3 13 0v9c-4.5 3-8.5-3-13 0" />
+    {%- elif name == 'audio' -%}
+      <path d="M11 5 6.5 9H3.5v6h3L11 19z" /><path d="M15.5 9a4.5 4.5 0 0 1 0 6M18.5 6a8.5 8.5 0 0 1 0 12" />
+    {%- elif name == 'muted' -%}
+      <path d="M11 5 6.5 9H3.5v6h3L11 19z" /><path d="m16 9.5 5 5m0-5-5 5" />
+    {%- elif name == 'play' -%}
+      <path d="M7 4.5v15l12.5-7.5z" />
+    {%- elif name == 'undo' -%}
+      <path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+    {%- elif name == 'close' -%}
+      <path d="M6 6l12 12M18 6 6 18" />
+    {%- elif name == 'back' -%}
+      <path d="M15 5l-7 7 7 7" />
+    {%- elif name == 'next' -%}
+      <path d="m9 5 7 7-7 7" />
+    {%- elif name == 'erase' -%}
+      <path d="M8.5 20H20M4.6 15.4l9.9-9.9a2 2 0 0 1 2.8 0l2.2 2.2a2 2 0 0 1 0 2.8L11 19H7.8z" /><path d="m10 10 5 5" />
+    {%- elif name == 'plus' -%}
+      <path d="M12 5v14M5 12h14" />
+    {%- elif name == 'search' -%}
+      <circle cx="11" cy="11" r="6.5" /><path d="m16 16 4.5 4.5" />
+    {%- elif name == 'upload' -%}
+      <path d="M12 15V4m0 0-4.5 4.5M12 4l4.5 4.5M4.5 15v3.5a1.5 1.5 0 0 0 1.5 1.5h12a1.5 1.5 0 0 0 1.5-1.5V15" />
+    {%- elif name == 'download' -%}
+      <path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M4.5 15v3.5a1.5 1.5 0 0 0 1.5 1.5h12a1.5 1.5 0 0 0 1.5-1.5V15" />
+    {%- elif name == 'edit' -%}
+      <path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z" /><path d="m13.5 6.5 4 4" />
+    {%- elif name == 'pause' -%}
+      <path d="M8.5 5v14M15.5 5v14" />
+    {%- elif name == 'check' -%}
+      <path d="m5 12.5 4.5 4.5L19 7.5" />
+    {%- elif name == 'more' -%}
+      <circle cx="5.5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="18.5" cy="12" r="1" />
+    {%- endif -%}
+  </svg>
+{%- endmacro %}
+
+{% macro hanzi(text, pinyin, class='', strokes=false) -%}
+  {%- set parts = text | pronunciation(pinyin) -%}
+  <span class="hanzi {{ class }}" lang="zh-Hans"{% if strokes %} data-strokes-text{% endif %}>
+    {%- if parts|length == 1 and parts[0][0]|length > 4 and parts[0][1] -%}
+      <span class="reading">{{ parts[0][1] }}</span>{{ parts[0][0] }}
+    {%- elif parts|length == 1 and parts[0][0]|length > 1 and parts[0][1] -%}
+      <ruby>{{ parts[0][0] }}<rt>{{ parts[0][1] }}</rt></ruby>
+    {%- else -%}
+      {%- for character, syllable in parts -%}
+        {%- if syllable -%}<ruby>{{ character }}<rt>{{ syllable }}</rt></ruby>{%- else -%}{{ character }}{%- endif -%}
+      {%- endfor -%}
+    {%- endif -%}
+  </span>
+{%- endmacro %}
+
+{% macro senses(definition, examples=true) %}
+  {% set visible = definition.senses | selectattr('meaning') | list %}
+  {% if visible %}
+    <ol class="senses{% if visible|length == 1 %} single{% endif %}">
+      {% for sense in visible %}
+        <li>
+          <p>{% if sense.part_of_speech %}<span class="pos">{{ sense.part_of_speech }}</span>{% endif %}{{ sense.meaning }}</p>
+          {% if examples and sense.examples %}
+            <ul class="examples">
+              {% for example in sense.examples %}
+                <li>
+                  <p class="example-zh" lang="zh-Hans">{{ example.chinese }}</p>
+                  {% if example.pinyin %}<p class="example-py">{{ example.pinyin }}</p>{% endif %}
+                  {% if example.translation %}<p class="example-en">{{ example.translation }}</p>{% endif %}
+                </li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ol>
+  {% else %}
+    <p class="muted">No definition</p>
+  {% endif %}
+{% endmacro %}
+
+{% macro status(state, hidden=false, hidden_label='Paused', title='') -%}
+  {%- if hidden -%}
+    <span class="status status-hidden">{{ hidden_label }}</span>
+  {%- else -%}
+    <span class="status status-{{ state }}"{% if title %} title="{{ title }}"{% endif %}>{{ 'Locked' if state == 'waiting' else state | capitalize }}</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro sentence_status(item) -%}
+  {{ status(item.state if item.ready or item.state != 'new' else 'waiting', item.hidden, 'Skipped', item.analysis.reason if not item.ready else '') }}
+{%- endmacro %}
+
+{% macro meter(value, maximum, label) -%}
+  <svg class="meter" viewBox="0 0 100 6" preserveAspectRatio="none" role="meter" aria-label="{{ label }}" aria-valuemin="0" aria-valuemax="{{ maximum }}" aria-valuenow="{{ [value, maximum] | min }}">
+    <rect class="meter-track" width="100" height="6" rx="3" />
+    {%- set fill = (([value / maximum, 1] | min) * 100) | round(1) if maximum else 0 -%}
+    {%- if fill > 0 %}<rect class="meter-fill{% if fill >= 100 %} full{% endif %}" width="{{ [fill, 6] | max }}" height="6" rx="3" />{% endif -%}
+  </svg>
+{%- endmacro %}
+
+{% macro progress_panel(progress, config) %}
+  <div class="metrics">
+    <div class="metric">
+      <span class="metric-label">Successful days</span>
+      <span class="metric-value">{{ progress.days }}<small> / {{ config.known_days }}</small></span>
+      {{ meter(progress.days, config.known_days, 'Successful days toward learned') }}
+    </div>
+    <div class="metric">
+      <span class="metric-label">Memory strength</span>
+      <span class="metric-value">{{ progress.stability }}<small> / {{ config.known_stability }} days</small></span>
+      {{ meter(progress.stability, config.known_stability, 'Memory strength toward learned') }}
+    </div>
+    <div class="metric">
+      <span class="metric-label">Recall now</span>
+      <span class="metric-value">{{ progress.recall if progress.recall is not none else '—' }}<small>{% if progress.recall is not none %}% / {{ (config.known_retrievability * 100) | round | int }}%{% endif %}</small></span>
+      {{ meter(progress.recall or 0, config.known_retrievability * 100, 'Estimated recall toward learned') }}
+    </div>
+  </div>
+{% endmacro %}
+
+{% macro card_table(cards) %}
+  <div class="card-table">
+    {% for card in cards %}
+      <div class="card-row">
+        <span class="card-kind">{{ card.label }}</span>
+        <span class="muted">{{ card.reviews }} review{{ '' if card.reviews == 1 else 's' }}</span>
+        <span class="card-due">
+          {%- if card.suspended -%}Paused
+          {%- elif card.new -%}New
+          {%- else -%}<time datetime="{{ card.due }}" data-relative>{{ card.due[:10] }}</time>{%- endif -%}
+        </span>
+      </div>
+    {% endfor %}
+  </div>
+{% endmacro %}

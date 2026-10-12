@@ -4,7 +4,7 @@ import sqlite3
 from pathlib import Path
 from typing import cast
 
-from flask import Flask, current_app, g
+from flask import Flask, current_app, g, url_for
 
 from yiju.core.pronunciation import pronunciation
 from yiju.storage.database import connect, initialize
@@ -29,6 +29,11 @@ def _secret(path: Path) -> bytes:
         return value
 
 
+def _asset(filename: str) -> str:
+    path = Path(current_app.static_folder or "") / filename
+    return url_for("static", filename=filename, v=int(path.stat().st_mtime))
+
+
 def _close_database(_error: BaseException | None) -> None:
     connection = g.pop("database", None)
     if connection is not None:
@@ -38,6 +43,7 @@ def _close_database(_error: BaseException | None) -> None:
 def create_app(database_path: Path | None = None) -> Flask:
     app = Flask(__name__)
     app.jinja_env.filters["pronunciation"] = pronunciation
+    app.add_template_global(_asset, "asset")
     path = (
         database_path or Path(os.environ.get("YIJU_DATA_DIR", "data")) / "yiju.sqlite3"
     )
@@ -56,8 +62,10 @@ def create_app(database_path: Path | None = None) -> Flask:
     from .install import install
     from .pages import pages
     from .strokes import strokes
+    from .study import study
 
     app.register_blueprint(pages)
+    app.register_blueprint(study)
     app.register_blueprint(actions)
     app.register_blueprint(audio)
     app.register_blueprint(flags)

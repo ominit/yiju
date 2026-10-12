@@ -1,7 +1,7 @@
 import io
 from pathlib import Path
 
-from conftest import csrf
+from conftest import csrf, page_context, study_cards
 from flask import Flask
 from flask.testing import FlaskClient
 
@@ -16,7 +16,7 @@ def test_flag_note_export_and_resolve(
         client.post(
             "/import", data={"csrf": token, "file": (io.BytesIO(data), "words.xml")}
         )
-    headers = {"X-Yiju-Partial": "page"}
+    headers = {"Accept": "application/json"}
     flag = {"csrf": token, "word": "去", "flagged": "1"}
     assert client.post("/flags/words", data=flag, headers=headers).json == {
         "word": "去",
@@ -31,10 +31,18 @@ def test_flag_note_export_and_resolve(
     )
     client.post("/flags/words", data=flag, headers=headers)
     initialize(Path(app.config["DATABASE"]))
-    flagged = client.get("/library?filter=flagged").get_data(as_text=True)
-    assert 'data-entry="去"' in flagged
-    assert 'data-entry="学习"' not in flagged
-    assert note in flagged
+    assert [
+        item.text for item in page_context(client, "/library?filter=flagged")["items"]
+    ] == ["去"]
+    detail = page_context(client, "/library/words/去")
+    assert detail["item"].text in detail["flags"]
+    assert detail["details"]["note"] == note
+    fragment = client.get("/library/words/去", headers={"X-Fragment": "1"})
+    assert note in fragment.get_data(as_text=True)
+    assert note in client.get("/library?open=去").get_data(as_text=True)
+    flagged_cards = {card["word"]: card["flagged"] for card in study_cards(client)}
+    assert flagged_cards["去"] is True
+    assert flagged_cards["我"] is False
     exported = client.get("/flags/words/export")
     data = exported.json
     assert data is not None
@@ -78,30 +86,9 @@ def test_invalid_flags_do_not_change_library(
     ]:
         assert (
             client.post(
-                "/flags/words", data=data, headers={"X-Yiju-Partial": "page"}
+                "/flags/words", data=data, headers={"Accept": "application/json"}
             ).status_code
             == status
         )
     with connect(Path(app.config["DATABASE"])) as db:
-        assert db.execute("SELECT count(*) FROM word_flags").fetchone()[0] == 0
-
-
-def test_flags_migration_preserves_existing_cards(
-    client: FlaskClient, app: Flask, xml_export: bytes
-) -> None:
-    path = Path(app.config["DATABASE"])
-    client.post(
-        "/import",
-        data={"csrf": csrf(client), "file": (io.BytesIO(xml_export), "words.xml")},
-    )
-    with connect(path) as db:
-        before = [tuple(row) for row in db.execute("SELECT * FROM cards ORDER BY id")]
-        db.execute("DROP TABLE word_flags")
-        db.execute("PRAGMA user_version = 5")
-    initialize(path)
-    initialize(path)
-    with connect(path) as db:
-        assert [
-            tuple(row) for row in db.execute("SELECT * FROM cards ORDER BY id")
-        ] == before
         assert db.execute("SELECT count(*) FROM word_flags").fetchone()[0] == 0

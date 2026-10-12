@@ -2,59 +2,60 @@ import gzip
 import secrets
 from http import HTTPStatus
 
-from flask import (
-    Flask,
-    Response,
-    abort,
-    jsonify,
-    render_template,
-    request,
-    session,
-    url_for,
-)
+from flask import Flask, Response, abort, jsonify, render_template, request, session
 from werkzeug.exceptions import HTTPException
 
 from yiju.storage.learning import ConflictError
 
 MIN_COMPRESSION_SIZE = 1024
+SECTIONS = {
+    "pages.home": "home",
+    "study.page": "study",
+    "pages.library": "library",
+    "pages.sentences": "library",
+    "pages.word_detail": "library",
+    "pages.sentence_detail": "library",
+    "pages.import_page": "library",
+    "pages.import_result": "library",
+    "pages.preferences": "settings",
+}
+
+
+def wants_json() -> bool:
+    return (
+        request.path.startswith("/api/")
+        or bool(request.headers.get("X-Fragment"))
+        or request.is_json
+        or request.accept_mimetypes.best == "application/json"
+    )
 
 
 def protect_forms() -> None:
     if "csrf" not in session:
         session["csrf"] = secrets.token_urlsafe(32)
-    if request.method == "POST" and not secrets.compare_digest(
-        str(session["csrf"]).encode(),
-        request.form.get("csrf", "").encode(),
-    ):
-        abort(400, "This form has expired. Reload the page and try again.")
+    if request.method == "POST":
+        token = request.headers.get("X-CSRF-Token") or request.form.get("csrf", "")
+        if not secrets.compare_digest(str(session["csrf"]).encode(), token.encode()):
+            abort(400, "This page has expired. Reload it and try again.")
 
 
 def template_context() -> dict[str, str]:
-    endpoint = request.endpoint or ""
-    if endpoint in {"pages.sentences", "pages.sentence_detail", "pages.library"}:
-        endpoint = "pages.library"
-    navigation = (
-        url_for(endpoint)
-        if endpoint
-        in {"pages.home", "pages.study", "pages.library", "pages.preferences"}
-        else ""
-    )
-    return {"csrf": session.get("csrf", ""), "navigation": navigation}
+    return {
+        "csrf": session.get("csrf", ""),
+        "section": SECTIONS.get(request.endpoint or "", ""),
+    }
 
 
 def response_headers(response: Response) -> Response:
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; script-src 'self'; style-src 'self'; "
-        "img-src 'self' data:; frame-ancestors 'none'; "
+        "img-src 'self' data:; media-src 'self'; frame-ancestors 'none'; "
         "base-uri 'self'; form-action 'self'"
     )
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "same-origin"
     if request.endpoint != "static":
         response.headers["Cache-Control"] = "no-store"
-        response.vary.add("X-Yiju-Partial")
-        response.vary.add("X-Yiju-Buffer")
-        response.vary.add("X-Yiju-Audio")
     response.vary.add("Accept-Encoding")
     if (
         request.accept_encodings["gzip"] > 0
@@ -70,7 +71,7 @@ def response_headers(response: Response) -> Response:
 
 
 def http_error(error: HTTPException) -> tuple[str | Response, int]:
-    if request.headers.get("X-Yiju-Partial") in {"study", "page"}:
+    if wants_json():
         return jsonify(error=error.description), error.code or 500
     return render_template(
         "error.html", message=error.description, title=error.name
@@ -78,7 +79,7 @@ def http_error(error: HTTPException) -> tuple[str | Response, int]:
 
 
 def conflict(error: ConflictError) -> tuple[str | Response, int]:
-    if request.headers.get("X-Yiju-Partial") in {"study", "page"}:
+    if wants_json():
         return jsonify(error=str(error)), 409
     return render_template(
         "error.html", message=str(error), title="Something changed"

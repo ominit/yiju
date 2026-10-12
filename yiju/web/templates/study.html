@@ -1,10 +1,32 @@
 {% extends 'base.html' %}
+{% from 'macros/ui.html' import icon %}
 {% block title %}Study · Yiju{% endblock %}
-{% block body_class %}study-layout{% endblock %}
-{% block page_class %}study-page{% endblock %}
+{% block body_class %}studying{% endblock %}
+{% block chrome %}
+  <header class="study-bar">
+    <a class="icon-button" href="{{ url_for('pages.home') }}" title="Leave study">{{ icon('close') }}<span class="sr-only">Leave study</span></a>
+    <div class="study-count" aria-live="polite"><strong data-remaining>{{ batch.count }}</strong> <span>left</span></div>
+    <div class="study-tools">
+      <button class="icon-button" type="button" data-undo title="Undo last rating" disabled>{{ icon('undo') }}<span class="sr-only">Undo last rating</span></button>
+      <button class="icon-button" type="button" data-flag-card title="Flag for correction" aria-pressed="false" disabled>{{ icon('flag') }}<span class="sr-only">Flag this word</span></button>
+      <button class="icon-button" type="button" data-audio-toggle title="Turn off autoplay" aria-pressed="false">
+        <span data-when="on">{{ icon('audio') }}</span><span data-when="off" hidden>{{ icon('muted') }}</span><span class="sr-only">Autoplay pronunciation</span>
+      </button>
+    </div>
+  </header>
+{% endblock %}
+{% block main_class %}study{% endblock %}
 {% block content %}
-  {% include 'study_content.html' %}
-  <template id="study-prepared">
-    {% for content in prepared %}{{ content|safe }}{% endfor %}
+  <script type="application/json" id="study-data">{{ batch | tojson }}</script>
+  <div class="study-alert" role="alert" hidden>
+    <p data-alert-text></p>
+    <button class="button" type="button" data-retry>Retry</button>
+  </div>
+  <div class="study-stage" data-stage data-module="{{ asset('study.js') }}"></div>
+  <footer class="study-actions" data-actions></footer>
+  <template id="icons">
+    {% for name in ['audio', 'undo', 'erase', 'plus', 'flag', 'close', 'library'] %}
+      <span data-icon="{{ name }}">{{ icon(name) }}</span>
+    {% endfor %}
   </template>
 {% endblock %}

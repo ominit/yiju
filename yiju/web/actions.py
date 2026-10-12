@@ -3,13 +3,11 @@ import json
 import sqlite3
 import tempfile
 from pathlib import Path
-from urllib.parse import urlsplit
 
 from flask import (
     Blueprint,
     abort,
     flash,
-    jsonify,
     redirect,
     request,
     send_file,
@@ -21,14 +19,21 @@ from yiju.core.pleco_parser import PlecoParseError
 from yiju.core.scheduling import now_utc
 from yiju.storage.database import transaction
 from yiju.storage.importing import import_xml
-from yiju.storage.learning import ConflictError, review_card, undo_review
-from yiju.storage.queue import study_queue
+from yiju.storage.learning import ConflictError
 from yiju.storage.sentences import update_sentence
 
 from . import database
-from .studying import study_response
+from .library import item_response
 
 actions = Blueprint("actions", __name__)
+SETTING_RANGES = {
+    "max_unknown": (1, 5),
+    "new_per_day": (0, 200),
+    "known_days": (1, 30),
+    "known_stability": (1, 365),
+    "retention": (0.7, 0.99),
+    "known_retrievability": (0.5, 0.99),
+}
 
 
 def integer(name: str) -> int:
@@ -36,14 +41,6 @@ def integer(name: str) -> int:
     if value is None:
         abort(400, f"Missing or invalid {name}.")
     return value
-
-
-def library_return(endpoint: str) -> str:
-    destination = request.form.get("library_return", "")
-    parsed = urlsplit(destination)
-    if not parsed.scheme and not parsed.netloc and parsed.path == url_for(endpoint):
-        return destination
-    return url_for(endpoint)
 
 
 @actions.post("/import")
@@ -62,69 +59,8 @@ def upload() -> Response:
     return redirect(url_for("pages.import_result", import_id=import_id), code=303)
 
 
-@actions.post("/review/<card_id>")
-def rate(card_id: str) -> str | Response:
-    rating = integer("rating")
-    if rating not in {1, 2, 3, 4}:
-        abort(400, "Choose Again, Hard, Good, or Easy.")
-    connection = database()
-    now = now_utc()
-    version = integer("version")
-    buffered = request.headers.get("X-Yiju-Buffer") == "1"
-    if buffered:
-        saved = _saved_rating(connection, card_id, version, rating)
-        if saved is not None:
-            return jsonify(review_id=saved)
-    try:
-        _available_card(connection, card_id)
-        review_id = review_card(connection, card_id, version, rating, now)
-    except ConflictError:
-        saved = (
-            _saved_rating(connection, card_id, version, rating) if buffered else None
-        )
-        if saved is None:
-            raise
-        review_id = saved
-    if buffered:
-        return jsonify(review_id=review_id)
-    if request.headers.get("X-Yiju-Partial") == "study":
-        return study_response()
-    return redirect(url_for("pages.study"), code=303)
-
-
-def _available_card(connection: sqlite3.Connection, card_id: str) -> None:
-    if not study_queue(connection, now_utc(), card_id=card_id):
-        message = "This card is no longer available. Reload the study page."
-        raise ConflictError(message)
-
-
-def _saved_rating(
-    connection: sqlite3.Connection, card_id: str, version: int, rating: int
-) -> int | None:
-    saved = connection.execute(
-        "SELECT id, rating FROM reviews WHERE card_id = ? AND undone = 0 "
-        "AND json_extract(card_before, '$.version') = ?",
-        (card_id, version),
-    ).fetchone()
-    if saved is None:
-        return None
-    if saved["rating"] != rating:
-        message = "This card was already rated differently. Reload the session."
-        raise ConflictError(message)
-    return int(saved["id"])
-
-
-@actions.post("/review/undo")
-def undo() -> str | Response:
-    undo_review(database(), integer("review_id"))
-    flash("Last review undone.")
-    if request.headers.get("X-Yiju-Partial") == "study":
-        return study_response()
-    return redirect(url_for("pages.study"), code=303)
-
-
 @actions.post("/sentences/<sentence_id>")
-def save_sentence(sentence_id: str) -> str | Response:
+def save_sentence(sentence_id: str) -> str:
     try:
         update_sentence(
             database(),
@@ -140,51 +76,35 @@ def save_sentence(sentence_id: str) -> str | Response:
         raise
     except ValueError as error:
         abort(400, str(error))
-    flash("Sentence saved.")
-    destination = (
-        "pages.study" if request.form.get("return_to") == "study" else "pages.sentences"
-    )
-    if (
-        destination == "pages.study"
-        and request.headers.get("X-Yiju-Partial") == "study"
-    ):
-        return study_response()
-    return redirect(library_return(destination), code=303)
+    return item_response("sentences", sentence_id, now_utc())
 
 
-@actions.post("/cards/<card_id>/suspend")
-def suspend(card_id: str) -> Response:
+@actions.post("/words/<word>/pause")
+def pause_word(word: str) -> str:
     connection = database()
     with transaction(connection):
         card = connection.execute(
-            "SELECT * FROM cards WHERE id = ? AND version = ? AND sentence_id IS NULL",
-            (card_id, integer("version")),
+            "SELECT suspended FROM cards WHERE word = ? AND sentence_id IS NULL "
+            "AND direction = 'recognition' AND version = ?",
+            (word, integer("version")),
         ).fetchone()
         if card is None:
-            message = "This card has changed. Reload the page."
+            message = "This word has changed. Reload the page."
             raise ConflictError(message)
         connection.execute(
             "UPDATE cards SET suspended = ?, version = version + 1 "
             "WHERE word = ? AND sentence_id IS NULL",
-            (1 - card["suspended"], card["word"]),
+            (1 - card["suspended"], word),
         )
-    return redirect(library_return("pages.library"), code=303)
+    return item_response("words", word, now_utc())
 
 
 @actions.post("/settings")
 def save_settings() -> Response:
-    ranges = {
-        "max_unknown": (1, 5),
-        "new_per_day": (0, 200),
-        "known_days": (1, 30),
-        "known_stability": (1, 365),
-        "retention": (0.7, 0.99),
-        "known_retrievability": (0.5, 0.99),
-    }
     values: dict[str, int | float | bool] = {
         "include_zero": request.form.get("include_zero") == "on"
     }
-    for key, (low, high) in ranges.items():
+    for key, (low, high) in SETTING_RANGES.items():
         value = request.form.get(key, type=float)
         if value is None or not low <= value <= high:
             abort(400, f"{key} must be between {low} and {high}.")
@@ -196,7 +116,7 @@ def save_settings() -> Response:
             "UPDATE settings SET value = ? WHERE key = ?",
             [(json.dumps(value), key) for key, value in values.items()],
         )
-    flash("Study settings saved.")
+    flash("Settings saved.")
     return redirect(url_for("pages.preferences"), code=303)
 
 

@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS cards (
     id TEXT PRIMARY KEY,
     entry_id TEXT NOT NULL REFERENCES entries(id),
     sentence_id TEXT REFERENCES sentences(id),
-    direction TEXT NOT NULL DEFAULT 'recognition' CHECK(direction IN ('recognition', 'production', 'listening')),
+    direction TEXT NOT NULL DEFAULT 'recognition' CHECK(direction IN ('recognition', 'production')),
     word TEXT NOT NULL,
     scheduling TEXT NOT NULL,
     due TEXT NOT NULL,

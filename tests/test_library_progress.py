@@ -1,10 +1,9 @@
-import io
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from conftest import csrf, seed_known_word
+from conftest import csrf, import_export, page_context, seed_known_word
 from flask import Flask
 from flask.testing import FlaskClient
 from fsrs import Card, State
@@ -14,7 +13,7 @@ from yiju.storage.database import DEFAULT_SETTINGS, connect
 from yiju.storage.importing import import_xml
 from yiju.storage.learning import review_card, undo_review
 from yiju.storage.progress import activity, sentence_success_days
-from yiju.web.library import Library
+from yiju.web.library import PAGE_SIZE, Library
 
 
 def test_progress_matches_learned_thresholds_and_fades_with_recall() -> None:
@@ -54,7 +53,7 @@ def test_sentence_progress_counts_days_once_and_contributes_to_word_progress(
     word = next(item for item in library.words() if item.text == "去")
     sentence = next(item for item in library.sentences() if item.text == "我去。")
     assert word.state == "learning"
-    assert word.reviews == 3
+    assert word.reviews == 2
     assert word.progress.days == 1
     assert sentence.progress.days == 1
     assert sentence.state == "learning"
@@ -72,55 +71,59 @@ def test_sentence_progress_counts_days_once_and_contributes_to_word_progress(
     assert sentence_success_days(connection) == {cards[0]["sentence_id"]: 1}
 
 
-def test_library_search_filters_and_pause_keep_browsing_context(
+def listed(client: FlaskClient, url: str) -> list[str]:
+    return [item.text for item in page_context(client, url)["items"]]
+
+
+def test_library_search_filters_and_pause_toggles_word(
     client: FlaskClient, app: Flask, xml_export: bytes
 ) -> None:
     token = csrf(client)
-    client.post(
-        "/import", data={"csrf": token, "file": (io.BytesIO(xml_export), "words.xml")}
-    )
+    import_export(client, xml_export, token)
     with connect(Path(app.config["DATABASE"])) as db:
         seed_known_word(db, "我")
         card = db.execute(
             "SELECT * FROM cards WHERE word = '去' AND sentence_id IS NULL "
             "AND direction = 'recognition'"
         ).fetchone()
-    learned = client.get("/library?filter=learned").data.decode()
-    assert learned.count('class="library-entry"') == 1
-    assert 'data-entry="我"' in learned
-    assert "Learning progress 100 percent" in learned
-    search = client.get("/library?q=go").data.decode()
-    assert search.count('class="library-entry"') == 1
-    assert 'data-entry="去"' in search
-    pronunciation = client.get("/library?q=xue").data.decode()
-    assert pronunciation.count('class="library-entry"') == 1
-    assert 'data-entry="学习"' in pronunciation
-    sentences = client.get("/sentences?q=I%20am%20going").data.decode()
-    assert sentences.count('class="library-entry"') == 1
-    assert "我去。" in sentences
-    destination = "/library?filter=new&q=go&sort=progress&page=1"
+    assert listed(client, "/library?filter=learned") == ["我"]
+    assert page_context(client, "/library/words/我")["item"].state == "learned"
+    assert listed(client, "/library?q=go") == ["去"]
+    assert listed(client, "/library?q=xue") == ["学习"]
+    assert listed(client, "/library?q=XUÉ") == ["学习"]
+    assert listed(client, "/library?sort=length") == [
+        "去",
+        "我",
+        "学习",
+    ]
+    assert listed(client, "/library?sort=recent") == [
+        "学习",
+        "去",
+        "我",
+    ]
+    assert listed(client, "/sentences?q=I%20am%20going") == ["我去。"]
     paused = client.post(
-        f"/cards/{card['id']}/suspend",
-        data={"csrf": token, "version": card["version"], "library_return": destination},
+        "/words/去/pause", data={"csrf": token, "version": card["version"]}
     )
-    assert paused.location == destination
-    assert 'data-entry="去"' not in client.get("/library").data.decode()
-    assert 'data-entry="去"' in client.get("/library?filter=hidden").data.decode()
+    assert paused.status_code == 200
+    assert "Resume" in paused.get_data(as_text=True)
+    assert "去" not in listed(client, "/library")
+    assert listed(client, "/library?filter=hidden") == ["去"]
     assert client.get("/library?filter=invalid").status_code == 400
     assert client.get("/sentences?sort=invalid").status_code == 400
-    assert (
-        "No words match these filters"
-        in client.get("/library?q=nonexistent").data.decode()
+    assert client.get("/sentences?filter=flagged").status_code == 400
+    assert listed(client, "/library?q=nonexistent") == []
+    stale = client.post(
+        "/words/去/pause", data={"csrf": token, "version": card["version"]}
     )
+    assert stale.status_code == 409
     resumed = client.post(
-        f"/cards/{card['id']}/suspend",
-        data={
-            "csrf": token,
-            "version": card["version"] + 1,
-            "library_return": "https://example.com/library",
-        },
+        "/words/去/pause", data={"csrf": token, "version": card["version"] + 1}
     )
-    assert resumed.location == "/library"
+    assert resumed.status_code == 200
+    assert "Pause" in resumed.get_data(as_text=True)
+    assert "Resume" not in resumed.get_data(as_text=True)
+    assert "去" in listed(client, "/library")
 
 
 def test_activity_counts_sentence_words_once_and_undo_reverses_totals(
@@ -173,12 +176,39 @@ def test_activity_counts_sentence_words_once_and_undo_reverses_totals(
 def test_library_has_empty_states_and_accepts_large_page_numbers(
     client: FlaskClient, xml_export: bytes, path: str
 ) -> None:
-    assert client.get(path).status_code == 200
-    client.post(
-        "/import",
-        data={"csrf": csrf(client), "file": (io.BytesIO(xml_export), "words.xml")},
+    empty = page_context(client, path)
+    assert empty["items"] == []
+    assert empty["total"] == 0
+    import_export(client, xml_export)
+    last = page_context(client, path + "?page=999999999")
+    assert last["items"]
+    assert last["page"] == last["pages"] == 1
+
+
+def test_library_paginates_large_lists(
+    client: FlaskClient,
+) -> None:
+    cards = "".join(
+        '<card language="chinese"><entry><headword charset="sc">'
+        f'{chr(0x4E00 + index)}</headword><pron type="hypy">zi4</pron>'
+        f"<defn>noun word {index}</defn></entry></card>"
+        for index in range(PAGE_SIZE + 5)
     )
-    assert client.get(path + "?page=999999999").data.count(b'class="library-entry"') > 0
+    import_export(
+        client,
+        f'<plecoflash formatversion="2"><cards>{cards}</cards></plecoflash>'.encode(),
+    )
+    first = listed(client, "/library?sort=recent")
+    second = listed(client, "/library?sort=recent&page=2")
+    assert len(first) == PAGE_SIZE
+    assert len(second) == 5
+    assert not set(first) & set(second)
+    context = page_context(client, "/library?page=99")
+    assert (context["page"], context["pages"], context["total"]) == (
+        2,
+        2,
+        PAGE_SIZE + 5,
+    )
 
 
 def test_search_handles_entries_without_meanings(
@@ -189,16 +219,14 @@ def test_search_handles_entries_without_meanings(
         .replace("verb study\n我学习中文。 Wǒ xuéxí Zhōngwén. I study Chinese.", "")
         .encode()
     )
-    client.post(
-        "/import", data={"csrf": csrf(client), "file": (io.BytesIO(data), "words.xml")}
-    )
-    assert client.get("/library?q=go").status_code == 200
-    result = client.get("/library?q=学习")
-    assert result.status_code == 200
-    assert b"No definition" in result.data
+    import_export(client, data)
+    assert listed(client, "/library?q=go") == ["去"]
+    assert listed(client, "/library?q=学习") == ["学习"]
+    detail = page_context(client, "/library/words/学习")
+    assert not any(sense.meaning for sense in detail["details"]["definition"].senses)
 
 
-def test_library_examples_load_separately_and_include_every_dictionary_entry(
+def test_word_page_shows_examples_from_every_dictionary_entry(
     client: FlaskClient, app: Flask, xml_export: bytes
 ) -> None:
     with connect(Path(app.config["DATABASE"])) as db:
@@ -211,27 +239,20 @@ def test_library_examples_load_separately_and_include_every_dictionary_entry(
             ).replace(b'dictid="TEST"', b'dictid="OTHER"'),
             "more.xml",
         )
-        entry_id = db.execute(
-            "SELECT id FROM entries WHERE word = '我' ORDER BY rowid"
-        ).fetchone()["id"]
-    page = client.get("/library").data
-    url = f"/library/entries/{entry_id}/examples"
-    assert f'data-library-examples="{url}"'.encode() in page
-    assert b"I am going." not in page
-    assert b"I am leaving." not in page
-    assert b"Examples" in page
-    examples = client.get(url, headers={"X-Yiju-Partial": "examples"})
-    assert examples.status_code == 200
-    assert examples.data.count(b'class="dictionary-example"') == 2
-    assert b"I am going." in examples.data
-    assert b"I am leaving." in examples.data
-    assert b"&lt;script&gt;alert(1)&lt;/script&gt;" in examples.data
-    assert b"<script>" not in examples.data
-    assert 'class="syllable"' in examples.text
-    assert b"<!DOCTYPE" not in examples.data
-    assert examples.headers["Cache-Control"] == "no-store"
-    assert "frame-ancestors 'none'" in examples.headers["Content-Security-Policy"]
-    assert client.get("/library/entries/missing/examples").status_code == 404
+    assert listed(client, "/library").count("我") == 1
+    assert b"I am going." not in client.get("/library").data
+    context = page_context(client, "/library/words/我")
+    assert [
+        example.translation
+        for sense in context["details"]["definition"].senses
+        for example in sense.examples
+    ] == ["I am going.", "I am leaving. <script>alert(1)</script>"]
+    for detail in [
+        client.get("/library/words/我", headers={"X-Fragment": "1"}),
+        client.get("/library?open=我"),
+    ]:
+        assert b"&lt;script&gt;alert(1)&lt;/script&gt;" in detail.data
+        assert b"<script>alert" not in detail.data
 
 
 def test_library_word_cards_do_not_load_sentence_schedules(
@@ -242,9 +263,9 @@ def test_library_word_cards_do_not_load_sentence_schedules(
     connection.set_trace_callback(statements.append)
     library = Library(connection, datetime.now(UTC))
     words = library.words()
-    assert all(len(word.cards) == 3 for word in words)
+    assert all(len(word.cards) == 2 for word in words)
     card_queries = [query for query in statements if "SELECT * FROM cards" in query]
     assert len(card_queries) == 1
     assert "WHERE sentence_id IS NULL" in card_queries[0]
     sentences = library.sentences()
-    assert all(len(sentence.cards) == 3 for sentence in sentences)
+    assert all(len(sentence.cards) == 2 for sentence in sentences)

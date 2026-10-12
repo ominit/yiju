@@ -1,651 +1,421 @@
-let studyPending = false;
-let studyObserver;
-let studyUpdating;
-let studyDeparting = false;
-let studyMuted = false;
-try {
-  studyMuted = sessionStorage.getItem("yiju-muted") === "true";
-} catch {}
+import { enhance, prefetch } from "./strokes.js";
 
-function audioHeaders() {
-  return { "X-Yiju-Audio": studyMuted ? "muted" : "enabled" };
+const relative = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+const units = [
+  ["year", 31536000],
+  ["month", 2592000],
+  ["week", 604800],
+  ["day", 86400],
+  ["hour", 3600],
+  ["minute", 60],
+];
+const native = /^\/(static|audio|strokes|backup|flags\/words\/export|manifest)/;
+
+let page = null;
+let visiting = 0;
+let installPrompt = null;
+let speaker = null;
+
+function csrf() {
+  return document.querySelector('meta[name="csrf"]')?.content || "";
 }
 
-function layoutDrawing(body) {
-  const surfaces = body.querySelector(".drawing-surfaces");
-  if (!surfaces) return;
-  const probe = document.createElement("span");
-  probe.className = "drawing-thumbnail";
-  probe.style.position = "absolute";
-  probe.style.visibility = "hidden";
-  surfaces.append(probe);
-  const previewSize = probe.getBoundingClientRect().width;
-  probe.remove();
-  const minimum = parseFloat(
-    getComputedStyle(surfaces).getPropertyValue("--pad-min"),
-  );
-  if (body.closest(".study-card.revealed")) {
-    const gap = parseFloat(getComputedStyle(body).rowGap);
-    const available = Math.max(
-      40,
-      body.clientHeight - gap - minimum - previewSize - 48,
-    );
-    const natural = body.querySelector(".question-content").offsetHeight;
-    body.style.setProperty(
-      "--question-height",
-      `${Math.min(natural, available)}px`,
-    );
-  } else {
-    body.style.removeProperty("--question-height");
+function formatTimes(root = document) {
+  for (const element of root.querySelectorAll("time[data-relative]")) {
+    const date = new Date(element.dateTime);
+    if (Number.isNaN(date.getTime())) continue;
+    const seconds = (date - Date.now()) / 1000;
+    const [unit, size] = units.find(([, size]) => Math.abs(seconds) >= size) || ["minute", 60];
+    element.textContent = relative.format(Math.round(seconds / size), unit);
+    element.title = date.toLocaleString();
   }
-  const height = surfaces.closest(".drawing-stage").clientHeight;
-  surfaces.style.setProperty(
-    "--history-rows",
-    height >= minimum + 2 * (previewSize + 8) + 40 ? "2" : "1",
-  );
-}
-
-function layoutStudy() {
-  const session = document.querySelector("#study-session");
-  if (!session) return;
-  if (
-    matchMedia(
-      "(max-width: 700px), (max-width: 1000px) and (max-height: 500px)",
-    ).matches
-  ) {
-    session.querySelectorAll(".question-text").forEach((text) => {
-      text.style.removeProperty("--question-font-size");
-    });
-    session
-      .querySelector(".study-body")
-      ?.style.removeProperty("--question-height");
-    session
-      .querySelector(".drawing-surfaces")
-      ?.style.removeProperty("--history-rows");
-    const viewport = session.querySelector(".answer-pages");
-    if (viewport) {
-      viewport.scrollLeft = 0;
-      viewport.dataset.page = "0";
-      viewport.dataset.pages = "1";
-      session.querySelector(".answer-pagination").hidden = true;
-    }
-    return;
-  }
-  const question = session.querySelector(".question");
-  const text = question?.querySelector(".question-text:not([hidden])");
-  text?.style.removeProperty("--question-font-size");
-  const body = question?.closest(".study-body");
-  if (body) layoutDrawing(body);
-  if (text) {
-    const content = question.querySelector(".question-content");
-    let high = parseFloat(getComputedStyle(text).fontSize);
-    let low = 16;
-    if (content.offsetHeight > question.clientHeight) {
-      for (let step = 0; step < 8; step++) {
-        const size = (low + high) / 2;
-        text.style.setProperty("--question-font-size", `${size}px`);
-        if (content.offsetHeight > question.clientHeight) high = size;
-        else low = size;
-      }
-      text.style.setProperty("--question-font-size", `${low}px`);
-    }
-  }
-  const viewport = session.querySelector(".answer-pages");
-  if (!viewport?.clientWidth) return;
-  const gap = parseFloat(
-    getComputedStyle(viewport.firstElementChild).columnGap,
-  );
-  const stride = viewport.clientWidth + gap;
-  const pages = Math.max(
-    1,
-    Math.ceil((viewport.scrollWidth + gap - 1) / stride),
-  );
-  const page = Math.min(Number(viewport.dataset.page || 0), pages - 1);
-  viewport.dataset.page = page;
-  viewport.dataset.pages = pages;
-  viewport.scrollLeft = page * stride;
-  session.querySelector(".answer-pagination").hidden = pages === 1;
-  session.querySelector("[data-answer-page]").textContent =
-    `${page + 1} / ${pages}`;
-  session.querySelector("[data-answer-previous]").disabled = page === 0;
-  session.querySelector("[data-answer-next]").disabled = page === pages - 1;
-}
-
-function initializeStudy() {
-  studyObserver?.disconnect();
-  studyObserver = new ResizeObserver(() => requestAnimationFrame(layoutStudy));
-  document
-    .querySelectorAll(".question, .question-content, .answer-pages")
-    .forEach((element) => {
-      studyObserver.observe(element);
-    });
-  requestAnimationFrame(layoutStudy);
-}
-
-let preparedCards = Array.from(
-  document.querySelector("#study-prepared")?.content.children || [],
-);
-let outbox = [];
-let saving;
-let preparing;
-let lastReview = document.querySelector("[name=review_id]")?.value || "";
-let waitingForCard = false;
-let studyFailure = false;
-let studyRevision = 0;
-const consumedCards = new Set();
-const outboxKey = "yiju-study-outbox";
-
-function cardKey(session) {
-  return `${session.dataset.cardId}:${session.dataset.cardVersion}`;
-}
-
-function persistOutbox() {
-  sessionStorage.setItem(outboxKey, JSON.stringify(outbox));
-}
-
-function syncStudyControls() {
-  const session = document.querySelector("#study-session");
-  if (!session) return;
-  const blocked =
-    studyPending || waitingForCard || studyFailure || studyDeparting;
-  if (studyPending || waitingForCard) session.setAttribute("aria-busy", "true");
-  else session.removeAttribute("aria-busy");
-  session
-    .querySelectorAll(".rating-buttons button, .sentence-actions button")
-    .forEach((button) => {
-      button.disabled = blocked;
-    });
-  const undo = session.querySelector("[data-study-undo]");
-  if (undo) {
-    undo.hidden = !lastReview;
-    undo.querySelector("[name=review_id]").value = lastReview;
-    undo.querySelector("button").disabled = blocked || outbox.length > 0;
+  for (const element of root.querySelectorAll("time[data-local]")) {
+    const date = new Date(element.dateTime);
+    if (!Number.isNaN(date.getTime())) element.textContent = date.toLocaleString();
   }
 }
 
-function replaceStudy(next) {
-  if (studyMuted && next.dataset.direction === "listening") {
-    next.querySelector(".study-card").hidden = true;
-    next.querySelector(".reveal-area").hidden = true;
-    next.querySelector(".rating-area").hidden = true;
-  }
-  document.dispatchEvent(new Event("yiju:unmount"));
-  document.querySelector("#study-session").replaceWith(next);
-  initializeStudy();
-  syncStudyControls();
-  document.dispatchEvent(
-    new CustomEvent("yiju:mounted", { detail: { studyOnly: true } }),
-  );
-  history.replaceState(history.state, "", "/study");
-  next.focus({ preventScroll: true });
-  window.scrollTo({ top: 0, behavior: "instant" });
+async function errorMessage(response) {
+  const body = await response.json().catch(() => ({}));
+  return body.error || `Something went wrong (${response.status}).`;
 }
 
-function parseStudy(html) {
-  return new DOMParser()
-    .parseFromString(html, "text/html")
-    .querySelector("#study-session");
+async function post(url, data) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "X-CSRF-Token": csrf(), Accept: "application/json" },
+    body: new URLSearchParams(data),
+  });
+  if (!response.ok) throw new Error(await errorMessage(response));
+  return response.json();
 }
 
-async function studyFetch(url, options = {}) {
+async function fragment(url, options = {}) {
   const response = await fetch(url, {
     ...options,
-    headers: {
-      "X-Yiju-Partial": "study",
-      ...audioHeaders(),
-      ...options.headers,
-    },
+    headers: { "X-CSRF-Token": csrf(), "X-Fragment": "1" },
   });
-  if (!response.ok) {
-    const data = response.headers
-      .get("Content-Type")
-      ?.includes("application/json")
-      ? await response.json()
-      : {};
-    const error = new Error(data.error || "Could not update this session.");
-    throw error;
+  if (!response.ok) throw new Error(await errorMessage(response));
+  const template = document.createElement("template");
+  template.innerHTML = await response.text();
+  return template.content.firstElementChild;
+}
+
+function toast(message) {
+  let container = document.querySelector(".toasts");
+  if (!container) {
+    container = document.createElement("div");
+    container.className = "toasts";
+    container.setAttribute("role", "status");
+    document.querySelector("#main").prepend(container);
   }
-  return response;
+  const item = document.createElement("p");
+  item.className = "toast";
+  item.textContent = message;
+  container.append(item);
+  setTimeout(() => item.remove(), 4000);
 }
 
-function showStudyError(error) {
-  studyFailure = true;
-  const notice = document.querySelector(".study-error");
-  notice.querySelector("p").textContent =
-    (error instanceof TypeError ? "Connection lost." : error.message) +
-    (outbox.length
-      ? ` ${outbox.length} ${outbox.length === 1 ? "rating is" : "ratings are"} awaiting confirmation. Retry to save ${outbox.length === 1 ? "it" : "them"}.`
-      : " Retry to continue.");
-  notice.hidden = false;
-  notice.querySelector("[data-study-discard]").hidden = !outbox.length;
-  syncStudyControls();
-}
-
-async function prepareStudy() {
-  if (preparing) return preparing;
-  if (outbox.length || studyPending || studyFailure || studyDeparting) return;
-  const revision = studyRevision;
-  preparing = (async () => {
-    try {
-      const currentId =
-        document.querySelector("#study-session")?.dataset.cardId;
-      const url = new URL("/study", location.origin);
-      if (currentId && !waitingForCard) url.searchParams.set("card", currentId);
-      const response = await studyFetch(url, {
-        headers: { "X-Yiju-Buffer": "1" },
-      });
-      const batch = await response.json();
-      if (
-        revision !== studyRevision ||
-        outbox.length ||
-        studyPending ||
-        studyDeparting
-      )
-        return;
-      const current = document.querySelector("#study-session");
-      preparedCards = batch.cards
-        .map(parseStudy)
-        .filter(
-          (card) =>
-            card &&
-            (!studyMuted || card.dataset.direction !== "listening") &&
-            !consumedCards.has(cardKey(card)) &&
-            (waitingForCard ||
-              card.dataset.cardFamily !== current.dataset.cardFamily),
-        );
-      current.dataset.includeListening = String(batch.include_listening);
-      const count = current.querySelector("[data-card-count]");
-      if (count && !waitingForCard) count.textContent = `${batch.count} cards`;
-      document.dispatchEvent(
-        new CustomEvent("yiju:prepared", { detail: { cards: preparedCards } }),
-      );
-      lastReview = batch.review_id || "";
-      if (waitingForCard) {
-        waitingForCard = false;
-        if (preparedCards.length) replaceStudy(preparedCards.shift());
-        else await updateStudy("/study");
+const progress = {
+  bar: null,
+  timer: null,
+  start() {
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      if (!this.bar) {
+        this.bar = document.createElement("div");
+        this.bar.className = "nav-progress";
+        document.documentElement.append(this.bar);
       }
-      syncStudyControls();
-    } catch (error) {
-      if (revision === studyRevision && !studyDeparting && waitingForCard)
-        showStudyError(error);
-    } finally {
-      preparing = null;
-    }
-  })();
-  return preparing;
-}
-
-async function saveRatings() {
-  if (saving) return saving;
-  if (studyFailure) return;
-  saving = (async () => {
-    try {
-      while (outbox.length) {
-        const item = outbox[0];
-        const response = await studyFetch(item.url, {
-          method: "POST",
-          body: new URLSearchParams(item.data),
-          headers: { "X-Yiju-Buffer": "1" },
-        });
-        lastReview = (await response.json()).review_id;
-        document.dispatchEvent(new Event("yiju:changed"));
-        outbox.shift();
-        persistOutbox();
-        syncStudyControls();
-      }
-    } catch (error) {
-      showStudyError(error);
-    } finally {
-      saving = null;
-    }
-    if (
-      !studyFailure &&
-      !studyDeparting &&
-      (preparedCards.length < 6 || waitingForCard)
-    ) {
-      await prepareStudy();
-      if (waitingForCard && !studyFailure) await prepareStudy();
-    }
-  })();
-  return saving;
-}
-
-function rateStudy(form, submitter) {
-  const session = form.closest("#study-session");
-  const key = cardKey(session);
-  if (
-    consumedCards.has(key) ||
-    studyFailure ||
-    waitingForCard ||
-    studyPending ||
-    studyDeparting
-  )
-    return;
-  const item = {
-    url: form.action,
-    data: Object.fromEntries(new FormData(form, submitter)),
-    key,
-  };
-  outbox.push(item);
-  try {
-    persistOutbox();
-  } catch (error) {
-    outbox.pop();
-    showStudyError(
-      new Error("Allow session storage so ratings can be saved reliably."),
-    );
-    return;
-  }
-  document.dispatchEvent(new Event("yiju:changed"));
-  consumedCards.add(key);
-  studyRevision++;
-  preparedCards = preparedCards.filter(
-    (card) =>
-      card.dataset.cardFamily !== session.dataset.cardFamily &&
-      (!studyMuted || card.dataset.direction !== "listening"),
-  );
-  if (preparedCards.length) replaceStudy(preparedCards.shift());
-  else {
-    waitingForCard = true;
-    syncStudyControls();
-  }
-  saveRatings();
-}
-
-function updateStudy(url, options = {}) {
-  if (studyUpdating) return studyUpdating;
-  studyUpdating = performStudyUpdate(url, options).finally(() => {
-    studyUpdating = null;
-  });
-  return studyUpdating;
-}
-
-async function performStudyUpdate(url, options = {}) {
-  if (studyPending) return;
-  studyPending = true;
-  studyRevision++;
-  syncStudyControls();
-  if (outbox.length) await saveRatings();
-  if (outbox.length || studyFailure) {
-    studyPending = false;
-    syncStudyControls();
-    return;
-  }
-  try {
-    const response = await studyFetch(url, options);
-    if (options.method === "POST")
-      document.dispatchEvent(new Event("yiju:changed"));
-    const next = parseStudy(await response.text());
-    if (!next) throw new Error("Could not load the next card.");
-    preparedCards = [];
-    consumedCards.clear();
-    lastReview = next.querySelector("[name=review_id]")?.value || "";
-    waitingForCard = false;
-    replaceStudy(next);
-  } catch (error) {
-    showStudyError(error);
-  } finally {
-    studyPending = false;
-    syncStudyControls();
-  }
-  if (!studyFailure) {
-    const current = document.querySelector("#study-session");
-    if (current.dataset.includeListening !== String(!studyMuted))
-      queueMicrotask(reconcileAudioQueue);
-    else prepareStudy();
-  }
-}
-
-async function retryStudy() {
-  studyFailure = false;
-  document.querySelector(".study-error").hidden = true;
-  syncStudyControls();
-  if (outbox.length) await saveRatings();
-  else if (waitingForCard) await prepareStudy();
-  else await updateStudy("/study");
-}
-
-window.addEventListener("beforeunload", (event) => {
-  if (outbox.length) {
-    event.preventDefault();
-    event.returnValue = "";
-  }
-});
-
-document.addEventListener("click", (event) => {
-  const reveal = event.target.closest("#reveal-answer");
-  if (reveal) {
-    event.preventDefault();
-    if (studyPending || waitingForCard || studyFailure || studyDeparting)
-      return;
-    const session = reveal.closest("#study-session");
-    session.querySelector("#answer").hidden = false;
-    session.querySelectorAll("[data-reveal-answer]").forEach((element) => {
-      element.hidden = false;
-    });
-    session.querySelectorAll("[data-hide-answer]").forEach((element) => {
-      element.hidden = true;
-    });
-    session.querySelector(".rating-area").hidden = false;
-    session.querySelector(".reveal-area").hidden = true;
-    session.querySelector(".study-card").classList.add("revealed");
-    session.querySelector(".study-scroll").scrollTop = 0;
-    document.dispatchEvent(new Event("yiju:revealed"));
-    requestAnimationFrame(layoutStudy);
-    session.focus({ preventScroll: true });
-  }
-  const previous = event.target.closest("[data-answer-previous]");
-  const next = event.target.closest("[data-answer-next]");
-  if (previous || next) {
-    const viewport = document.querySelector(".answer-pages");
-    viewport.dataset.page = Math.max(
-      0,
-      Math.min(
-        Number(viewport.dataset.pages) - 1,
-        Number(viewport.dataset.page) + (next ? 1 : -1),
-      ),
-    );
-    layoutStudy();
-  }
-  if (event.target.closest("[data-study-refresh]")) {
-    event.preventDefault();
-    retryStudy();
-  }
-  if (event.target.closest("[data-study-discard]")) {
-    event.preventDefault();
-    if (confirm(`Discard ${outbox.length} unconfirmed rating(s) and reload?`)) {
-      outbox = [];
-      persistOutbox();
-      studyFailure = false;
-      waitingForCard = false;
-      updateStudy("/study");
-    }
-  }
-});
-document.addEventListener(
-  "toggle",
-  (event) => {
-    if (event.target.closest(".answer-flow"))
-      requestAnimationFrame(layoutStudy);
+      this.bar.classList.remove("done");
+      this.bar.classList.add("active");
+    }, 120);
   },
-  true,
-);
-
-document.addEventListener("submit", (event) => {
-  const form = event.target;
-  const session = form.closest("#study-session");
-  if (!session) return;
-  event.preventDefault();
-  if (studyPending || studyFailure || waitingForCard || studyDeparting) return;
-  if (form.classList.contains("rating-buttons")) {
-    rateStudy(form, event.submitter);
-    return;
-  }
-  updateStudy(form.action, {
-    method: "POST",
-    body: new FormData(form, event.submitter),
-  });
-});
-
-document.addEventListener("keydown", (event) => {
-  if (event.altKey || event.ctrlKey || event.metaKey || event.repeat) return;
-  if (document.querySelector("[data-drawing-archive][open]")) return;
-  if (
-    event.target.closest(
-      "input, textarea, select, button, a, summary, dialog, [contenteditable], [data-stroke-character]",
-    )
-  )
-    return;
-  const reveal = document.querySelector("#reveal-answer");
-  if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-    const button = document.querySelector(
-      event.key === "ArrowLeft"
-        ? "[data-answer-previous]"
-        : "[data-answer-next]",
-    );
-    if (button && !button.disabled && !button.closest("[hidden]")) {
-      event.preventDefault();
-      button.click();
-    }
-    return;
-  }
-  if (event.code === "Space" && reveal && !reveal.closest("[hidden]")) {
-    event.preventDefault();
-    reveal.click();
-    return;
-  }
-  if (/^[1-4]$/.test(event.key)) {
-    const button = document.querySelector(`[data-rating="${event.key}"]`);
-    if (button && !button.disabled && !button.closest("[hidden]")) {
-      event.preventDefault();
-      button.click();
-    }
-  }
-});
-function mountPage() {
-  document.querySelectorAll("time[datetime]").forEach((element) => {
-    if (element.textContent.includes("UTC")) {
-      const date = new Date(element.dateTime);
-      if (!Number.isNaN(date.getTime()))
-        element.textContent = date.toLocaleString();
-    }
-  });
-  studyDeparting = false;
-  if (!document.querySelector("#study-session")) return;
-  preparedCards = Array.from(
-    document.querySelector("#study-prepared")?.content.children || [],
-  ).filter((card) => !studyMuted || card.dataset.direction !== "listening");
-  consumedCards.clear();
-  lastReview = document.querySelector("[name=review_id]")?.value || "";
-  waitingForCard = false;
-  studyFailure = false;
-  studyRevision++;
-  initializeStudy();
-  try {
-    outbox = JSON.parse(sessionStorage.getItem(outboxKey) || "[]");
-    outbox.forEach((item) => consumedCards.add(item.key));
-    if (outbox.length) {
-      waitingForCard = true;
-      preparedCards = [];
-      syncStudyControls();
-      saveRatings();
-    }
-  } catch (error) {
-    showStudyError(
-      new Error("Could not recover unsaved ratings from session storage."),
-    );
-  }
-  if (
-    document.querySelector("#study-session").dataset.includeListening !==
-    String(!studyMuted)
-  )
-    reconcileAudioQueue();
-}
-
-async function reconcileAudioQueue() {
-  if (studyUpdating) await studyUpdating;
-  const current = document.querySelector("#study-session");
-  if (!current || studyDeparting) return;
-  studyRevision++;
-  preparedCards = preparedCards.filter(
-    (card) => !studyMuted || card.dataset.direction !== "listening",
-  );
-  if (studyMuted && current.dataset.direction === "listening") {
-    if (preparedCards.length) replaceStudy(preparedCards.shift());
-    else {
-      waitingForCard = true;
-      current.querySelector(".study-card").hidden = true;
-      current.querySelector(".reveal-area").hidden = true;
-      current.querySelector(".rating-area").hidden = true;
-    }
-  } else if (!current.dataset.cardId) {
-    waitingForCard = true;
-  }
-  syncStudyControls();
-  if (preparing) await preparing;
-  if (saving) await saving;
-  if (outbox.length) await saveRatings();
-  if (!studyFailure && !studyDeparting) await prepareStudy();
-}
-
-document.addEventListener("yiju:audio-changed", (event) => {
-  studyMuted = event.detail.muted;
-  document.dispatchEvent(new Event("yiju:changed"));
-  reconcileAudioQueue();
-});
-
-window.yijuStudy = {
-  audioHeaders,
-  preparedCards() {
-    return preparedCards;
-  },
-  async beforeNavigation() {
-    studyDeparting = true;
-    syncStudyControls();
-    if (studyUpdating) await studyUpdating;
-    if (saving) await saving;
-    if (outbox.length) await saveRatings();
-    if (outbox.length) {
-      studyDeparting = false;
-      syncStudyControls();
-      return false;
-    }
-    return true;
-  },
-  unmount() {
-    document.dispatchEvent(new Event("yiju:unmount"));
-    studyRevision++;
-    studyObserver?.disconnect();
-  },
-  cancelNavigation() {
-    studyDeparting = false;
-    syncStudyControls();
-    const current = document.querySelector("#study-session");
-    if (
-      current &&
-      (current.dataset.includeListening !== String(!studyMuted) ||
-        (studyMuted && current.dataset.direction === "listening"))
-    ) {
-      reconcileAudioQueue();
-      return;
-    }
-    if (
-      document.querySelector("#study-session") &&
-      !studyFailure &&
-      (waitingForCard || preparedCards.length < 6)
-    )
-      prepareStudy();
-  },
-  mount() {
-    mountPage();
-    document.dispatchEvent(new Event("yiju:mounted"));
+  done() {
+    clearTimeout(this.timer);
+    if (!this.bar?.classList.contains("active")) return;
+    this.bar.classList.add("done");
+    this.bar.classList.remove("active");
   },
 };
 
-document.addEventListener("change", (event) => {
-  if (event.target.matches("[data-auto-submit]"))
-    event.target.form.requestSubmit();
+async function mountPage() {
+  formatTimes();
+  enhance(document);
+  for (const button of document.querySelectorAll("[data-back]")) button.hidden = history.length < 2;
+  for (const item of document.querySelectorAll(".toast")) setTimeout(() => item.remove(), 4000);
+  const install = document.querySelector("[data-install]");
+  if (install) install.hidden = !installPrompt;
+  const stage = document.querySelector("[data-stage]");
+  if (stage) {
+    const root = document.body;
+    const module = await import(stage.dataset.module);
+    if (root.contains(stage)) {
+      module.mount(root);
+      page = module;
+    }
+  }
+}
+
+function unmountPage() {
+  page?.unmount();
+  page = null;
+}
+
+function render(doc) {
+  unmountPage();
+  document.title = doc.title;
+  document.body.className = doc.body.className;
+  document.body.replaceChildren(...doc.body.childNodes);
+  mountPage();
+}
+
+function saveScroll() {
+  history.replaceState({ ...history.state, scroll: scrollY }, "");
+}
+
+async function visit(url, { method = "GET", body = null, push = true, scroll = 0 } = {}) {
+  const ticket = ++visiting;
+  progress.start();
+  try {
+    await page?.leave();
+    const response = await fetch(url, {
+      method,
+      body,
+      headers: method === "GET" ? {} : { "X-CSRF-Token": csrf() },
+    });
+    if (ticket !== visiting) return;
+    if (!(response.headers.get("Content-Type") || "").includes("text/html")) {
+      location.assign(response.url);
+      return;
+    }
+    const doc = new DOMParser().parseFromString(await response.text(), "text/html");
+    if (ticket !== visiting) return;
+    const destination = new URL(response.url);
+    if (push) {
+      saveScroll();
+      if (destination.href === location.href) history.replaceState({}, "", destination);
+      else history.pushState({}, "", destination);
+    }
+    render(doc);
+    const target = destination.hash && document.getElementById(decodeURIComponent(destination.hash.slice(1)));
+    if (target) target.scrollIntoView();
+    else scrollTo(0, scroll);
+    document.querySelector("#main")?.focus({ preventScroll: true });
+  } catch {
+    if (ticket === visiting) location.assign(url);
+  } finally {
+    if (ticket === visiting) progress.done();
+  }
+}
+
+function routable(url) {
+  return url.origin === location.origin && !native.test(url.pathname);
+}
+
+async function toggleItem(item) {
+  const row = item.querySelector(".row");
+  const list = item.closest(".list");
+  const top = row.getBoundingClientRect().top;
+  const opening = !item.classList.contains("open");
+  for (const other of list.querySelectorAll(".item.open")) {
+    if (other === item) continue;
+    other.classList.remove("open");
+    other.querySelector(".row").setAttribute("aria-expanded", "false");
+  }
+  let current = item;
+  if (opening && !item.querySelector(".details")) {
+    item.classList.add("loading");
+    prefetch(row.querySelector(".row-hanzi, .row-sentence")?.textContent || "");
+    try {
+      current = await fragment(item.dataset.url);
+      item.replaceWith(current);
+      formatTimes(current);
+      enhance(current);
+    } catch (error) {
+      item.classList.remove("loading");
+      toast(error.message);
+      return;
+    }
+  }
+  current.classList.toggle("open", opening);
+  current.querySelector(".row").setAttribute("aria-expanded", String(opening));
+  const shift = current.querySelector(".row").getBoundingClientRect().top - top;
+  if (shift) scrollBy(0, shift);
+  const url = new URL(location.href);
+  if (opening) url.searchParams.set("open", current.dataset.item);
+  else url.searchParams.delete("open");
+  history.replaceState(history.state, "", url);
+}
+
+async function submitItem(form, submitter) {
+  const item = form.closest(".item");
+  const data = new FormData(form, submitter);
+  for (const button of form.querySelectorAll("button")) button.disabled = true;
+  try {
+    const next = await fragment(form.action, { method: "POST", body: new URLSearchParams(data) });
+    next.classList.add("open");
+    item.replaceWith(next);
+    formatTimes(next);
+    enhance(next);
+  } catch (error) {
+    toast(error.message);
+    for (const button of form.querySelectorAll("button")) button.disabled = false;
+  }
+}
+
+function say(url) {
+  speaker?.pause();
+  speaker = new Audio(url);
+  speaker.play().catch(() => toast("Pronunciation is unavailable right now."));
+}
+
+async function toggleFlag(button) {
+  const word = button.dataset.flag;
+  const flagged = button.getAttribute("aria-pressed") !== "true";
+  button.disabled = true;
+  try {
+    await post("/flags/words", { word, flagged: flagged ? "1" : "0" });
+    button.setAttribute("aria-pressed", String(flagged));
+    const item = button.closest(".item");
+    const marker = item?.querySelector(".row .flagged");
+    if (marker) marker.hidden = !flagged;
+    const note = (item || document).querySelector(`[data-flag-note="${CSS.escape(word)}"]`);
+    if (note) {
+      note.hidden = !flagged;
+      if (flagged) note.querySelector("textarea").focus();
+    }
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function saveNote(form) {
+  const status = form.querySelector("[data-note-status]");
+  status.textContent = "Saving…";
+  try {
+    await post("/flags/words", {
+      word: form.dataset.flagNote,
+      flagged: "1",
+      note: form.elements.note.value,
+    });
+    status.textContent = "Saved";
+  } catch (error) {
+    status.textContent = error.message;
+  }
+}
+
+const search = {
+  timer: null,
+  controller: null,
+  async update(form) {
+    const url = new URL(form.action || location.href);
+    url.search = "";
+    for (const [name, value] of new FormData(form)) {
+      if (value && !(name === "filter" && value === "all") && !(name === "sort" && value === "learning"))
+        url.searchParams.set(name, value);
+    }
+    this.controller?.abort();
+    this.controller = new AbortController();
+    try {
+      const response = await fetch(url, { signal: this.controller.signal });
+      const html = new DOMParser().parseFromString(await response.text(), "text/html");
+      const next = html.querySelector("[data-results]");
+      const current = document.querySelector("[data-results]");
+      if (!next || !current) return;
+      current.replaceWith(next);
+      history.replaceState(history.state, "", url);
+      formatTimes(next);
+    } catch (error) {
+      if (error.name !== "AbortError") visit(url.href);
+    }
+  },
+};
+
+document.addEventListener("click", (event) => {
+  if (event.defaultPrevented) return;
+  const flag = event.target.closest("[data-flag]");
+  if (flag) {
+    toggleFlag(flag);
+    return;
+  }
+  const speak = event.target.closest("[data-say]");
+  if (speak) {
+    say(speak.dataset.say);
+    return;
+  }
+  const row = event.target.closest(".item > .row");
+  if (row) {
+    toggleItem(row.parentElement);
+    return;
+  }
+  if (event.target.closest("[data-back]")) {
+    history.back();
+    return;
+  }
+  const link = event.target.closest("a[href]");
+  if (
+    !link ||
+    event.button !== 0 ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.shiftKey ||
+    event.altKey ||
+    link.target ||
+    link.hasAttribute("download")
+  )
+    return;
+  const url = new URL(link.href);
+  if (!routable(url)) return;
+  if (url.hash && url.pathname === location.pathname && url.search === location.search) return;
+  event.preventDefault();
+  visit(url.href);
 });
 
+document.addEventListener("submit", (event) => {
+  const form = event.target;
+  if (event.defaultPrevented) return;
+  if (form.matches("[data-flag-note]")) {
+    event.preventDefault();
+    saveNote(form);
+    return;
+  }
+  if (form.matches("[data-live-search]")) {
+    event.preventDefault();
+    search.update(form);
+    return;
+  }
+  if (form.matches("[data-item-form]")) {
+    event.preventDefault();
+    submitItem(form, event.submitter);
+    return;
+  }
+  const url = new URL(form.action || location.href);
+  if (form.target || !routable(url)) return;
+  event.preventDefault();
+  if (form.matches("[data-busy]")) {
+    const button = form.querySelector('[type="submit"]');
+    if (button) {
+      button.disabled = true;
+      button.textContent = form.dataset.busy;
+    }
+  }
+  const data = new FormData(form, event.submitter);
+  if (form.method.toLowerCase() === "get") {
+    url.search = new URLSearchParams(data).toString();
+    visit(url.href);
+  } else {
+    visit(url.href, {
+      method: "POST",
+      body: form.enctype === "multipart/form-data" ? data : new URLSearchParams(data),
+    });
+  }
+});
+
+document.addEventListener("input", (event) => {
+  const form = event.target.closest("[data-live-search]");
+  if (!form || event.target.type !== "search") return;
+  clearTimeout(search.timer);
+  search.timer = setTimeout(() => search.update(form), 200);
+});
+
+document.addEventListener("change", (event) => {
+  if (event.target.matches("[data-auto-submit]")) event.target.form.requestSubmit();
+  if (event.target.matches("[data-dropzone] input[type=file]")) {
+    const label = event.target.closest("[data-dropzone]");
+    const file = event.target.files[0];
+    label.querySelector("[data-file-name]").textContent = file ? file.name : "Choose a Pleco XML export";
+    label.classList.toggle("has-file", Boolean(file));
+  }
+});
+
+document.addEventListener("click", async (event) => {
+  if (!event.target.closest("[data-install-button]") || !installPrompt) return;
+  await installPrompt.prompt();
+  await installPrompt.userChoice;
+  installPrompt = null;
+  const row = document.querySelector("[data-install]");
+  if (row) row.hidden = true;
+});
+
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  installPrompt = event;
+  const row = document.querySelector("[data-install]");
+  if (row) row.hidden = false;
+});
+
+window.addEventListener("appinstalled", () => {
+  installPrompt = null;
+  const row = document.querySelector("[data-install]");
+  if (row) row.hidden = true;
+});
+
+window.addEventListener("popstate", (event) => {
+  visit(location.href, { push: false, scroll: event.state?.scroll || 0 });
+});
+
+history.scrollRestoration = "manual";
 mountPage();
