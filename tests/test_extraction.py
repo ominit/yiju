@@ -68,5 +68,23 @@ def test_tokenizer_retains_numbers_latin_and_repeated_words() -> None:
     assert tokens == ("我", "我", "学习", "Python", "3")
 
 
+@pytest.mark.parametrize(
+    ("sentence", "word", "tokens"),
+    [
+        ("我们一起去看电影吧", "电影", ("我们", "一起", "去", "看", "电影", "吧")),
+        ("这个怎么弄", "弄", ("这个", "怎么", "弄")),
+    ],
+)
+def test_headword_is_not_absorbed_into_a_neighbouring_token(
+    sentence: str, word: str, tokens: tuple[str, ...]
+) -> None:
+    assert tokenize(sentence, (word,)) == tokens
+
+
+def test_headword_does_not_over_split_a_longer_word() -> None:
+    assert tokenize("水果很甜", ("水",)) == ("水果", "很甜")
+    assert tokenize("他去了水果店", ("水",)) == ("他", "去", "了", "水果店")
+
+
 def test_does_not_consume_english_he_to_fill_an_optional_chinese_word() -> None:
     assert extract_examples("他第一(名)。 Tā dìyī. He came first.") == ()
