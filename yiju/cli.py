@@ -27,7 +27,7 @@ def main() -> None:
     args = parser.parse_args()
     if args.command == "serve":
         serve(
-            create_app(args.data_dir / "yiju.sqlite3"),
+            create_app(args.data_dir / "yiju.sqlite3", prefill=True),
             host=args.host,
             port=args.port,
             threads=4,

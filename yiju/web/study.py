@@ -17,7 +17,7 @@ from yiju.storage.learning import ConflictError, known_words, review_card, undo_
 from yiju.storage.queue import card_family, study_queue
 from yiju.storage.sentences import update_sentence
 
-from . import database
+from . import database, refresh_caches
 
 study = Blueprint("study", __name__)
 BATCH_SIZE = 12
@@ -270,6 +270,7 @@ def edit_sentence(sentence_id: str) -> dict[str, object]:
         raise
     except ValueError as error:
         abort(400, str(error))
+    refresh_caches()
     now = now_utc()
     rows = study_queue(connection, now, card_id=card_id)
     return {

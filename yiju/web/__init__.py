@@ -40,7 +40,11 @@ def _close_database(_error: BaseException | None) -> None:
         connection.close()
 
 
-def create_app(database_path: Path | None = None) -> Flask:
+def refresh_caches() -> None:
+    current_app.extensions["yiju.prefill"].notify()
+
+
+def create_app(database_path: Path | None = None, *, prefill: bool = False) -> Flask:
     app = Flask(__name__)
     app.jinja_env.filters["pronunciation"] = pronunciation
     app.add_template_global(_asset, "asset")
@@ -61,8 +65,13 @@ def create_app(database_path: Path | None = None) -> Flask:
     from .flags import flags
     from .install import install
     from .pages import pages
+    from .prefill import Prefill
     from .strokes import strokes
     from .study import study
+
+    app.extensions["yiju.prefill"] = Prefill(path, app.logger)
+    if prefill:
+        app.extensions["yiju.prefill"].start()
 
     app.register_blueprint(pages)
     app.register_blueprint(study)

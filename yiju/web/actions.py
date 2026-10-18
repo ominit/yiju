@@ -22,7 +22,7 @@ from yiju.storage.importing import import_xml
 from yiju.storage.learning import ConflictError
 from yiju.storage.sentences import update_sentence
 
-from . import database
+from . import database, refresh_caches
 from .library import item_response
 
 actions = Blueprint("actions", __name__)
@@ -56,6 +56,7 @@ def upload() -> Response:
         )
     except PlecoParseError as error:
         abort(400, str(error))
+    refresh_caches()
     return redirect(url_for("pages.import_result", import_id=import_id), code=303)
 
 
@@ -76,6 +77,7 @@ def save_sentence(sentence_id: str) -> str:
         raise
     except ValueError as error:
         abort(400, str(error))
+    refresh_caches()
     return item_response("sentences", sentence_id, now_utc())
 
 

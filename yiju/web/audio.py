@@ -24,6 +24,13 @@ CACHE_VERSION = "1"
 _locks = tuple(Lock() for _ in range(16))
 OUTAGE_THRESHOLD = 3
 OUTAGE_SECONDS = 120
+ERRORS = (
+    OSError,
+    TimeoutError,
+    ClientError,
+    edge_tts.exceptions.EdgeTTSException,
+    ValueError,
+)
 
 
 class Outage:
@@ -77,6 +84,20 @@ def cached_audio(text: str, directory: Path) -> Path:
     return destination
 
 
+def available(text: str, directory: Path) -> bool:
+    return not _outage.active() or audio_path(text, directory).is_file()
+
+
+def generate(text: str, directory: Path) -> Path:
+    try:
+        path = cached_audio(text, directory)
+    except ERRORS:
+        _outage.failed()
+        raise
+    _outage.recovered()
+    return path
+
+
 @audio.get("/audio/cards/<card_id>")
 def pronunciation(card_id: str) -> Response:
     row = (
@@ -92,19 +113,11 @@ def pronunciation(card_id: str) -> Response:
         abort(404)
     text = row["chinese"] or row["word"]
     directory = Path(current_app.config["DATABASE"]).resolve().parent / "audio"
-    if _outage.active() and not audio_path(text, directory).is_file():
+    if not available(text, directory):
         abort(503, "Pronunciation is unavailable. Try again in a few minutes.")
     try:
-        path = cached_audio(text, directory)
-    except (
-        OSError,
-        TimeoutError,
-        ClientError,
-        edge_tts.exceptions.EdgeTTSException,
-        ValueError,
-    ):
-        _outage.failed()
+        path = generate(text, directory)
+    except ERRORS:
         current_app.logger.exception("Could not generate pronunciation audio")
         abort(503, "Pronunciation is unavailable. Try replaying it in a moment.")
-    _outage.recovered()
     return send_file(path, mimetype="audio/mpeg", conditional=True)

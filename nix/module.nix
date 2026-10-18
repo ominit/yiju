@@ -31,7 +31,8 @@ in {
     systemd.services.yiju = {
       description = "Yiju vocabulary study";
       wantedBy = ["multi-user.target"];
-      after = ["network.target"];
+      wants = ["network-online.target"];
+      after = ["network-online.target"];
       environment.YIJU_DATA_DIR = "/var/lib/yiju";
       serviceConfig = {
         ExecStart = "${cfg.package}/bin/yiju serve --host ${lib.escapeShellArg cfg.host} --port ${toString cfg.port}";

@@ -1,10 +1,14 @@
 import json
 import sqlite3
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from contextlib import closing, contextmanager
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+type Migration = Callable[[sqlite3.Connection], None]
+
+BASELINE_VERSION = 1
+MIGRATIONS: tuple[Migration, ...] = ()
+SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)
 
 DEFAULT_SETTINGS = {
     "max_unknown": 2,
@@ -26,19 +30,43 @@ def connect(path: Path) -> sqlite3.Connection:
 
 def initialize(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    latest = BASELINE_VERSION + len(MIGRATIONS)
     with closing(connect(path)) as connection:
         version = connection.execute("PRAGMA user_version").fetchone()[0]
-        if version not in {0, SCHEMA_VERSION}:
-            message = "This database uses an unsupported schema. Start a new one."
+        if version > latest:
+            message = "This database was created by a newer version of Yiju."
             raise ValueError(message)
         connection.execute("PRAGMA journal_mode = WAL")
-        connection.executescript(Path(__file__).with_name("schema.sql").read_text())
+        if version == 0:
+            connection.executescript(Path(__file__).with_name("schema.sql").read_text())
+            with transaction(connection):
+                connection.execute(f"PRAGMA user_version = {BASELINE_VERSION}")
+            version = BASELINE_VERSION
+        elif version < latest:
+            backup = path.with_name(f"{path.stem}.v{version}{path.suffix}")
+            if not backup.exists():
+                with closing(sqlite3.connect(backup)) as destination:
+                    connection.backup(destination)
+        _migrate(connection, version)
         with transaction(connection):
-            connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
             connection.executemany(
                 "INSERT OR IGNORE INTO settings(key, value) VALUES (?, ?)",
                 [(key, json.dumps(value)) for key, value in DEFAULT_SETTINGS.items()],
             )
+
+
+def _migrate(connection: sqlite3.Connection, version: int) -> None:
+    connection.execute("PRAGMA foreign_keys = OFF")
+    for target, migration in enumerate(
+        MIGRATIONS[version - BASELINE_VERSION :], version + 1
+    ):
+        with transaction(connection):
+            migration(connection)
+            if connection.execute("PRAGMA foreign_key_check").fetchone():
+                message = f"Migrating to schema {target} broke a foreign key."
+                raise ValueError(message)
+            connection.execute(f"PRAGMA user_version = {target}")
+    connection.execute("PRAGMA foreign_keys = ON")
 
 
 @contextmanager

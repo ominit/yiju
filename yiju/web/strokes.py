@@ -16,6 +16,7 @@ from yiju.core.text import contains_han
 strokes = Blueprint("strokes", __name__)
 DATA_VERSION = "2.0.1"
 _locks = tuple(Lock() for _ in range(16))
+ERRORS = (OSError, TimeoutError, ClientError, ValueError)
 
 
 async def fetch_character(character: str) -> dict[str, object]:
@@ -41,8 +42,12 @@ async def fetch_character(character: str) -> dict[str, object]:
     return cast("dict[str, object]", data)
 
 
+def character_path(character: str, directory: Path) -> Path:
+    return directory / f"{DATA_VERSION}-{ord(character):x}.json"
+
+
 def cached_character(character: str, directory: Path) -> Path:
-    destination = directory / f"{DATA_VERSION}-{ord(character):x}.json"
+    destination = character_path(character, directory)
     with _locks[ord(character) % len(_locks)]:
         if destination.is_file():
             return destination
@@ -69,7 +74,7 @@ def character_strokes(character: str) -> Response:
         )
     except LookupError:
         abort(404, "Stroke order is unavailable for this character.")
-    except (OSError, TimeoutError, ClientError, ValueError):
+    except ERRORS:
         current_app.logger.exception("Could not load stroke-order data")
         abort(503, "Stroke order is unavailable. Try again.")
     return send_file(path, mimetype="application/json", conditional=True)
