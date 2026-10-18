@@ -25,17 +25,27 @@ of seeds.
 
 ### Word states
 
-Four states:
+One enum, plus review strength that only matters once the word is seen.
 
 | State | Meaning |
 | --- | --- |
 | locked | In the library, but not reachable by any eligible sentence |
 | unlocked | Reachable by an eligible sentence, or opened manually |
-| learning | A card containing this word has been studied; review strength is still low |
-| learned | Review strength has crossed the known threshold |
+| seen | A card containing this word has been studied |
 
-`learning` and `learned` both satisfy "seen". They are distinguished only by how
-strong the review scheduling is behind them.
+The three are mutually exclusive, so they are a single enum rather than
+independent flags. `seen` is one-way: a seen word is never relocked, even if
+its review strength later decays.
+
+Review strength is stored separately and is only meaningful while the state is
+`seen`. It is what distinguishes a word that has just been introduced from one
+that has consolidated, and it can move in both directions without affecting the
+enum. Learning and learned are therefore not states; they are two readings of
+the same `seen` state at different strengths.
+
+This keeps the model's real distinctions rather than its vocabulary. What
+previously looked like four states is one enum plus a strength, and what looked
+like three independent booleans cannot drift out of agreement with each other.
 
 ### Sentence states
 
@@ -58,8 +68,9 @@ because a sentence containing an unseen word cannot be unlocked, so the sentence
 cannot be shown, so the word cannot be seen through it. A word's own card is the
 only route to it becoming seen.
 
-Seen is one-way. A word that has been seen is never relocked, even if it later
-regresses from `learned` to `learning`.
+Seen is one-way. A word that has been seen is never relocked, even if its review
+strength later decays far enough that sentences depending on it lose
+eligibility.
 
 ### Transitions
 
@@ -70,7 +81,8 @@ words by hand and the graph grows from there.
 
 Relock is automatic and flows backwards. A word that is unlocked only because of
 one sentence returns to locked if that sentence loses eligibility, which happens
-when a word inside it regresses from `learned` to `learning`. If several
+when a word inside it loses enough review strength to stop counting as known.
+If several
 sentences could have supplied the word, losing one is not enough; it relocks
 only when it has no remaining source. Relock never applies to a word that has
 been seen.
