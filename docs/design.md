@@ -82,13 +82,28 @@ words by hand and the graph grows from there.
 Relock is automatic and flows backwards. A word that is unlocked only because of
 one sentence returns to locked if that sentence loses eligibility, which happens
 when a word inside it loses enough review strength to stop counting as known.
-If several
-sentences could have supplied the word, losing one is not enough; it relocks
-only when it has no remaining source. Relock never applies to a word that has
-been seen.
+If several sentences could have supplied the word, losing one is not enough; it
+relocks only when it has no remaining source. Relock never applies to a word
+that has been seen.
 
 Manual unlock applies to words only. There is no way to force a sentence
 unlocked, because doing so would show words the user has not seen.
+
+### Stored eligibility
+
+Sentence state is persisted rather than derived on every read, because the study
+page is read constantly and the pool will grow. It is a cache, and it is
+recomputed from the word table whenever it is read, which keeps it correct at
+any pool size the current build can handle.
+
+If this is ever measurably slow, the intended upgrade is a dirty set: track the
+sentences containing words whose state changed, and recheck only those. Every
+input to eligibility generates an event except time decay, and decay is why the
+simple version recomputes rather than trusting the cache. Moving to the dirty
+set means deciding what eligibility reads so that decay is no longer an input,
+most likely by testing whether a word is `seen` rather than whether it meets a
+stability threshold. That gives up decay behaviour, so it is a real trade rather
+than a pure optimisation, and it should be decided with a measurement in hand.
 
 ### Study order
 
