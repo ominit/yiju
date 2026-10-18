@@ -173,12 +173,20 @@ Pleco itself is being dropped. Its parts-of-speech tagging was decorative: 不 h
 eight senses all tagged `adverb`, including one that describes forming an
 adjective from a noun.
 
-## Open questions
+## Resolved
 
-- Whether the sentence pool needs a notion of difficulty or ordering beyond
-  what the two-unseen-words rule produces. Words like 狼 will appear in many
-  sentences, and nothing currently prevents them from all becoming eligible at
-  once.
-- Whether a word that is unlocked but never appears in any *unlocked* sentence
-  should still be studyable, or whether being unlocked implies it will be
-  taught.
+These were open during design and are now settled. They are recorded because
+the reasoning is easy to undo by accident.
+
+**Sentence fan-out needs no special handling.** A word may appear in many
+sentences and all of them may become eligible at once. This is harmless: the
+resulting words are simply added to the pool of unlocked, unseen words and are
+still drawn at random against the daily cap. There is no per-sentence ordering
+or difficulty.
+
+**An unlocked word is studyable whether or not a sentence will teach it.**
+Unlocked means it is in the new-words pool. It does not imply that a sentence
+containing it will unlock. Since a sentence can only unlock once all its words
+are seen, the two cases do not conflict: an unlocked word with no eligible
+sentence is simply one that was unlocked manually, and it is taught from its
+own cards.
