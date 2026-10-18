@@ -70,15 +70,26 @@ words by hand and the graph grows from there.
 
 Relock is automatic and flows backwards. A word that is unlocked only because of
 one sentence returns to locked if that sentence loses eligibility, which happens
-when a word inside it regresses from `learned` to `learning`. Relock never
-applies to a word that has been seen.
+when a word inside it regresses from `learned` to `learning`. If several
+sentences could have supplied the word, losing one is not enough; it relocks
+only when it has no remaining source. Relock never applies to a word that has
+been seen.
+
+Manual unlock applies to words only. There is no way to force a sentence
+unlocked, because doing so would show words the user has not seen.
 
 ### Study order
 
 Reviews always precede new material. The daily cap counts new *words*, not
-cards. Sentences unlocked by those words ride along and are not counted against
-the cap. If reviews alone exhaust the day, that is acceptable; reviews still
-happen and new words wait.
+cards. The cap is a plain setting the user changes whenever they like; nothing
+adapts it automatically. Sentences unlocked by those words ride along and are
+not counted against the cap. If reviews alone exhaust the day, that is
+acceptable; reviews still happen and new words wait.
+
+New words are drawn at random from the set of unlocked, unseen words at the
+moment they are presented, not from a stored queue. A stored list would fix an
+order in advance, and that order would go stale the instant a word relocked
+underneath it.
 
 ## Content sources
 
@@ -164,11 +175,10 @@ adjective from a noun.
 
 ## Open questions
 
-- Whether a word regressing from `learned` to `learning` should relock the
-  sentences that depend on it, or only the words. Relocking sentences is
-  implemented in the spec above because it follows from the rule, but it makes
-  the queue visibly jumpy.
-- Whether the daily new-word cap should shrink when the unlocked sentence load
-  is heavy, or stay fixed and let sentences ride along regardless.
-- Whether manual unlock should also be able to force a sentence unlocked, or
-  only words.
+- Whether the sentence pool needs a notion of difficulty or ordering beyond
+  what the two-unseen-words rule produces. Words like 狼 will appear in many
+  sentences, and nothing currently prevents them from all becoming eligible at
+  once.
+- Whether a word that is unlocked but never appears in any *unlocked* sentence
+  should still be studyable, or whether being unlocked implies it will be
+  taught.
