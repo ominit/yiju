@@ -8,8 +8,8 @@ format:
     nix fmt
 
 lint:
-    uv run --locked ruff check .
-    uv run --locked ty check
+    ruff check .
+    ty check
 
 test:
     uv run --locked pytest
