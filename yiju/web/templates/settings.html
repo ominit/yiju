@@ -27,29 +27,20 @@
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <section class="panel settings-group">
       <h2>Study</h2>
-      {{ number('new_per_day', 'New cards per day', 'Maximum cards you see for the first time each day.', 0, 200) }}
+      {{ number('new_per_day', 'New cards per day', 'How many cards you see for the first time each day. Word and sentence cards both count, and a card whose other direction you have already studied comes first.', 0, 200) }}
       {{ number('retention', 'Target retention', 'How likely you should be to remember a card when it comes due. Higher means more reviews.', 0.7, 0.99, 0.01) }}
     </section>
     <section class="panel settings-group">
-      <h2>Sentences</h2>
-      {{ number('max_unknown', 'Unfamiliar words allowed', 'A sentence is introduced only when it has at most this many words you have not learned.', 1, 5) }}
-      <label class="field toggle">
-        <span class="field-text">
-          <span class="label">Include fully familiar sentences</span>
-          <span class="muted small">Also introduce sentences where you already know every word.</span>
-        </span>
-        <input name="include_zero"
-               type="checkbox"
-               role="switch"
-               {% if config.include_zero %}checked{% endif %}>
-      </label>
+      <h2>When a word counts as learned</h2>
+      <p class="muted small">A sentence becomes eligible when all but two of its words are learned. These values were chosen by simulation and are recorded with every review, so they can be retuned from your own history.</p>
+      {{ number('learned_stability', 'Memory strength to become learned (days)', "The word memory's FSRS stability: days until recall would fall to 90%.", 1, 365, 0.1) }}
+      {{ number('learned_days', 'Successful days to become learned', "Separate days with a passing review of the word's own cards since its last failure.", 1, 30) }}
+      {{ number('unlearned_stability', 'Memory strength to drop back (days)', 'A learned word returns to learning only when a failure pushes its strength below this.', 0.5, 365, 0.1) }}
     </section>
     <section class="panel settings-group">
-      <h2>When a word counts as learned</h2>
-      <p class="muted small">All three must hold. Learned words unlock sentences.</p>
-      {{ number('known_days', 'Successful days', 'Separate days with a passing review since the last failure.', 1, 30) }}
-      {{ number('known_stability', 'Memory strength (days)', 'FSRS stability: days until recall drops to 90%.', 1, 365) }}
-      {{ number('known_retrievability', 'Recall right now', 'Estimated probability that you would remember it today.', 0.5, 0.99, 0.01) }}
+      <h2>How sentences count toward words</h2>
+      {{ number('sentence_pass_weight', 'Passed sentence', 'Share of a full review each word gets when you pass a sentence.', 0, 1, 0.01) }}
+      {{ number('sentence_fail_weight', 'Failed sentence, no words marked', 'Share of a full failure each word gets when you fail a sentence without marking the words you missed. Marked words always count as a full failure.', 0, 1, 0.01) }}
     </section>
     <div class="form-actions sticky">
       <button class="button primary" type="submit">Save settings</button>
@@ -59,10 +50,10 @@
     <h2>Data</h2>
     <div class="field">
       <div class="field-text">
-        <span class="label">Import words</span>
-        <p class="muted small">Add cards from a Pleco XML flashcard export. Duplicates are skipped.</p>
+        <span class="label">Add sentences</span>
+        <p class="muted small">Type one sentence or paste many. Everything goes through a check screen first.</p>
       </div>
-      <a class="button" href="{{ url_for('pages.import_page') }}">{{ icon('upload', 18) }}Import</a>
+      <a class="button" href="{{ url_for('pages.import_page') }}">{{ icon('plus', 18) }}Add</a>
     </div>
     <div class="field">
       <div class="field-text">
@@ -77,6 +68,13 @@
         <p class="muted small">Export flagged entries with your notes as JSON.</p>
       </div>
       <a class="button" href="{{ url_for('flags.export_flags') }}" download>{{ icon('download', 18) }}Export</a>
+    </div>
+    <div class="field">
+      <div class="field-text">
+        <span class="label">About</span>
+        <p class="muted small">Dictionary credits and licenses.</p>
+      </div>
+      <a class="button" href="{{ url_for('pages.about') }}">About</a>
     </div>
     <div class="field" data-install hidden>
       <div class="field-text">

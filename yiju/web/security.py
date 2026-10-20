@@ -5,7 +5,8 @@ from http import HTTPStatus
 from flask import Flask, Response, abort, jsonify, render_template, request, session
 from werkzeug.exceptions import HTTPException
 
-from yiju.storage.learning import ConflictError
+from yiju.core.dictionary import DictionaryUnavailableError
+from yiju.storage.database import ConflictError
 
 MIN_COMPRESSION_SIZE = 1024
 SECTIONS = {
@@ -16,7 +17,8 @@ SECTIONS = {
     "pages.word_detail": "library",
     "pages.sentence_detail": "library",
     "pages.import_page": "library",
-    "pages.import_result": "library",
+    "pages.pending_page": "library",
+    "pages.about": "settings",
     "pages.preferences": "settings",
 }
 
@@ -86,9 +88,18 @@ def conflict(error: ConflictError) -> tuple[str | Response, int]:
     ), 409
 
 
+def unavailable(error: DictionaryUnavailableError) -> tuple[str | Response, int]:
+    if wants_json():
+        return jsonify(error=str(error)), 503
+    return render_template(
+        "error.html", message=str(error), title="Dictionary unavailable"
+    ), 503
+
+
 def register_handlers(app: Flask) -> None:
     app.before_request(protect_forms)
     app.context_processor(template_context)
     app.after_request(response_headers)
     app.register_error_handler(HTTPException, http_error)
     app.register_error_handler(ConflictError, conflict)
+    app.register_error_handler(DictionaryUnavailableError, unavailable)

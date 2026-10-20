@@ -5,7 +5,6 @@ requires = ["hatchling==1.28.0"]
 [project]
 dependencies = [
   "aiohttp==3.14.4",
-  "defusedxml==0.7.1",
   "edge-tts==7.2.7",
   "flask==3.1.3",
   "fsrs==6.3.2",
@@ -40,11 +39,11 @@ select = ["ALL"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "PLR2004", "INP001", "RUF001"]
-"tests/test_shuffle.py" = ["S311"]
-"yiju/cli.py" = ["S104"]
-"yiju/core/extraction.py" = ["RUF001"]
-"yiju/core/scheduling.py" = ["PLR0913"]
-"yiju/core/selection.py" = ["PLR0913"]
+"tests/test_queue.py" = ["S311"]
+"yiju/cli.py" = ["PLC0415", "S104"]
+"yiju/core/tokenizer.py" = ["RUF001"]
+"yiju/storage/learning.py" = ["PLR0913", "PLR0917"]
+"yiju/storage/pending.py" = ["PLR0913"]
 "yiju/storage/sentences.py" = ["PLR0913", "PLR0917"]
 "yiju/web/__init__.py" = ["PLC0415"]
 

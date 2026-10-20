@@ -3,16 +3,13 @@ import time
 from pathlib import Path
 
 import pytest
-from conftest import import_export
+from conftest import SAMPLE, SENTENCES, WORDS, add, database, import_text
 from flask import Flask
 from flask.testing import FlaskClient
 
 from yiju.storage.database import connect
 from yiju.web import audio, create_app, strokes
 from yiju.web.prefill import MAX_ATTEMPTS, Prefill
-
-WORDS = {"我", "去", "学习"}
-SENTENCES = {"我去。", "我学习中文。"}
 
 
 class Fakes:
@@ -51,8 +48,9 @@ def fakes(monkeypatch: pytest.MonkeyPatch) -> Fakes:
 
 
 @pytest.fixture
-def prefill(app: Flask, client: FlaskClient, xml_export: bytes) -> Prefill:
-    import_export(client, xml_export)
+def prefill(app: Flask) -> Prefill:
+    with database(app) as db:
+        add(db, SAMPLE)
     return worker(app)
 
 
@@ -60,9 +58,9 @@ def test_fill_caches_audio_and_strokes_once(prefill: Prefill, fakes: Fakes) -> N
     assert prefill.fill()
     assert set(fakes.texts) == WORDS | SENTENCES
     assert len(fakes.texts) == len(WORDS | SENTENCES)
-    assert set(fakes.characters) == set("我去学习中文")
+    assert set(fakes.characters) == set("我去学习中文苹果")
     assert len(list((prefill.directory / "audio").iterdir())) == len(fakes.texts)
-    assert len(list((prefill.directory / "strokes").iterdir())) == 6
+    assert len(list((prefill.directory / "strokes").iterdir())) == 8
     fakes.texts.clear()
     fakes.characters.clear()
     assert prefill.fill()
@@ -70,11 +68,11 @@ def test_fill_caches_audio_and_strokes_once(prefill: Prefill, fakes: Fakes) -> N
     assert fakes.characters == []
 
 
-def test_rejected_sentences_are_not_voiced(
+def test_skipped_sentences_are_not_voiced(
     app: Flask, prefill: Prefill, fakes: Fakes
 ) -> None:
     with connect(Path(app.config["DATABASE"])) as db:
-        db.execute("UPDATE sentences SET status = 'rejected' WHERE chinese = '我去。'")
+        db.execute("UPDATE sentences SET hidden = 1 WHERE chinese = '我去。'")
     assert prefill.fill()
     assert set(fakes.texts) == WORDS | {"我学习中文。"}
 
@@ -106,20 +104,16 @@ def test_audio_outage_pauses_prefill(prefill: Prefill, fakes: Fakes) -> None:
     assert len(fakes.texts) == attempts
 
 
-def test_changes_wake_the_prefill(
-    app: Flask, client: FlaskClient, xml_export: bytes
-) -> None:
+def test_changes_wake_the_prefill(app: Flask, client: FlaskClient) -> None:
     prefill = worker(app)
     assert not prefill.wake.is_set()
-    import_export(client, xml_export)
+    import_text(client)
     assert prefill.wake.is_set()
 
 
-def test_server_prefills_in_the_background(
-    tmp_path: Path, xml_export: bytes, fakes: Fakes
-) -> None:
+def test_server_prefills_in_the_background(tmp_path: Path, fakes: Fakes) -> None:
     app = create_app(tmp_path / "web.sqlite3", prefill=True)
-    import_export(app.test_client(), xml_export)
+    import_text(app.test_client())
     deadline = time.monotonic() + 10
     while set(fakes.texts) != WORDS | SENTENCES and time.monotonic() < deadline:
         time.sleep(0.05)

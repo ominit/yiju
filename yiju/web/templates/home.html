@@ -1,93 +1,86 @@
 {% extends 'base.html' %}
 {% from 'macros/ui.html' import icon %}
 {% block title %}Today · Yiju{% endblock %}
+{% macro breakdown(title, endpoint, parts, done, done_label) %}
+  {% set total = parts | sum(attribute=2) %}
+  <section class="column">
+    <header class="column-head">
+      <h2>{{ title }}</h2>
+      <p><strong>{{ done }}</strong> of {{ total }} {{ done_label }}</p>
+    </header>
+    <svg class="stack"
+         viewBox="0 0 100 10"
+         preserveAspectRatio="none"
+         role="img"
+         aria-label="{% for key, label, count, fill in parts %}{{ count }} {{ label | lower }}{{ ', ' if not loop.last }}{% endfor %}">
+      {% set ns = namespace(x=0) %}
+      {% for key, label, count, fill in parts %}
+        {% set width = count / total * 100 if total else 0 %}
+        {% if width > 0 %}<rect class="fill-{{ fill }}" x="{{ ns.x }}" width="{{ width }}" height="10" />{% endif %}
+        {% set ns.x = ns.x + width %}
+      {% endfor %}
+    </svg>
+    <ul class="legend">
+      {% for key, label, count, fill in parts %}
+        <li>
+          <a href="{{ url_for(endpoint, filter=key) }}"><i class="dot fill-{{ fill }}"></i>{{ label }}<strong>{{ count }}</strong></a>
+        </li>
+      {% endfor %}
+    </ul>
+  </section>
+{% endmacro %}
 {% block content %}
   {% set total = stats.due + stats.new %}
-  <header class="page-head">
-    <h1>Today</h1>
-  </header>
+  {% if stats.pending %}
+    <a class="notice" href="{{ url_for('pages.pending_page') }}">
+      {{ stats.pending }} item{{ '' if stats.pending == 1 else 's' }} waiting for your check {{ icon('next', 18) }}
+    </a>
+  {% endif %}
   {% if not stats.words %}
+    <h1 class="sr-only">Today</h1>
     <section class="empty">
       <p class="empty-glyph" lang="zh-Hans">一句</p>
-      <h2>Start with your Pleco flashcards</h2>
-      <p class="muted">Export a card list from Pleco as XML and import it. Yiju builds word and sentence cards from the dictionary examples.</p>
-      <a class="button primary" href="{{ url_for('pages.import_page') }}">{{ icon("upload") }}Import words</a>
+      <h2>Start with a few sentences</h2>
+      <p class="muted">Add Chinese sentences with their translations. Yiju looks up every word in CC-CEDICT and unlocks new words as the sentences around them become readable.</p>
+      <a class="button primary" href="{{ url_for('pages.import_page') }}">{{ icon("plus") }}Add sentences</a>
     </section>
   {% else %}
-    <section class="hero">
-      {% if total %}
-        <div class="hero-copy">
-          <p class="hero-numbers">
-            <span><strong>{{ stats.due }}</strong> review{{ '' if stats.due == 1 else 's' }}</span>
-            <span><strong>{{ stats.new }}</strong> new</span>
+    <header class="greeting">
+      <div class="greeting-copy">
+        {% if total %}
+          <h1>
+            {%- if stats.due %}{{ stats.due }} review{{ '' if stats.due == 1 else 's' }}{% endif -%}
+            {%- if stats.due and stats.new %} and {% endif -%}
+            {%- if stats.new %}{{ stats.new }} new card{{ '' if stats.new == 1 else 's' }}{% endif %} today.
+          </h1>
+          <p>{{ stats.today ~ ' done so far.' if stats.today else 'Nothing done yet.' }}</p>
+        {% elif not stats.learning and not stats.learned and not stats.unlocked %}
+          <h1>Nothing is unlocked yet.</h1>
+          <p>Every sentence has more than two words you have not learned. Unlock a few words by hand in the <a class="link" href="{{ url_for('pages.library', filter='locked') }}">library</a>, or add short phrases of one or two words.</p>
+        {% else %}
+          <h1>All caught up.</h1>
+          <p>
+            {% if upcoming %}Next review <time datetime="{{ upcoming }}" data-relative>{{ upcoming[:16].replace('T', ' ') }}</time>.{% else %}Nothing is scheduled.{% endif %}
+            {% if stats.today %}{{ stats.today }} done today.{% endif %}
           </p>
-          <p class="muted">{{ stats.today }} done today</p>
-        </div>
-        <a class="button primary large" href="{{ url_for('study.page') }}">Study {{ icon('next', 18) }}</a>
-      {% else %}
-        <div class="hero-copy">
-          <p class="hero-title">{{ icon('check', 22) }} All caught up</p>
-          <p class="muted">
-            {% if upcoming %}Next review <time datetime="{{ upcoming }}" data-relative>{{ upcoming[:16].replace('T', ' ') }}</time>{% else %}Nothing scheduled{% endif %}
-            {% if stats.today %}· {{ stats.today }} done today{% endif %}
-          </p>
-        </div>
-      {% endif %}
-    </section>
-    <div class="dashboard">
-      <div class="stats">
-        <a class="stat" href="{{ url_for('pages.library', filter='learned') }}">
-          <span class="stat-label">Words learned</span>
-          <span class="stat-value">{{ stats.known }}<small>/ {{ stats.words }}</small></span>
-        </a>
-        <a class="stat"
-           href="{{ url_for('pages.sentences', filter='learned') }}">
-          <span class="stat-label">Sentences learned</span>
-          <span class="stat-value">{{ stats.learned_sentences }}<small>/ {{ stats.sentences }}</small></span>
-        </a>
-        <div class="stat"
-             title="Hard, Good or Easy on cards seen before, last 30 days">
-          <span class="stat-label">Recall</span>
-          <span class="stat-value">{{ activity.recall if activity.recall is not none else '—' }}{% if activity.recall is not none %}<small>%</small>{% endif %}</span>
-        </div>
-        <div class="stat">
-          <span class="stat-label">Study days</span>
-          <span class="stat-value">{{ activity.study_days }}<small>/ 30</small></span>
-        </div>
+        {% endif %}
       </div>
-      <div class="split">
-        <section class="panel">
-          <header class="panel-head">
-            <h2>Vocabulary</h2>
-            <a class="link" href="{{ url_for('pages.library') }}">Library</a>
-          </header>
-          {% set parts = [('learned', 'Learned', stats.known), ('learning', 'Learning', learning), ('new', 'New', unstarted)] %}
-          <svg class="stack"
-               viewBox="0 0 100 10"
-               preserveAspectRatio="none"
-               role="img"
-               aria-label="{{ stats.known }} learned, {{ learning }} learning, {{ unstarted }} new">
-            {% set ns = namespace(x=0) %}
-            {% for key, label, count in parts %}
-              {% set width = count / stats.words * 100 %}
-              {% if width > 0 %}<rect class="fill-{{ key }}" x="{{ ns.x }}" width="{{ width }}" height="10" />{% endif %}
-              {% set ns.x = ns.x + width %}
-            {% endfor %}
-          </svg>
-          <ul class="legend">
-            {% for key, label, count in parts %}
-              <li><a href="{{ url_for('pages.library', filter=key) }}"><i class="dot fill-{{ key }}"></i>{{ label }}<strong>{{ count }}</strong></a></li>
-            {% endfor %}
-          </ul>
-        </section>
-        <section class="panel">
-          <header class="panel-head">
-            <h2>Coming up</h2>
-            <span class="muted small">Next 7 days</span>
+      {% if total %}
+        <a class="button primary large" href="{{ url_for('study.page') }}">Study {{ icon('next', 18) }}</a>
+      {% endif %}
+    </header>
+    <div class="dashboard">
+      <div class="panel overview">
+        {{ breakdown('Words', 'pages.library', [('learned', 'Learned', stats.learned, 'learned'), ('learning', 'Learning', stats.learning, 'learning'), ('unlocked', 'New', stats.unlocked, 'unlocked'), ('locked', 'Locked', stats.locked, 'locked')], stats.learned, 'learned') }}
+        {{ breakdown('Sentences', 'pages.sentences', [('learned', 'Learned', stats.sentences_learned, 'learned'), ('learning', 'Learning', stats.sentences_learning, 'learning'), ('unlocked', 'New', stats.sentences_unlocked, 'unlocked'), ('eligible', 'Eligible', stats.sentences_eligible, 'eligible'), ('locked', 'Locked', stats.sentences_locked, 'locked')], stats.sentences_learned, 'learned') }}
+        <section class="column">
+          <header class="column-head">
+            <h2>Next 7 days</h2>
+            <p><strong>{{ forecast | sum(attribute='count') }}</strong> reviews due</p>
           </header>
           <ol class="forecast" aria-label="Reviews due over the next seven days">
             {% for day in forecast %}
-              <li title="{{ day.date.strftime('%A') }} · {{ day.count }} due">
+              <li title="{{ day.date.strftime('%A') }}: {{ day.count }} due">
                 <span class="forecast-value">{{ day.count if day.count else '' }}</span>
                 <svg class="forecast-bar"
                      viewBox="0 0 10 100"
@@ -106,7 +99,32 @@
       <section class="panel">
         <header class="panel-head">
           <h2>Last 30 days</h2>
-          <span class="muted small">{{ activity.reviews }} reviews · {{ activity.rate }} new words/day</span>
+          <dl class="facts">
+            <div>
+              <dt>Reviews</dt>
+              <dd>
+                {{ activity.reviews }}
+              </dd>
+            </div>
+            <div title="Hard, Good or Easy on cards seen before">
+              <dt>Recall</dt>
+              <dd>
+                {{ activity.recall ~ '%' if activity.recall is not none else '—' }}
+              </dd>
+            </div>
+            <div>
+              <dt>Days studied</dt>
+              <dd>
+                {{ activity.study_days }}
+              </dd>
+            </div>
+            <div>
+              <dt>New words a day</dt>
+              <dd>
+                {{ activity.rate }}
+              </dd>
+            </div>
+          </dl>
         </header>
         <svg class="activity"
              viewBox="0 0 600 120"
@@ -117,7 +135,7 @@
           {% for bar in activity.bars %}
             {% set x = loop.index0 * 20 + 4 %}
             <g>
-            <title>{{ bar.day }} · {{ bar.total }} review{{ '' if bar.total == 1 else 's' }}</title>
+            <title>{{ bar.day }}: {{ bar.total }} review{{ '' if bar.total == 1 else 's' }}</title>
             <rect class="hit" x="{{ x - 4 }}" y="0" width="20" height="120" />
             {% if not bar.total %}<rect class="bar-empty" x="{{ x }}" y="118" width="12" height="2" />{% endif %}
             {% for segment in bar.segments %}

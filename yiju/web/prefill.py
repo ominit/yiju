@@ -5,6 +5,7 @@ from contextlib import closing
 from pathlib import Path
 from threading import Event, Thread
 
+from yiju.core import dictionary
 from yiju.core.text import HAN
 from yiju.storage.database import connect
 
@@ -15,10 +16,10 @@ MAX_ATTEMPTS = 3
 AUDIO_TEXTS = (
     "SELECT COALESCE(s.chinese, c.word) AS text FROM cards c "
     "LEFT JOIN sentences s ON s.id = c.sentence_id "
-    "WHERE s.id IS NULL OR s.status = 'accepted' "
+    "WHERE s.id IS NULL OR s.hidden = 0 "
     "GROUP BY text ORDER BY MIN(c.due), text"
 )
-STROKE_TEXTS = "SELECT word FROM entries UNION SELECT chinese FROM sentences"
+STROKE_TEXTS = "SELECT word FROM words UNION SELECT chinese FROM sentences"
 
 
 class Prefill:
@@ -58,9 +59,18 @@ class Prefill:
                     for character in re.findall(f"[{HAN}]", row[0])
                 }
             )
+        filled_dictionary = self._fill_dictionary()
         filled_strokes = self._fill_strokes(characters)
         filled_audio = self._fill_audio(texts)
-        return filled_strokes and filled_audio
+        return filled_dictionary and filled_strokes and filled_audio
+
+    def _fill_dictionary(self) -> bool:
+        try:
+            dictionary.ensure()
+        except dictionary.DictionaryUnavailableError:
+            self.logger.warning("Could not download CC-CEDICT", exc_info=True)
+            return False
+        return True
 
     def _pending(self, key: str, path: Path) -> bool:
         return self.attempts[key] < MAX_ATTEMPTS and not path.is_file()

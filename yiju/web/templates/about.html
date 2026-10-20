@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% from 'macros/ui.html' import icon %}
+{% block title %}About · Yiju{% endblock %}
+{% block main_class %}page narrow{% endblock %}
+{% block content %}
+  <a class="back" href="{{ url_for('pages.preferences') }}">{{ icon('back', 18) }}Settings</a>
+  <header class="page-head">
+    <h1>About</h1>
+  </header>
+  <section class="panel prose">
+    <h2>Dictionary</h2>
+    <p>
+      Definitions come from <a class="link" href="https://cc-cedict.org/wiki/">CC-CEDICT</a>,
+      the community-maintained Chinese-English dictionary published by
+      <a class="link"
+         href="https://www.mdbg.net/chinese/dictionary?page=cc-cedict">MDBG</a>.
+      It builds on CEDICT, copyright © 1997, 1998 Paul Andrew Denisowski.
+    </p>
+    <p>
+      CC-CEDICT is licensed under the
+      <a class="link" href="https://creativecommons.org/licenses/by-sa/4.0/">Creative Commons Attribution-ShareAlike 4.0 International License</a>.
+      {% if dictionary_date %}Yiju downloaded the copy published on {{ dictionary_date }}.{% endif %}
+      Definitions are copied into your library when a word is added, and the
+      copies you edit by hand stay yours.
+    </p>
+    <p>
+      Corrections to the dictionary itself can be sent through the
+      <a class="link" href="https://cc-cedict.org/editor/editor.php">CC-CEDICT editor</a>.
+    </p>
+    <h2>Other parts</h2>
+    <p>
+      Stroke order animations use <a class="link" href="https://hanziwriter.org/">Hanzi Writer</a>
+      and its character data, which is derived from the Arphic PL fonts.
+      Segmentation uses jieba, and generated pinyin uses pypinyin.
+      Scheduling uses the FSRS algorithm.
+    </p>
+  </section>
+{% endblock %}

@@ -6,6 +6,7 @@ from typing import cast
 
 from flask import Flask, current_app, g, url_for
 
+from yiju.core import dictionary
 from yiju.core.pronunciation import pronunciation
 from yiju.storage.database import connect, initialize
 
@@ -52,6 +53,7 @@ def create_app(database_path: Path | None = None, *, prefill: bool = False) -> F
         database_path or Path(os.environ.get("YIJU_DATA_DIR", "data")) / "yiju.sqlite3"
     )
     initialize(path)
+    dictionary.use(path.parent / dictionary.FILENAME)
     app.config.update(
         DATABASE=str(path),
         SECRET_KEY=_secret(path.with_suffix(".secret")),

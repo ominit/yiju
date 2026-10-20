@@ -345,7 +345,7 @@ const search = {
       if (
         value &&
         !(name === "filter" && value === "all") &&
-        !(name === "sort" && value === "learning")
+        !(name === "sort" && value === "status")
       )
         url.searchParams.set(name, value);
     }
@@ -457,6 +457,49 @@ document.addEventListener("submit", (event) => {
   }
 });
 
+const pinyinEdges = /^([^\p{L}\p{N}_]*)(.*?)([^\p{L}\p{N}_]*)$/u;
+
+function pinyinWords(block) {
+  const field = block.closest("form").elements[block.dataset.readings];
+  const pieces = field.value.split(/(\s+)/);
+  const words = pieces.flatMap((piece, index) =>
+    /\p{L}/u.test(piece) ? [index] : [],
+  );
+  const count = block
+    .closest(".check-item")
+    .querySelectorAll(".check-sentence .token").length;
+  return { field, pieces, words: words.length === count ? words : [] };
+}
+
+function syncReadings(block) {
+  const { pieces, words } = pinyinWords(block);
+  for (const reading of block.querySelectorAll(".reading")) {
+    const index = words[Number(reading.dataset.word)];
+    const current =
+      index === undefined
+        ? null
+        : pieces[index].match(pinyinEdges)[2].toLowerCase();
+    for (const input of reading.querySelectorAll("input")) {
+      input.disabled = current === null;
+      input.checked = input.value.toLowerCase() === current;
+    }
+  }
+}
+
+function chooseReading(input) {
+  const block = input.closest("[data-readings]");
+  const { field, pieces, words } = pinyinWords(block);
+  const index = words[Number(input.closest(".reading").dataset.word)];
+  if (index === undefined) return syncReadings(block);
+  const [, before, spoken, after] = pieces[index].match(pinyinEdges);
+  const capital = spoken[0] !== spoken[0].toLowerCase();
+  const value = capital
+    ? input.value[0].toUpperCase() + input.value.slice(1)
+    : input.value;
+  pieces[index] = before + value + after;
+  field.value = pieces.join("");
+}
+
 document.addEventListener("input", (event) => {
   const form = event.target.closest("[data-live-search]");
   if (!form || event.target.type !== "search") return;
@@ -464,17 +507,21 @@ document.addEventListener("input", (event) => {
   search.timer = setTimeout(() => search.update(form), 200);
 });
 
+document.addEventListener("input", (event) => {
+  const field = event.target;
+  if (!field.name?.endsWith("-pinyin") || !field.form) return;
+  const block = field.form.querySelector(`[data-readings="${field.name}"]`);
+  if (block) syncReadings(block);
+});
+
+document.addEventListener("change", (event) => {
+  if (event.target.matches(".reading-choice input"))
+    chooseReading(event.target);
+});
+
 document.addEventListener("change", (event) => {
   if (event.target.matches("[data-auto-submit]"))
     event.target.form.requestSubmit();
-  if (event.target.matches("[data-dropzone] input[type=file]")) {
-    const label = event.target.closest("[data-dropzone]");
-    const file = event.target.files[0];
-    label.querySelector("[data-file-name]").textContent = file
-      ? file.name
-      : "Choose a Pleco XML export";
-    label.classList.toggle("has-file", Boolean(file));
-  }
 });
 
 document.addEventListener("click", async (event) => {

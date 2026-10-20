@@ -1,4 +1,3 @@
-import io
 import json
 import re
 import sqlite3
@@ -8,30 +7,22 @@ from collections.abc import Generator
 from pathlib import Path
 
 import pytest
+from conftest import add, set_strength
 from flask import Flask
 from playwright.sync_api import Browser, Page, expect, sync_playwright
 from werkzeug.serving import make_server
 
+from yiju.core.definitions import prompt_senses
 from yiju.storage.database import connect
+from yiju.storage.graph import refresh
 from yiju.web import audio, create_app
 from yiju.web.strokes import DATA_VERSION
 
-EXPORT = """<?xml version="1.0" encoding="UTF-8"?>
-<plecoflash formatversion="2"><cards>
-<card language="chinese"><entry><headword charset="sc">我</headword>
-<pron type="hypy">wo3</pron><defn>pronoun I; me 我去。 Wǒ qù. I am going.</defn>
-</entry><dictref dictid="TEST" entryid="1"/></card>
-<card language="chinese"><entry><headword charset="sc">去</headword>
-<pron type="hypy">qu4</pron><defn>verb go 我去。 Wǒ qù. I am going.</defn>
-</entry><dictref dictid="TEST" entryid="2"/></card>
-<card language="chinese"><entry><headword charset="sc">学习</headword>
-<pron type="hypy">xue2xi2</pron><defn>verb study
-我学习中文。 Wǒ xuéxí Zhōngwén. I study Chinese.</defn>
-</entry><dictref dictid="TEST" entryid="3"/></card>
-<card language="chinese"><entry><headword charset="sc">上</headword>
-<pron type="hypy">shang4</pron><defn>noun 1 above 2 up 3 upper 4 previous</defn>
-</entry><dictref dictid="TEST" entryid="4"/></card>
-</cards></plecoflash>"""
+CONTENT = """\
+我去。 | I am going.
+我学习中文。 | I study Chinese.
+上
+"""
 STROKES = {
     "strokes": ["M 100 400 L 900 400 L 900 460 L 100 460 Z"],
     "medians": [[[100, 430], [900, 430]]],
@@ -47,12 +38,12 @@ class Server:
     def database(self) -> sqlite3.Connection:
         return connect(Path(self.app.config["DATABASE"]))
 
-    def only(self, word: str, direction: str) -> None:
+    def only(self, word: str, card_type: str) -> None:
         with self.database() as db:
             db.execute(
-                "UPDATE cards SET suspended = NOT (word = ? AND direction = ? "
-                "AND sentence_id IS NULL)",
-                (word, direction),
+                "UPDATE cards SET suspended = "
+                "NOT coalesce(word = ? AND card_type = ?, 0)",
+                (word, card_type),
             )
 
     def reviews(self) -> int:
@@ -82,20 +73,16 @@ def server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[Server]
     app = create_app(tmp_path / "browser.sqlite3")
     strokes = tmp_path / "strokes"
     strokes.mkdir()
-    for character in "我去学习上":
+    for character in "我去学习中文上":
         path = strokes / f"{DATA_VERSION}-{ord(character):x}.json"
         path.write_text(json.dumps(STROKES))
     recording = tmp_path / "recording.mp3"
     recording.write_bytes(b"ID3")
     monkeypatch.setattr(audio, "cached_audio", lambda _text, _directory: recording)
-    client = app.test_client()
-    client.get("/")
-    with client.session_transaction() as session:
-        token = str(session["csrf"])
-    client.post(
-        "/import",
-        data={"csrf": token, "file": (io.BytesIO(EXPORT.encode()), "words.xml")},
-    )
+    with connect(Path(app.config["DATABASE"])) as db:
+        add(db, CONTENT)
+        db.execute("UPDATE words SET manual = 1 WHERE word IN ('上', '学习')")
+        refresh(db)
     http = make_server("127.0.0.1", 0, app, threaded=True)
     thread = threading.Thread(target=http.serve_forever, daemon=True)
     thread.start()
@@ -167,8 +154,8 @@ def test_library_rows_expand_inline_and_refresh_counts(
 def test_ratings_are_saved_before_leaving_study(page: Page, server: Server) -> None:
     with server.database() as db:
         db.execute(
-            "UPDATE cards SET suspended = NOT (direction = 'recognition' "
-            "AND sentence_id IS NULL AND word IN ('我', '去'))"
+            "UPDATE cards SET suspended = NOT coalesce(card_type = 'recognition' "
+            "AND word IN ('我', '去'), 0)"
         )
     page.goto(f"{server.url}/study")
     for _ in range(2):
@@ -192,13 +179,14 @@ def test_strokes_play_only_on_the_back_of_a_card(page: Page, server: Server) -> 
     expect(page.locator(".stroke-overlay svg")).to_have_count(1)
 
 
-def test_prompt_expands_to_every_sense(page: Page, server: Server) -> None:
+def test_prompt_shows_every_sense(page: Page, server: Server) -> None:
     server.only("上", "production")
     page.goto(f"{server.url}/study")
-    senses = page.locator(".prompt .senses > li")
-    expect(senses).to_have_count(3)
-    page.get_by_role("button", name="+1 more sense").click()
-    expect(senses).to_have_count(4)
+    with server.database() as db:
+        readings = db.execute("SELECT readings FROM words WHERE word = '上'").fetchone()
+    total = len(prompt_senses(readings[0]))
+    assert total > 3
+    expect(page.locator(".prompt .senses > li")).to_have_count(total)
 
 
 def test_pad_keeps_its_place_and_collapses_extra_characters(
@@ -223,3 +211,52 @@ def test_pad_keeps_its_place_and_collapses_extra_characters(
     assert thumbs.evaluate("element => element.scrollWidth <= element.clientWidth")
     page.locator(".pad-more").click()
     expect(page.locator(".pad-overview .pad-thumb")).to_have_count(13)
+
+
+def test_pasted_sentences_are_checked_then_approved(page: Page, server: Server) -> None:
+    page.goto(f"{server.url}/import")
+    page.locator("textarea[name=text]").fill("他跑得很快。 | He runs fast.\n")
+    page.get_by_role("button", name="Check").nth(1).click()
+    expect(page.get_by_role("heading", name="Check before adding")).to_be_visible()
+    expect(page.locator(".token.several", has_text="得")).to_be_visible()
+    pinyin = page.locator("input[name=s1-pinyin]")
+    expect(pinyin).to_have_value("tā pǎo dé hěn kuài.")
+    reading = page.get_by_role("group", name="Reading of 得")
+    expect(reading.get_by_role("radio", name="dé to obtain")).to_be_checked()
+    reading.locator("label", has_text="structural particle").click()
+    expect(pinyin).to_have_value("tā pǎo de hěn kuài.")
+    pinyin.fill("Tā pǎo děi hěn kuài.")
+    expect(reading.get_by_role("radio", name="děi to have to")).to_be_checked()
+    pinyin.fill("Tā pǎo de hěn kuài.")
+    page.get_by_role("button", name="Approve and add").click()
+    expect(page.locator(".toast")).to_contain_text("Added 1 sentences")
+    with server.database() as db:
+        assert (
+            db.execute(
+                "SELECT pinyin FROM sentences WHERE chinese = '他跑得很快。'"
+            ).fetchone()[0]
+            == "Tā pǎo de hěn kuài."
+        )
+
+
+def test_missed_words_are_sent_with_a_sentence_rating(
+    page: Page, server: Server
+) -> None:
+    with server.database() as db:
+        set_strength(db, "我", stability=10, learned=False)
+        set_strength(db, "去", stability=10, learned=False)
+        db.execute(
+            "UPDATE cards SET suspended = NOT coalesce(sentence_id = 1 "
+            "AND card_type = 'recognition', 0)"
+        )
+    page.goto(f"{server.url}/study")
+    page.get_by_role("button", name="Show answer").click()
+    page.get_by_title("Mark 去 as a word you missed").click()
+    page.get_by_role("button", name=re.compile("Again")).click()
+    expect(page.locator(".done")).to_be_visible()
+    page.get_by_title("Leave study").click()
+    expect(page).to_have_url(f"{server.url}/")
+    with server.database() as db:
+        assert dict(db.execute("SELECT word, role FROM review_words").fetchall()) == {
+            "去": "marked"
+        }

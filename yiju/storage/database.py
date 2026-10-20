@@ -4,21 +4,23 @@ from collections.abc import Callable, Generator
 from contextlib import closing, contextmanager
 from pathlib import Path
 
+from yiju.core.strength import Parameters
+
 type Migration = Callable[[sqlite3.Connection], None]
 
 BASELINE_VERSION = 1
 MIGRATIONS: tuple[Migration, ...] = ()
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)
 
-DEFAULT_SETTINGS = {
-    "max_unknown": 2,
-    "include_zero": False,
+DEFAULT_SETTINGS: dict[str, int | float | bool] = {
     "new_per_day": 20,
     "retention": 0.9,
-    "known_stability": 7,
-    "known_days": 3,
-    "known_retrievability": 0.8,
+    **Parameters().values(),
 }
+
+
+class ConflictError(ValueError):
+    pass
 
 
 def connect(path: Path) -> sqlite3.Connection:
@@ -87,7 +89,23 @@ def settings(connection: sqlite3.Connection) -> dict[str, int | float | bool]:
     }
 
 
-def vocabulary_words(connection: sqlite3.Connection) -> frozenset[str]:
+def parameters(connection: sqlite3.Connection) -> Parameters:
+    return Parameters.from_settings(settings(connection))
+
+
+def parameter_set(connection: sqlite3.Connection, values: Parameters) -> int:
+    encoded = values.to_json()
+    connection.execute(
+        "INSERT OR IGNORE INTO parameter_sets(parameters) VALUES (?)", (encoded,)
+    )
+    return int(
+        connection.execute(
+            "SELECT id FROM parameter_sets WHERE parameters = ?", (encoded,)
+        ).fetchone()[0]
+    )
+
+
+def library_words(connection: sqlite3.Connection) -> frozenset[str]:
     return frozenset(
-        str(row[0]) for row in connection.execute("SELECT DISTINCT word FROM entries")
+        str(row[0]) for row in connection.execute("SELECT word FROM words")
     )

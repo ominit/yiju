@@ -35,7 +35,7 @@ function library() {
 
 async function fetchCharacter(character) {
   if (loading >= parallel)
-    await new Promise((resolve) => waiting.push(resolve));
+    await new Promise((resolve) => waiting.push({ character, resolve }));
   loading += 1;
   try {
     const response = await fetch(
@@ -47,7 +47,7 @@ async function fetchCharacter(character) {
     return data;
   } finally {
     loading -= 1;
-    waiting.shift()?.();
+    waiting.shift()?.resolve();
   }
 }
 
@@ -86,7 +86,7 @@ export function glyphs(text) {
 }
 
 function draw(element, data) {
-  element.classList.remove("stroke-pending");
+  element.classList.remove("stroke-pending", "stroke-fallback");
   if (element.querySelector(".stroke-glyph")) return;
   const svg = document.createElementNS(svgNS, "svg");
   svg.setAttribute("class", "stroke-glyph");
@@ -116,12 +116,10 @@ export function render(root) {
       continue;
     }
     element.classList.add("stroke-pending");
-    const started = performance.now();
+    const queued = waiting.findIndex((entry) => entry.character === character);
+    if (queued > 0) waiting.unshift(...waiting.splice(queued, 1));
     load(character).then(
-      (value) => {
-        if (performance.now() - started <= pendingLimit) draw(element, value);
-        else element.classList.remove("stroke-pending");
-      },
+      (value) => draw(element, value),
       () => element.classList.remove("stroke-pending"),
     );
     setTimeout(() => {
@@ -193,10 +191,7 @@ async function play(element) {
     element.classList.add("stroke-animating");
     await writer.animateCharacter();
     if (active !== request) return;
-    if (!element.classList.contains("stroke-ready")) {
-      element.classList.remove("stroke-fallback");
-      draw(element, data);
-    }
+    draw(element, data);
     stop();
   } catch {
     if (active !== request) return;
@@ -209,7 +204,13 @@ async function play(element) {
 document.addEventListener("click", (event) => {
   const element = event.target.closest(".glyph");
   if (!element || element.closest("[data-strokes-locked]")) return;
-  if (!getSelection()?.isCollapsed) return;
+  const selection = getSelection();
+  if (
+    selection &&
+    !selection.isCollapsed &&
+    selection.containsNode(element, true)
+  )
+    return;
   event.preventDefault();
   if (active?.element === element) stop();
   else play(element);

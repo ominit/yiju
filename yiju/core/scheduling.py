@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from fsrs import Card, Rating, Scheduler, State
+from fsrs import Card, Rating, Scheduler
 
 
 def now_utc() -> datetime:
@@ -9,28 +9,6 @@ def now_utc() -> datetime:
 
 def scheduler(retention: float = 0.9) -> Scheduler:
     return Scheduler(desired_retention=retention, enable_fuzzing=False)
-
-
-def new_card(identity: str, now: datetime) -> Card:
-    return Card(card_id=int(identity[:12], 16), due=now)
-
-
-def is_known(
-    card: Card,
-    success_days: int,
-    now: datetime,
-    *,
-    minimum_days: int = 3,
-    minimum_stability: float = 7,
-    minimum_retrievability: float = 0.8,
-) -> bool:
-    return (
-        card.state == State.Review
-        and success_days >= minimum_days
-        and card.stability is not None
-        and card.stability >= minimum_stability
-        and scheduler().get_card_retrievability(card, now) >= minimum_retrievability
-    )
 
 
 SECONDS_PER_HOUR = 3600

@@ -1,11 +1,10 @@
 import asyncio
-import io
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
-from conftest import csrf, import_export
+from conftest import SAMPLE, add, database
 from flask import Flask
 from flask.testing import FlaskClient
 
@@ -34,16 +33,12 @@ def recorded_texts(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
 
 def test_audio_cache_is_shared_across_directions_and_supports_ranges(
-    client: FlaskClient, app: Flask, xml_export: bytes, recorded_texts: list[str]
+    client: FlaskClient, app: Flask, recorded_texts: list[str]
 ) -> None:
-    client.post(
-        "/import",
-        data={"csrf": csrf(client), "file": (io.BytesIO(xml_export), "words.xml")},
-    )
+    with database(app) as db:
+        add(db, SAMPLE)
     with connect(Path(app.config["DATABASE"])) as db:
-        cards = db.execute(
-            "SELECT * FROM cards WHERE word = '去' AND sentence_id IS NULL"
-        ).fetchall()
+        cards = db.execute("SELECT * FROM cards WHERE word = '去'").fetchall()
     for card in cards:
         response = client.get(f"/audio/cards/{card['id']}")
         assert response.status_code == 200
@@ -60,12 +55,10 @@ def test_audio_cache_is_shared_across_directions_and_supports_ranges(
 
 
 def test_sentence_audio_changes_when_sentence_is_edited(
-    client: FlaskClient, app: Flask, xml_export: bytes, recorded_texts: list[str]
+    client: FlaskClient, app: Flask, recorded_texts: list[str]
 ) -> None:
-    client.post(
-        "/import",
-        data={"csrf": csrf(client), "file": (io.BytesIO(xml_export), "words.xml")},
-    )
+    with database(app) as db:
+        add(db, SAMPLE)
     with connect(Path(app.config["DATABASE"])) as db:
         card = db.execute(
             "SELECT * FROM cards WHERE sentence_id IS NOT NULL LIMIT 1"
@@ -113,12 +106,10 @@ def test_failed_audio_is_not_cached(
 
 
 def test_unavailable_voice_returns_retryable_error(
-    client: FlaskClient, app: Flask, xml_export: bytes, monkeypatch: pytest.MonkeyPatch
+    client: FlaskClient, app: Flask, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    client.post(
-        "/import",
-        data={"csrf": csrf(client), "file": (io.BytesIO(xml_export), "words.xml")},
-    )
+    with database(app) as db:
+        add(db, SAMPLE)
     with connect(Path(app.config["DATABASE"])) as db:
         card_id = db.execute("SELECT id FROM cards LIMIT 1").fetchone()[0]
 
@@ -137,17 +128,17 @@ def test_unavailable_voice_returns_retryable_error(
 def test_repeated_failures_pause_synthesis_but_serve_cached_audio(
     client: FlaskClient,
     app: Flask,
-    xml_export: bytes,
     recorded_texts: list[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import_export(client, xml_export)
+    with database(app) as db:
+        add(db, SAMPLE)
     with connect(Path(app.config["DATABASE"])) as db:
         cached, uncached = (
             row[0]
             for row in db.execute(
-                "SELECT id FROM cards WHERE sentence_id IS NULL "
-                "AND direction = 'recognition' AND word IN ('我', '去') ORDER BY word"
+                "SELECT id FROM cards WHERE card_type = 'recognition' "
+                "AND word IN ('我', '去') ORDER BY word"
             )
         )
     assert client.get(f"/audio/cards/{cached}").status_code == 200

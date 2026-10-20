@@ -74,41 +74,46 @@
     {%- endif -%}
   </span>
 {%- endmacro %}
-{% macro senses(definition, examples=true) %}
-  {% set visible = definition.senses | selectattr('meaning') | list %}
-  {% if visible %}
-    <ol class="senses{% if visible|length == 1 %} single{% endif %}">
-      {% for sense in visible %}
-        <li>
-          <p>{% if sense.part_of_speech %}<span class="pos">{{ sense.part_of_speech }}</span>{% endif %}{{ sense.meaning }}</p>
-          {% if examples and sense.examples %}
-            <ul class="examples">
-              {% for example in sense.examples %}
-                <li>
-                  <p class="example-zh" lang="zh-Hans">{{ example.chinese }}</p>
-                  {% if example.pinyin %}<p class="example-py">{{ example.pinyin }}</p>{% endif %}
-                  {% if example.translation %}<p class="example-en">{{ example.translation }}</p>{% endif %}
-                </li>
-              {% endfor %}
-            </ul>
-          {% endif %}
-        </li>
-      {% endfor %}
-    </ol>
+{% macro senses(readings) %}
+  {% if readings %}
+    {% for reading in readings %}
+      <section class="reading-group">
+        {% if readings|length > 1 %}<h4 class="reading-pinyin">{{ reading.pinyin }}</h4>{% endif %}
+        <ol class="senses{% if reading.senses|length == 1 %} single{% endif %}">
+          {% for sense in reading.senses %}
+            <li>
+              <p{% if sense.usage %} class="usage"{% endif %}>
+                {% for note in sense.notes %}<span class="pos">{{ note }}</span>{% endfor %}{{ sense.text }}
+              </p>
+            </li>
+          {% endfor %}
+        </ol>
+        {% if reading.classifiers %}
+          <p class="classifiers muted small">Measure word{{ 's' if reading.classifiers|length > 1 else '' }}: <span lang="zh-Hans">{{ reading.classifiers|join(", ") }}</span></p>
+        {% endif %}
+      </section>
+    {% endfor %}
   {% else %}
     <p class="muted">No definition</p>
   {% endif %}
+{% endmacro %}
+{% macro brief(readings, limit=4) %}
+  <ul class="brief">
+    {% for reading in readings %}
+      <li>
+        <span class="reading-pinyin">{{ reading.pinyin }}</span>
+        {{ reading.senses[:limit] | map(attribute='text') | join('; ') }}{% if reading.senses|length > limit %}<span class="muted">and {{ reading.senses|length - limit }} more</span>{% endif %}
+      </li>
+    {% endfor %}
+  </ul>
 {% endmacro %}
 {% macro status(state, hidden=false, hidden_label='Paused', title='') -%}
   {%- if hidden -%}
     <span class="status status-hidden">{{ hidden_label }}</span>
   {%- else -%}
     <span class="status status-{{ state }}"
-          {% if title %} title="{{ title }}"{% endif %}>{{ 'Locked' if state == 'waiting' else state | capitalize }}</span>
+          {% if title %} title="{{ title }}"{% endif %}>{{ {'learned': 'Learned', 'learning': 'Learning', 'unlocked': 'New', 'locked': 'Locked', 'eligible': 'Eligible'}[state] }}</span>
   {%- endif -%}
-{%- endmacro %}
-{% macro sentence_status(item) -%}
-  {{ status(item.state if item.ready or item.state != 'new' else 'waiting', item.hidden, 'Skipped', item.analysis.reason if not item.ready else '') }}
 {%- endmacro %}
 {% macro meter(value, maximum, label) -%}
   <svg class="meter"
@@ -125,24 +130,25 @@
 {% endif -%}
 </svg>
 {%- endmacro %}
-{% macro progress_panel(progress, config) %}
+{% macro strength_panel(strength, parameters) %}
   <div class="metrics">
     <div class="metric">
       <span class="metric-label">Successful days</span>
-      <span class="metric-value">{{ progress.days }}<small>/ {{ config.known_days }}</small></span>
-      {{ meter(progress.days, config.known_days, 'Successful days toward learned') }}
+      <span class="metric-value">{{ strength.days }}<small>/ {{ parameters.learned_days }}</small></span>
+      {{ meter(strength.days, parameters.learned_days, 'Successful days toward learned') }}
     </div>
     <div class="metric">
       <span class="metric-label">Memory strength</span>
-      <span class="metric-value">{{ progress.stability }}<small>/ {{ config.known_stability }} days</small></span>
-      {{ meter(progress.stability, config.known_stability, 'Memory strength toward learned') }}
+      <span class="metric-value">{{ strength.stability }}<small>/ {{ parameters.learned_stability }} days</small></span>
+      {{ meter(strength.stability, parameters.learned_stability, 'Memory strength toward learned') }}
     </div>
     <div class="metric">
       <span class="metric-label">Recall now</span>
-      <span class="metric-value">{{ progress.recall if progress.recall is not none else '—' }}<small>{% if progress.recall is not none %}% / {{ (config.known_retrievability * 100) | round | int }}%{% endif %}</small></span>
-      {{ meter(progress.recall or 0, config.known_retrievability * 100, 'Estimated recall toward learned') }}
+      <span class="metric-value">{{ strength.recall if strength.recall is not none else '—' }}<small>{% if strength.recall is not none %}%{% endif %}</small></span>
+      {{ meter(strength.recall or 0, 100, 'Estimated recall now') }}
     </div>
   </div>
+  <p class="muted small">Learned at {{ parameters.learned_stability }} days of strength and {{ parameters.learned_days }} successful days. A learned word drops back below {{ parameters.unlearned_stability }} days.</p>
 {% endmacro %}
 {% macro card_table(cards) %}
   <div class="card-table">

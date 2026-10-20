@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% from 'macros/ui.html' import icon, status, sentence_status %}
+{% from 'macros/ui.html' import icon %}
 {% block title %}{{ 'Words' if kind == 'words' else 'Sentences' }} · Library · Yiju{% endblock %}
 {% block content %}
   {% set endpoint = 'pages.library' if kind == 'words' else 'pages.sentences' %}
@@ -9,7 +9,7 @@
       {% if kind == 'words' and state == 'flagged' and counts.flagged %}
         <a class="button" href="{{ url_for('flags.export_flags') }}" download>{{ icon('download', 18) }}Export flags</a>
       {% endif %}
-      <a class="button" href="{{ url_for('pages.import_page') }}">{{ icon('upload', 18) }}Import</a>
+      <a class="button" href="{{ url_for('pages.import_page') }}">{{ icon('plus', 18) }}Add</a>
     </div>
   </header>
   <nav class="segmented" aria-label="Library content">
@@ -43,14 +43,14 @@
   <div data-results>
     <nav class="chips" aria-label="Filter">
       {% for key, label in filters %}
-        <a href="{{ url_for(endpoint, filter=key, q=q or none, sort=sort if sort != 'learning' else none) }}"
+        <a href="{{ url_for(endpoint, filter=key, q=q or none, sort=sort if sort != 'status' else none) }}"
            {% if state == key %}aria-current="page"{% endif %}>{{ label }}<span>{{ counts[key] }}</span></a>
       {% endfor %}
     </nav>
     {% if items %}
       <ul class="list {{ kind }}">
         {% for item in items %}
-          {% with details = details if (item.text if kind == 'words' else item.row.id) == opened else none %}
+          {% with details = details if item.key == opened else none %}
             {% include 'library_item.html' %}
           {% endwith %}
         {% endfor %}
@@ -73,7 +73,7 @@
           <a class="button" href="{{ url_for(endpoint) }}">Clear filters</a>
         {% else %}
           <h2>No {{ kind }} yet</h2>
-          <a class="button primary" href="{{ url_for('pages.import_page') }}">{{ icon('upload', 18) }}Import words</a>
+          <a class="button primary" href="{{ url_for('pages.import_page') }}">{{ icon('plus', 18) }}Add sentences</a>
         {% endif %}
       </section>
     {% endif %}

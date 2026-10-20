@@ -1,4 +1,5 @@
-import io
+import gzip
+import json
 import re
 import sqlite3
 from collections.abc import Generator
@@ -13,46 +14,70 @@ from flask.testing import FlaskClient
 from fsrs import Card, State
 from werkzeug.test import TestResponse
 
+from yiju.core import dictionary
 from yiju.storage.database import connect, initialize
+from yiju.storage.graph import refresh
+from yiju.storage.pending import approve, preview, stage
 from yiju.web import create_app
 
+DICTIONARY = Path(__file__).with_name("cedict.u8")
 ITEM_URL = re.compile(r"^/(?:library/words|sentences)/[^/]+$")
+SAMPLE = """\
+我去。 | I am going.
+我学习中文。 | I study Chinese.
+苹果
+"""
+WORDS = {"我", "去", "学习", "中文", "苹果"}
+SENTENCES = {"我去。", "我学习中文。"}
 
 
-def seed_known_word(
-    connection: sqlite3.Connection, word: str, now: datetime | None = None
+def add(
+    connection: sqlite3.Connection, text: str, now: datetime | None = None
+) -> dict[str, int]:
+    now = now or datetime.now(UTC)
+    stage(connection, text)
+    return approve(connection, preview(connection).version, now)
+
+
+def set_strength(
+    connection: sqlite3.Connection,
+    word: str,
+    *,
+    stability: float = 20,
+    learned: bool = True,
+    now: datetime | None = None,
 ) -> None:
     now = now or datetime.now(UTC)
-    card = Card(
-        card_id=1,
+    memory = Card(
+        card_id=0,
         state=State.Review,
-        stability=20,
-        difficulty=3,
+        stability=stability,
+        difficulty=5,
         due=now,
         last_review=now,
     )
     connection.execute(
-        "INSERT INTO knowledge VALUES (?, ?, ?, ?)",
-        (word, card.to_json(), 3, now.date().isoformat()),
+        "UPDATE words SET state = 'seen', memory = ?, success_days = ?, "
+        "last_success = ?, learned = ? WHERE word = ?",
+        (memory.to_json(), 3, now.date().isoformat(), int(learned), word),
     )
+    refresh(connection, [word])
     connection.commit()
 
 
-@pytest.fixture
-def xml_export() -> bytes:
-    return """<?xml version="1.0" encoding="UTF-8"?>
-<plecoflash formatversion="2"><cards>
-<card language="chinese"><entry><headword charset="sc">我</headword>
-<pron type="hypy">wo3</pron><defn>pronoun I; me 我去。 Wǒ qù. I am going.</defn>
-</entry><dictref dictid="TEST" entryid="1"/></card>
-<card language="chinese"><entry><headword charset="sc">去</headword>
-<pron type="hypy">qu4</pron><defn>verb go 我去。 Wǒ qù. I am going.</defn>
-</entry><dictref dictid="TEST" entryid="2"/></card>
-<card language="chinese"><entry><headword charset="sc">学习</headword>
-<pron type="hypy">xue2xi2</pron><defn>verb study
-我学习中文。 Wǒ xuéxí Zhōngwén. I study Chinese.</defn>
-</entry><dictref dictid="TEST" entryid="3"/></card>
-</cards></plecoflash>""".encode()
+def states(connection: sqlite3.Connection, table: str = "words") -> dict[str, str]:
+    key = "word" if table == "words" else "chinese"
+    return {
+        row[0]: row[1]
+        for row in connection.execute(f"SELECT {key}, state FROM {table}")  # noqa: S608
+    }
+
+
+@pytest.fixture(autouse=True)
+def small_dictionary(tmp_path: Path) -> None:
+    path = tmp_path / dictionary.FILENAME
+    path.write_bytes(gzip.compress(DICTIONARY.read_bytes()))
+    dictionary.use(path)
 
 
 @pytest.fixture
@@ -76,19 +101,51 @@ def client(app: Flask) -> FlaskClient:
     return app.test_client()
 
 
+def database(app: Flask) -> sqlite3.Connection:
+    return connect(Path(app.config["DATABASE"]))
+
+
 def csrf(client: FlaskClient) -> str:
     client.get("/")
     with client.session_transaction() as session:
         return str(session["csrf"])
 
 
-def import_export(
-    client: FlaskClient, data: bytes, token: str | None = None
-) -> TestResponse:
-    return client.post(
-        "/import",
-        data={"csrf": token or csrf(client), "file": (io.BytesIO(data), "words.xml")},
-    )
+def check_form(client: FlaskClient) -> dict[str, str]:
+    with database(client.application) as db:
+        waiting = preview(db)
+    form = {
+        "csrf": csrf(client),
+        "version": waiting.version,
+        "sentences": json.dumps([sentence.id for sentence in waiting.sentences]),
+        "shown": json.dumps([word.word for word in waiting.words]),
+    }
+    for sentence in waiting.sentences:
+        prefix = f"s{sentence.id}"
+        form[f"{prefix}-words"] = " ".join(token.text for token in sentence.words)
+        form[f"{prefix}-pinyin"] = sentence.pinyin
+        form[f"{prefix}-translation"] = sentence.translation
+        if sentence.included:
+            form[f"{prefix}-included"] = "on"
+    for index, word in enumerate(waiting.words):
+        form[f"w{index}-pinyin"] = word.pinyin
+        form[f"w{index}-meanings"] = word.meanings
+        if word.included:
+            form[f"w{index}-included"] = "on"
+    return form
+
+
+def start_import(client: FlaskClient, text: str) -> None:
+    response = client.post("/import", data={"csrf": csrf(client), "text": text})
+    assert response.status_code == 303
+    assert response.headers["Location"] == "/pending"
+
+
+def import_text(client: FlaskClient, text: str = SAMPLE) -> TestResponse:
+    start_import(client, text)
+    response = client.post("/pending", data={**check_form(client), "step": "approve"})
+    assert response.status_code == 303
+    return response
 
 
 def post_json(
@@ -98,14 +155,20 @@ def post_json(
 
 
 def rate(
-    client: FlaskClient, token: str, card: sqlite3.Row, rating: int = 3
+    client: FlaskClient,
+    token: str,
+    card: dict[str, Any] | sqlite3.Row,
+    rating: int = 3,
+    marked: list[str] | None = None,
 ) -> TestResponse:
-    return post_json(
-        client,
-        "/api/reviews",
-        {"card": card["id"], "version": card["version"], "rating": rating},
-        token,
-    )
+    payload: dict[str, object] = {
+        "card": card["id"],
+        "version": card["version"],
+        "rating": rating,
+    }
+    if marked is not None:
+        payload["marked"] = marked
+    return post_json(client, "/api/reviews", payload, token)
 
 
 def study_cards(client: FlaskClient) -> list[dict[str, Any]]:

@@ -7,7 +7,10 @@
     <a class="icon-button"
        href="{{ url_for('pages.home') }}"
        title="Leave study">{{ icon("close") }}<span class="sr-only">Leave study</span></a>
-    <div class="study-count" aria-live="polite"><strong data-remaining>{{ batch.count }}</strong> <span>left</span></div>
+    <div class="study-count" aria-live="polite">
+      <span><strong data-reviews>{{ batch.counts.reviews }}</strong> <span data-reviews-label>review{{ '' if batch.counts.reviews == 1 else 's' }}</span></span>
+      <span><strong data-new>{{ batch.counts.new }}</strong> new</span>
+    </div>
     <div class="study-tools">
       <button class="icon-button"
               type="button"

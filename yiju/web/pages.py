@@ -1,13 +1,14 @@
-import json
 from datetime import timedelta
 
-from flask import Blueprint, abort, redirect, render_template, request
+from flask import Blueprint, redirect, render_template, request
 from werkzeug.wrappers import Response
 
+from yiju.core.dictionary import published
 from yiju.core.scheduling import now_utc
 from yiju.storage.database import settings
-from yiju.storage.progress import activity
+from yiju.storage.pending import FORMAT, preview, waiting
 from yiju.storage.queue import overview
+from yiju.storage.stats import activity
 
 from . import database
 from .library import item_location, item_response, library_response
@@ -21,12 +22,6 @@ def home() -> str:
     connection = database()
     now = now_utc()
     stats = overview(connection, now)
-    learning = (
-        connection.execute(
-            "SELECT count(*) FROM knowledge WHERE word IN (SELECT word FROM entries)"
-        ).fetchone()[0]
-        - stats["known"]
-    )
     due_by_day = dict(
         connection.execute(
             "SELECT substr(due, 1, 10) AS day, count(*) FROM cards "
@@ -54,8 +49,6 @@ def home() -> str:
     return render_template(
         "home.html",
         stats=stats,
-        learning=learning,
-        unstarted=max(0, stats["words"] - stats["known"] - learning),
         activity=activity(connection, now),
         forecast=forecast,
         forecast_max=max(1, *(day["count"] for day in forecast)),
@@ -65,21 +58,12 @@ def home() -> str:
 
 @pages.get("/import")
 def import_page() -> str:
-    return render_template("import.html")
+    return render_template("import.html", waiting=waiting(database()), format=FORMAT)
 
 
-@pages.get("/imports/<int:import_id>")
-def import_result(import_id: int) -> str:
-    row = (
-        database()
-        .execute("SELECT * FROM imports WHERE id = ?", (import_id,))
-        .fetchone()
-    )
-    if row is None:
-        abort(404)
-    return render_template(
-        "import_result.html", batch=row, summary=json.loads(row["summary"])
-    )
+@pages.get("/pending")
+def pending_page() -> str:
+    return render_template("pending.html", pending=preview(database()))
 
 
 @pages.get("/library")
@@ -111,6 +95,11 @@ def sentence_detail(sentence_id: str) -> str | Response:
 @pages.get("/settings")
 def preferences() -> str:
     return render_template("settings.html", config=settings(database()))
+
+
+@pages.get("/about")
+def about() -> str:
+    return render_template("about.html", dictionary_date=published())
 
 
 @pages.get("/healthz")

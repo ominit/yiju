@@ -98,8 +98,8 @@ def generate(text: str, directory: Path) -> Path:
     return path
 
 
-@audio.get("/audio/cards/<card_id>")
-def pronunciation(card_id: str) -> Response:
+@audio.get("/audio/cards/<int:card_id>")
+def pronunciation(card_id: int) -> Response:
     row = (
         database()
         .execute(
