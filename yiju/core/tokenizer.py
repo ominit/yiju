@@ -128,7 +128,11 @@ def sentence_pinyin(chinese: str, words: tuple[str, ...]) -> str:
     offset = 0
     for word in words:
         known = syllables(word) if len(word) > 1 else None
-        parts = list(known) if known else characters[offset : offset + len(word)]
+        parts = (
+            list(known)
+            if known is not None
+            else characters[offset : offset + len(word)]
+        )
         offset += len(word)
         closing, middle, following = _split_gap(gaps.get(offset, ""))
         pieces += [opening + join_syllables(parts) + closing, middle]
