@@ -1,17 +1,21 @@
-import sqlite3
 from collections import defaultdict
-from collections.abc import Iterable
-from datetime import datetime
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from fsrs import Card
 
-from yiju.core.strength import Parameters
+from yiju.core.names import clean_rules, slot_error
 from yiju.core.text import contains_han
 
 from .cards import create_cards
 from .database import ConflictError, parameters, transaction
 from .graph import refresh
+
+if TYPE_CHECKING:
+    import sqlite3
+    from collections.abc import Iterable
+    from datetime import datetime
+
+    from yiju.core.strength import Parameters
 
 MAX_CHINESE_LENGTH = 300
 MAX_TRANSLATION_LENGTH = 2000
@@ -83,11 +87,12 @@ def add_sentence(
     pinyin: str,
     translation: str,
     now: datetime,
+    rules: str = "",
 ) -> int | None:
     cursor = connection.execute(
-        "INSERT OR IGNORE INTO sentences(chinese, pinyin, translation, created) "
-        "VALUES (?, ?, ?, ?)",
-        (chinese, pinyin, translation, now.isoformat()),
+        "INSERT OR IGNORE INTO sentences(chinese, pinyin, translation, rules, created) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (chinese, pinyin, translation, rules, now.isoformat()),
     )
     if not cursor.rowcount or cursor.lastrowid is None:
         return None
@@ -118,16 +123,21 @@ def update_sentence(
     version: int,
     pinyin: str,
     translation: str,
+    rules: str | None = None,
 ) -> None:
+    pinyin, translation = pinyin.strip(), translation.strip()
     with transaction(connection):
         row = _current(connection, sentence_id, version)
-        error = field_error(row["chinese"], pinyin, translation)
+        rules = str(row["rules"]) if rules is None else clean_rules(rules)
+        error = field_error(row["chinese"], pinyin, translation) or slot_error(
+            row["chinese"], translation, rules, pinyin
+        )
         if error is not None:
             raise ValueError(error)
         connection.execute(
-            "UPDATE sentences SET pinyin = ?, translation = ?, version = version + 1 "
-            "WHERE id = ?",
-            (pinyin.strip(), translation.strip(), sentence_id),
+            "UPDATE sentences SET pinyin = ?, translation = ?, rules = ?, "
+            "version = version + 1 WHERE id = ?",
+            (pinyin, translation, rules, sentence_id),
         )
 
 

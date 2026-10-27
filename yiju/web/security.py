@@ -14,6 +14,7 @@ SECTIONS = {
     "study.page": "study",
     "pages.library": "library",
     "pages.sentences": "library",
+    "pages.names": "library",
     "pages.word_detail": "library",
     "pages.sentence_detail": "library",
     "pages.import_page": "library",

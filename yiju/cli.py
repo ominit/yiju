@@ -5,23 +5,29 @@ import sqlite3
 import sys
 import urllib.error
 import urllib.request
-from collections.abc import Callable
+from http import HTTPStatus
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
 from urllib.parse import quote, urlencode
 
 from .storage import pending
 from .storage.export import SENTENCE_STATUSES, WORD_STATUSES
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 AGENT_HELP = """\
 Commands other than serve and backup print JSON and are meant for scripts and
 agents. They talk to a running web app through its /api/agent routes, at the
 address in --url or YIJU_URL. Imports never change the library directly:
 `yiju import add` puts the items on the check screen in the web app, next to
-anything else waiting there, and prints exactly what approving would add.
+anything else waiting there, and prints what it staged with any problems.
 Agents can revise waiting items with the edit commands, but only the user can
-approve them.
+approve them. `yiju names add` does the same for the names that fill the
+people in sentences.
 """
 DEFAULT_URL = "http://127.0.0.1:8000"
+WIDTH = 100
 
 type Body = dict[str, object]
 type Call = tuple[str, str, Body | None]
@@ -58,8 +64,12 @@ def _parser() -> argparse.ArgumentParser:
     backup.add_argument("destination", type=Path)
     _data_dir(backup)
 
-    word = commands.add_parser("word", help="Show one word's state and strength.")
-    word.add_argument("word")
+    word = commands.add_parser(
+        "word",
+        help="Show a word's state and strength, or its CC-CEDICT entry if it is "
+        "not in the library. Several words print a list.",
+    )
+    word.add_argument("word", nargs="+")
     words = commands.add_parser("words", help="List words.")
     words.add_argument("--status", choices=WORD_STATUSES)
     words.add_argument("--flagged", action="store_true")
@@ -97,6 +107,11 @@ def _parser() -> argparse.ArgumentParser:
     _import_parser(
         commands.add_parser("import", help="Add and revise items waiting for a check.")
     )
+    _names_parser(
+        commands.add_parser(
+            "names", help="List names and add or revise names waiting for a check."
+        )
+    )
     return parser
 
 
@@ -115,32 +130,69 @@ def _import_parser(imports: argparse.ArgumentParser) -> None:
     sentence.add_argument("--words", help='Space-separated words, e.g. "我 很 好".')
     sentence.add_argument("--pinyin")
     sentence.add_argument("--translation")
-    _inclusion(sentence)
-    word_edit = actions.add_parser("edit-word", help="Revise one new word.")
+    sentence.add_argument(
+        "--rules", help='Gender rules, e.g. "A=male A!=B". An empty value clears them.'
+    )
+    word_edit = actions.add_parser(
+        "edit-word", help="Write a definition for a new word CC-CEDICT does not have."
+    )
     word_edit.add_argument("word")
-    word_edit.add_argument("--pinyin")
+    word_edit.add_argument("--pinyin", help="The reading for your own meanings.")
     word_edit.add_argument(
         "--meanings",
-        help="Meanings separated by newlines or \\n. Replaces the dictionary "
-        "definition; an empty value restores it.",
+        required=True,
+        help="Meanings separated by newlines or \\n. An empty value removes them.",
     )
-    _inclusion(word_edit)
     remove = actions.add_parser("remove-sentence", help="Drop a sentence.")
+    remove.add_argument("id", type=int)
+    remove_word = actions.add_parser(
+        "remove-word", help="Drop a word that is waiting on its own."
+    )
+    remove_word.add_argument("word")
+    for name, action in actions.choices.items():
+        if name != "format":
+            _url(action)
+
+
+def _names_parser(names: argparse.ArgumentParser) -> None:
+    actions = names.add_subparsers(dest="action", required=True)
+    actions.add_parser("list", help="List the approved names.")
+    actions.add_parser("format", help="Print the names text format.")
+    add = actions.add_parser(
+        "add", help="Add names in the names format to the items waiting for a check."
+    )
+    add.add_argument(
+        "file", nargs="?", default="-", help="File to read, or - for stdin."
+    )
+    edit = actions.add_parser("edit", help="Revise one name waiting for a check.")
+    edit.add_argument("id", type=int)
+    edit.add_argument("--pinyin")
+    edit.add_argument("--english")
+    edit.add_argument("--gender", choices=("male", "female"))
+    remove = actions.add_parser("remove", help="Drop a name waiting for a check.")
     remove.add_argument("id", type=int)
     for name, action in actions.choices.items():
         if name != "format":
             _url(action)
 
 
-def _inclusion(parser: argparse.ArgumentParser) -> None:
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument("--include", dest="included", action="store_true", default=None)
-    group.add_argument("--exclude", dest="included", action="store_false")
+def _dumps(value: object, indent: str = "", used: int = 0) -> str:
+    flat = json.dumps(value, ensure_ascii=False)
+    if not value or not isinstance(value, dict | list) or used + len(flat) <= WIDTH:
+        return flat
+    inner = indent + "  "
+    if isinstance(value, list):
+        lines = [inner + _dumps(item, inner, len(inner)) for item in value]
+        return "[\n" + ",\n".join(lines) + f"\n{indent}]"
+    lines = []
+    for key, item in cast("dict[str, object]", value).items():
+        start = f"{inner}{json.dumps(key, ensure_ascii=False)}: "
+        lines.append(start + _dumps(item, inner, len(start)))
+    return "{\n" + ",\n".join(lines) + f"\n{indent}}}"
 
 
 def _print(value: object) -> None:
-    json.dump(value, sys.stdout, ensure_ascii=False, indent=2)
-    sys.stdout.write("\n")
+    sys.stdout.write(_dumps(value) + "\n")
 
 
 def _path(*parts: str | int) -> str:
@@ -168,7 +220,7 @@ def _import(args: argparse.Namespace) -> Call:
                 "words": args.words,
                 "pinyin": args.pinyin,
                 "translation": args.translation,
-                "included": args.included,
+                "rules": args.rules,
             },
         )
     if args.action == "edit-word":
@@ -180,16 +232,36 @@ def _import(args: argparse.Namespace) -> Call:
                 "meanings": None
                 if args.meanings is None
                 else args.meanings.replace("\\n", "\n"),
-                "included": args.included,
             },
         )
     if args.action == "remove-sentence":
         return "POST", _path("pending", "sentences", args.id, "remove"), {}
+    if args.action == "remove-word":
+        return "POST", _path("pending", "words", args.word, "remove"), {}
     return "GET", "/pending", None
 
 
+def _names(args: argparse.Namespace) -> Call:
+    if args.action == "add":
+        text = sys.stdin.read() if args.file == "-" else Path(args.file).read_text()
+        return "POST", "/pending/names", {"text": text}
+    if args.action == "edit":
+        return (
+            "POST",
+            _path("pending", "names", args.id),
+            {
+                "pinyin": args.pinyin,
+                "english": args.english,
+                "gender": args.gender,
+            },
+        )
+    if args.action == "remove":
+        return "POST", _path("pending", "names", args.id, "remove"), {}
+    return "GET", "/names", None
+
+
 CALLS: dict[str, Callable[[argparse.Namespace], Call]] = {
-    "word": lambda args: ("GET", _path("words", args.word), None),
+    "word": lambda args: ("GET", _path("words", args.word[0]), None),
     "words": lambda args: (
         "GET",
         _query(
@@ -205,13 +277,15 @@ CALLS: dict[str, Callable[[argparse.Namespace], Call]] = {
         ("POST", "/dictionary", {}) if args.update else ("GET", "/dictionary", None)
     ),
     "import": _import,
+    "names": _names,
 }
 
 
 class RequestError(Exception):
-    def __init__(self, payload: object) -> None:
+    def __init__(self, payload: object, status: int | None = None) -> None:
         super().__init__(payload)
         self.payload = payload
+        self.status = status
 
 
 def _send(base: str, call: Call) -> object:
@@ -231,10 +305,22 @@ def _send(base: str, call: Call) -> object:
             payload = json.load(error)
         except ValueError:
             payload = {"error": f"{url} answered {error.code} {error.reason}."}
-        raise RequestError(payload) from error
+        raise RequestError(payload, error.code) from error
     except urllib.error.URLError as error:
         message = f"Could not reach yiju at {base}: {error.reason}"
         raise RequestError({"error": message}) from error
+
+
+def _words(args: argparse.Namespace) -> list[object]:
+    results: list[object] = []
+    for word in args.word:
+        try:
+            results.append(_send(args.url, ("GET", _path("words", word), None)))
+        except RequestError as error:
+            if error.status != HTTPStatus.NOT_FOUND:
+                raise
+            results.append({"word": word} | cast("dict[str, object]", error.payload))
+    return results
 
 
 def _serve(args: argparse.Namespace) -> None:
@@ -275,10 +361,17 @@ def main() -> None:
     if args.command == "import" and args.action == "format":
         _print({"format": pending.FORMAT})
         return
+    if args.command == "names" and args.action == "format":
+        _print({"format": pending.NAME_FORMAT})
+        return
     if not args.url.startswith(("http://", "https://")):
         parser.error("--url must start with http:// or https://.")
     try:
-        _print(_send(args.url, CALLS[args.command](args)))
+        _print(
+            _words(args)
+            if args.command == "word" and len(args.word) > 1
+            else _send(args.url, CALLS[args.command](args))
+        )
     except RequestError as error:
         _print(error.payload)
         sys.exit(1)

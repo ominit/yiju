@@ -1,15 +1,18 @@
 import asyncio
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from conftest import SAMPLE, SENTENCES, WORDS, add, database, import_text
-from flask import Flask
-from flask.testing import FlaskClient
 
 from yiju.storage.database import connect
 from yiju.web import audio, create_app, strokes
 from yiju.web.prefill import MAX_ATTEMPTS, Prefill
+
+if TYPE_CHECKING:
+    from flask import Flask
+    from flask.testing import FlaskClient
 
 
 class Fakes:

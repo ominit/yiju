@@ -1,10 +1,13 @@
-import sqlite3
+from typing import TYPE_CHECKING
 
 from conftest import add, set_strength, states
 
 from yiju.storage.graph import refresh
 from yiju.storage.sentences import set_hidden
 from yiju.storage.words import set_manual
+
+if TYPE_CHECKING:
+    import sqlite3
 
 SENTENCES = """\
 我 很 好 | I am well.

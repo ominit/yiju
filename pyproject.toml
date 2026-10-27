@@ -15,14 +15,11 @@ dependencies = [
 description = "Private Chinese vocabulary and sentence study"
 license = "MIT"
 name = "yiju"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 version = "0.1.0"
 
 [project.scripts]
 yiju = "yiju.cli:main"
-
-[dependency-groups]
-dev = ["playwright==1.63.0", "pytest==9.1.1", "ruff==0.16.10", "ty==0.0.85"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["yiju"]
@@ -32,7 +29,7 @@ addopts = "--strict-config --strict-markers"
 testpaths = ["tests"]
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py314"
 
 [tool.ruff.lint]
 ignore = ["D", "COM812", "CPY001"]
@@ -40,10 +37,12 @@ select = ["ALL"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "PLR2004", "INP001", "RUF001"]
+"tests/test_names.py" = ["S311"]
 "tests/test_queue.py" = ["S311"]
 "yiju/cli.py" = ["PLC0415", "S104"]
 "yiju/core/tokenizer.py" = ["RUF001"]
 "yiju/storage/learning.py" = ["PLR0913", "PLR0917"]
+"yiju/storage/names.py" = ["PLR0913", "PLR0917"]
 "yiju/storage/pending.py" = ["PLR0913"]
 "yiju/storage/sentences.py" = ["PLR0913", "PLR0917"]
 "yiju/web/__init__.py" = ["PLC0415"]

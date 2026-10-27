@@ -70,5 +70,30 @@
       <button class="button primary" type="submit">Check</button>
     </div>
   </form>
+  <form class="panel import"
+        id="names"
+        method="post"
+        action="{{ url_for('actions.start_name_import') }}"
+        data-busy="Checking…">
+    <h2>Names</h2>
+    <p class="muted small">Study fills the people in your sentences with these.</p>
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>
+      <span class="sr-only">Names</span>
+      <textarea name="names"
+                lang="zh-Hans"
+                rows="4"
+                spellcheck="false"
+                placeholder="王芳 female"
+                required>{{ names or '' }}</textarea>
+    </label>
+    <details class="format">
+      <summary>Format</summary>
+      <pre>{{ name_format }}</pre>
+    </details>
+    <div class="form-actions">
+      <button class="button primary" type="submit">Check</button>
+    </div>
+  </form>
   <p class="muted small">Nothing is added until you approve it on the next screen.</p>
 {% endblock %}

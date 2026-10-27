@@ -1,9 +1,12 @@
 import json
-from collections.abc import Mapping
 from dataclasses import dataclass, fields
-from datetime import datetime
+from typing import TYPE_CHECKING
 
 from fsrs import Card, Rating, Scheduler, State
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from datetime import datetime
 
 MEMORY = Scheduler(enable_fuzzing=False, learning_steps=(), relearning_steps=())
 
@@ -17,7 +20,7 @@ class Parameters:
     sentence_fail_weight: float = 0.25
 
     @classmethod
-    def from_settings(cls, values: Mapping[str, object]) -> "Parameters":
+    def from_settings(cls, values: Mapping[str, object]) -> Parameters:
         return cls(
             **{
                 field.name: type(getattr(cls(), field.name))(values[field.name])

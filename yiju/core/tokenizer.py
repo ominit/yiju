@@ -6,6 +6,7 @@ import jieba
 from pypinyin import Style, lazy_pinyin
 
 from .dictionary import contains, join_syllables, syllables
+from .names import SLOT, is_slot, strip_slots
 from .normalization import normalize_text
 from .text import HAN
 
@@ -14,7 +15,9 @@ jieba.setLogLevel(logging.WARNING)
 HEADWORD_FREQ = 100_000
 MAX_WORD = 6
 RUN = re.compile(f"[{HAN}]+|[^{HAN}]+")
+SLOTS = re.compile(r"(\{[^{}]*\})")
 OPENING = "“‘（《「『(["
+CLOSING = re.compile(f"[^\\w\\s{OPENING}]")
 PUNCTUATION = str.maketrans(
     {
         "，": ",",
@@ -79,29 +82,57 @@ def _split(token: str, words: frozenset[str]) -> list[str]:
     return pieces
 
 
+def _slotted(text: str) -> list[str]:
+    return [piece for piece in SLOTS.split(text) if piece]
+
+
 def segment(text: str, words: tuple[str, ...] = ()) -> tuple[str, ...]:
     text = normalize_text(text)
-    if re.search(f"[{HAN}]\\s+[{HAN}]", text):
-        return tuple(word for piece in text.split() for word in _runs(piece))
+    if re.search(f"[{HAN}]\\s+[{HAN}]", strip_slots(text)):
+        return tuple(
+            word
+            for piece in text.split()
+            for part in _slotted(piece)
+            for word in ([part] if is_slot(part) else _runs(part))
+        )
     library = frozenset(words)
+    cut = _tokenizer(tuple(sorted(library))).cut
     return tuple(
         word
-        for piece in _tokenizer(tuple(sorted(library))).cut(text, HMM=False)
-        for token in _runs(piece)
-        for word in _split(token, library)
+        for part in _slotted(text)
+        for word in (
+            [part]
+            if is_slot(part)
+            else (
+                word
+                for piece in cut(part, HMM=False)
+                for token in _runs(piece)
+                for word in _split(token, library)
+            )
+        )
     )
 
 
 def parse_words(text: str) -> tuple[str, ...]:
-    return tuple(word for word in normalize_text(text).split() if word)
+    return tuple(
+        part for word in normalize_text(text).split() for part in _slotted(word)
+    )
+
+
+def _spelled(text: str) -> list[str]:
+    return [
+        part
+        for piece in _slotted(text)
+        for part in ([piece] if is_slot(piece) else list(han(piece)))
+    ]
 
 
 def segmentation_error(chinese: str, words: tuple[str, ...]) -> str | None:
-    if not words:
+    if not any(not is_slot(word) for word in words):
         return "The sentence has no Chinese words."
-    if any(han(word) != word for word in words):
+    if any(han(word) != word for word in words if not is_slot(word)):
         return "Words may contain only Chinese characters."
-    if "".join(words) != han(chinese):
+    if [part for word in words for part in _spelled(word)] != _spelled(chinese):
         return "The words must spell out the sentence's characters in order."
     return None
 
@@ -112,6 +143,32 @@ def word_pinyin(word: str) -> str:
 
 def sentence_pinyin(chinese: str, words: tuple[str, ...]) -> str:
     chinese = normalize_text(chinese)
+    if not SLOT.search(chinese):
+        return _pinyin(chinese, words)
+    groups: list[list[str]] = [[]]
+    for word in words:
+        if is_slot(word):
+            groups.append([])
+        else:
+            groups[-1].append(word)
+    pieces = SLOTS.split(chinese)
+    text = ""
+    for index, piece in enumerate(pieces):
+        if index % 2:
+            part = "tā" if "." in piece else str(piece)
+        else:
+            group = groups[index // 2] if index // 2 < len(groups) else []
+            part = _pinyin(piece, tuple(group)) if piece else ""
+        glued = pieces[index - 1][-1:] in set(OPENING) or (
+            not index % 2 and CLOSING.match(piece) is not None
+        )
+        if text and part and not glued:
+            text += " "
+        text += part
+    return text
+
+
+def _pinyin(chinese: str, words: tuple[str, ...]) -> str:
     readings = lazy_pinyin(chinese, style=Style.TONE)
     characters: list[str] = []
     gaps: dict[int, str] = {}
@@ -127,18 +184,22 @@ def sentence_pinyin(chinese: str, words: tuple[str, ...]) -> str:
     pieces = [f"{closing} {middle}".strip()]
     offset = 0
     for word in words:
-        known = syllables(word) if len(word) > 1 else None
-        parts = (
-            list(known)
-            if known is not None
-            else characters[offset : offset + len(word)]
-        )
+        parts = _dictionary_reading(word, characters[offset : offset + len(word)])
         offset += len(word)
         closing, middle, following = _split_gap(gaps.get(offset, ""))
         pieces += [opening + join_syllables(parts) + closing, middle]
         opening = following
     pieces[-1] += opening
     return " ".join(piece for piece in pieces if piece)
+
+
+def _dictionary_reading(word: str, generated: list[str]) -> list[str]:
+    readings = syllables(word)
+    wanted = [part.lower() for part in generated]
+    for reading in readings:
+        if [part.lower() for part in reading] == wanted:
+            return list(reading)
+    return list(readings[0]) if readings else generated
 
 
 def _split_gap(gap: str) -> tuple[str, str, str]:

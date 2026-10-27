@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS sentences (
     chinese TEXT NOT NULL UNIQUE,
     pinyin TEXT NOT NULL,
     translation TEXT NOT NULL,
+    rules TEXT NOT NULL DEFAULT '',
     state TEXT NOT NULL DEFAULT 'locked'
         CHECK (state IN ('locked', 'eligible', 'unlocked')),
     hidden INTEGER NOT NULL DEFAULT 0,
@@ -70,14 +71,31 @@ CREATE TABLE IF NOT EXISTS pending_sentences (
     words TEXT NOT NULL,
     pinyin TEXT NOT NULL,
     translation TEXT NOT NULL,
-    included INTEGER NOT NULL DEFAULT 1
+    rules TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS pending_words (
     word TEXT PRIMARY KEY,
     readings TEXT,
-    included INTEGER NOT NULL DEFAULT 1,
     requested INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS names (
+    id INTEGER PRIMARY KEY,
+    chinese TEXT NOT NULL UNIQUE,
+    pinyin TEXT NOT NULL,
+    english TEXT NOT NULL,
+    gender TEXT NOT NULL CHECK (gender IN ('male', 'female')),
+    created TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS pending_names (
+    id INTEGER PRIMARY KEY,
+    chinese TEXT NOT NULL UNIQUE,
+    pinyin TEXT NOT NULL,
+    english TEXT NOT NULL,
+    gender TEXT NOT NULL CHECK (gender IN ('male', 'female'))
 );
 
 CREATE TABLE IF NOT EXISTS parameter_sets (

@@ -1,6 +1,4 @@
-import sqlite3
-from datetime import datetime
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from fsrs import Card
 
@@ -9,6 +7,10 @@ from yiju.core.strength import Parameters, Strength, learned
 from .cards import create_cards
 from .database import ConflictError, transaction
 from .graph import refresh
+
+if TYPE_CHECKING:
+    import sqlite3
+    from datetime import datetime
 
 
 def status(row: sqlite3.Row) -> str:

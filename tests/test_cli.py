@@ -1,18 +1,21 @@
 import io
 import json
 import threading
-from collections.abc import Generator
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from conftest import SAMPLE, add, database, set_strength
-from flask import Flask
-from flask.testing import FlaskClient
 from werkzeug.serving import make_server
 
 from yiju import cli
 from yiju.storage.learning import review_card
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
+
+    from flask import Flask
+    from flask.testing import FlaskClient
 
 
 @pytest.fixture
@@ -64,16 +67,35 @@ def test_agent_imports_wait_for_the_user_and_report_what_they_would_add(
     assert first["id"] == 1
     assert [word["text"] for word in first["words"]] == ["我", "很", "喜欢", "葡萄"]
     assert first["pinyin"] == "wǒ hěn xǐhuan pútao."
+    assert first["words"][3]["meanings"] == ["grape"]
     assert not result["ready"]
     assert "Sentence 2: 嗯嗯嗯 has no definition." in result["issues"]
     words = {word["word"]: word for word in result["words"]}
-    assert words["葡萄"]["readings"][0]["senses"][0]["text"] == "grape"
+    assert "readings" not in words["葡萄"]
     assert words["嗯嗯嗯"]["found"] is False
     with database(app) as db:
         assert db.execute("SELECT count(*) FROM words").fetchone()[0] == 0
-    result = run(server, capsys, monkeypatch, "import", "add", stdin="苹果\n")
-    assert len(result["sentences"]) == 2
-    assert run(server, capsys, monkeypatch, "import", "show") == result
+    result = run(
+        server,
+        capsys,
+        monkeypatch,
+        "import",
+        "add",
+        stdin="苹果\n我很喜欢葡萄。 | I like grapes a lot.\n",
+    )
+    assert [sentence["id"] for sentence in result["sentences"]] == [1]
+    assert result["already_waiting"] == ["我很喜欢葡萄。"]
+    words = {word["word"] for word in result["words"]}
+    assert "苹果" in words
+    assert "嗯嗯嗯" not in words
+    shown = run(server, capsys, monkeypatch, "import", "show")
+    assert len(shown["sentences"]) == 2
+    assert "already_waiting" not in shown
+    result = run(
+        server, capsys, monkeypatch, "import", "edit-sentence", "2", "--rules", ""
+    )
+    assert [sentence["id"] for sentence in result["sentences"]] == [2]
+    assert [word["word"] for word in result["words"]] == ["嗯嗯嗯", "好"]
 
 
 def test_agents_can_revise_waiting_items(
@@ -113,17 +135,131 @@ def test_agents_can_revise_waiting_items(
     )
     word = next(word for word in result["words"] if word["word"] == "嗯嗯嗯")
     assert word["manual"]
-    assert [sense["text"] for sense in word["readings"][0]["senses"]] == [
+    assert word["readings"][0]["meanings"] == [
         "hmm",
         "expression of doubt",
     ]
     assert result["ready"]
-    result = run(
-        server, capsys, monkeypatch, "import", "edit-sentence", "2", "--exclude"
+    assert (
+        "give meanings too"
+        in (
+            run(
+                server,
+                capsys,
+                monkeypatch,
+                "import",
+                "edit-word",
+                "嗯嗯嗯",
+                "--pinyin",
+                "ńg",
+                "--meanings",
+                "",
+                status=1,
+            )["error"]
+        )
     )
-    assert not result["sentences"][1]["included"]
+    assert (
+        run(
+            server,
+            capsys,
+            monkeypatch,
+            "import",
+            "edit-sentence",
+            "1",
+            "--words",
+            "他 跑 得 很 慢",
+            status=1,
+        )["error"]
+        == "The words must spell out the sentence's characters in order."
+    )
+    result = run(server, capsys, monkeypatch, "import", "show")
+    assert result["sentences"][0]["pinyin"] == "Tā pǎo de hěn kuài."
+    word = next(word for word in result["words"] if word["word"] == "嗯嗯嗯")
+    assert word["manual"]
+    run(server, capsys, monkeypatch, "import", "add", stdin="苹果 好\n")
+    result = run(server, capsys, monkeypatch, "import", "remove-word", "苹果")
+    assert "苹果" not in {word["word"] for word in result["words"]}
+    assert (
+        "goes with that sentence"
+        in run(server, capsys, monkeypatch, "import", "remove-word", "好", status=1)[
+            "error"
+        ]
+    )
     result = run(server, capsys, monkeypatch, "import", "remove-sentence", "2")
+    assert result["sentences"] == []
+    result = run(server, capsys, monkeypatch, "import", "show")
     assert [sentence["id"] for sentence in result["sentences"]] == [1]
+
+
+def test_agents_stage_names_and_gender_rules(
+    app: Flask,
+    server: str,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert (
+        "surname first" in run(None, capsys, monkeypatch, "names", "format")["format"]
+    )
+    assert run(server, capsys, monkeypatch, "names", "list") == []
+    result = run(
+        server, capsys, monkeypatch, "names", "add", stdin="王芳 female\n李伟 male\n"
+    )
+    assert [name["english"] for name in result["names"]] == ["Wang Fang", "Li Wei"]
+    assert result["adds"]["names"] == 2
+    assert result["already_waiting"] == []
+    result = run(server, capsys, monkeypatch, "names", "add", stdin="王芳 female\n")
+    assert result["already_waiting"] == ["王芳"]
+    result = run(
+        server,
+        capsys,
+        monkeypatch,
+        "names",
+        "edit",
+        "2",
+        "--english",
+        "Wei Li",
+        "--gender",
+        "female",
+    )
+    assert [(name["english"], name["gender"]) for name in result["names"]] == [
+        ("Wei Li", "female")
+    ]
+    run(server, capsys, monkeypatch, "names", "remove", "1")
+    result = run(server, capsys, monkeypatch, "import", "show")
+    assert [name["chinese"] for name in result["names"]] == ["李伟"]
+    result = run(
+        server,
+        capsys,
+        monkeypatch,
+        "import",
+        "add",
+        stdin="{A}喜欢{B}。 | {A} likes {B}.\n",
+    )
+    assert ["slot" in word for word in result["sentences"][0]["words"]] == [
+        True,
+        False,
+        True,
+    ]
+    result = run(
+        server,
+        capsys,
+        monkeypatch,
+        "import",
+        "edit-sentence",
+        "1",
+        "--rules",
+        "A=male A=female",
+    )
+    assert "Sentence 1: The gender rules contradict each other." in result["issues"]
+    result = run(
+        server, capsys, monkeypatch, "import", "edit-sentence", "1", "--rules", "A!=B"
+    )
+    assert result["sentences"][0]["rules"] == "A!=B"
+    monkeypatch.setattr("sys.argv", ["yiju", "names", "approve"])
+    with pytest.raises(SystemExit):
+        cli.main()
+    with database(app) as db:
+        assert db.execute("SELECT count(*) FROM names").fetchone()[0] == 0
 
 
 @pytest.mark.parametrize("action", ["approve", "discard"])
@@ -145,9 +281,22 @@ def test_bad_input_returns_json_errors(
     )
     assert result["error"] == "The text is not in the import format."
     assert result["lines"][0].startswith("Line 1:")
-    assert run(server, capsys, monkeypatch, "word", "葡萄", status=1) == {
-        "error": "葡萄 is not in the library."
+    assert run(server, capsys, monkeypatch, "word", "葡萄") == {
+        "word": "葡萄",
+        "status": "not in the library",
+        "readings": [{"pinyin": "pútao", "meanings": ["grape"]}],
     }
+    assert run(server, capsys, monkeypatch, "word", "嗯嗯嗯", status=1) == {
+        "error": "嗯嗯嗯 is not in the library or CC-CEDICT."
+    }
+    assert run(server, capsys, monkeypatch, "word", "葡萄", "嗯嗯嗯") == [
+        {
+            "word": "葡萄",
+            "status": "not in the library",
+            "readings": [{"pinyin": "pútao", "meanings": ["grape"]}],
+        },
+        {"word": "嗯嗯嗯", "error": "嗯嗯嗯 is not in the library or CC-CEDICT."},
+    ]
     assert (
         "no pending sentence 9"
         in run(server, capsys, monkeypatch, "import", "remove-sentence", "9", status=1)[

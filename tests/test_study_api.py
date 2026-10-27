@@ -1,8 +1,6 @@
 import json
 import re
-import sqlite3
-from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from conftest import (
@@ -16,10 +14,15 @@ from conftest import (
     set_strength,
     study_cards,
 )
-from flask import Flask
-from flask.testing import FlaskClient
 
 from yiju.web import study
+
+if TYPE_CHECKING:
+    import sqlite3
+    from datetime import datetime
+
+    from flask import Flask
+    from flask.testing import FlaskClient
 
 
 @pytest.fixture
@@ -92,7 +95,9 @@ def test_sentence_cards_list_each_word_with_its_status(
         "id": 1,
         "version": card["sentence"]["version"],
         "pinyin": "wǒ qù.",
+        "translation": "I am going.",
     }
+    assert card["translationParts"] == [["I am going.", ""]]
     assert card["tokens"] == [
         {"text": "我", "status": "learning"},
         {"text": "去", "status": "learning"},

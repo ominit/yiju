@@ -1,20 +1,25 @@
-import sqlite3
 import unicodedata
 from collections import Counter, defaultdict
 from dataclasses import dataclass
-from datetime import datetime
 from functools import cached_property
+from typing import TYPE_CHECKING
 
 from flask import abort, render_template, request, url_for
 
 from yiju.core.definitions import search_text, summary
 from yiju.core.dictionary import decode, readings_pinyin
+from yiju.core.names import letters
 from yiju.storage.database import parameters, settings
 from yiju.storage.graph import MAX_UNLEARNED
+from yiju.storage.names import choose, counts, needs, pool
 from yiju.storage.sentences import status as sentence_status
 from yiju.storage.words import status, strength
 
 from . import database
+
+if TYPE_CHECKING:
+    import sqlite3
+    from datetime import datetime
 
 PAGE_SIZE = 50
 WORD_FILTERS = {
@@ -216,13 +221,15 @@ def library_response(kind: str, now: datetime) -> str:
         flags=library.flags,
         opened=opened,
         details=details,
-        word_count=library.connection.execute("SELECT count(*) FROM words").fetchone()[
-            0
-        ],
-        sentence_count=library.connection.execute(
-            "SELECT count(*) FROM sentences"
-        ).fetchone()[0],
+        library_counts=library_counts(library.connection),
     )
+
+
+def library_counts(connection: sqlite3.Connection) -> dict[str, int]:
+    return {
+        table: connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]  # noqa: S608
+        for table in ("words", "sentences", "names")
+    }
 
 
 def _card_rows(cards: list[sqlite3.Row]) -> list[dict[str, object]]:
@@ -238,8 +245,18 @@ def _card_rows(cards: list[sqlite3.Row]) -> list[dict[str, object]]:
     ]
 
 
-def _audio(cards: list[sqlite3.Row]) -> str:
-    return url_for("audio.pronunciation", card_id=cards[0]["id"])
+def _audio(library: Library, kind: str, item: LibraryItem) -> str | None:
+    card_id = library.cards[item.key][0]["id"]
+    if kind == "words" or not letters(item.text):
+        return url_for("audio.pronunciation", card_id=card_id)
+    picks = choose(item.text, item.row["rules"], pool(library.connection))
+    if picks is None:
+        return None
+    return url_for(
+        "audio.pronunciation",
+        card_id=card_id,
+        names=",".join(str(picks[letter].id) for letter in letters(item.text)),
+    )
 
 
 def _word_reason(library: Library, item: LibraryItem) -> str:
@@ -291,14 +308,21 @@ def _details(library: Library, kind: str, item: LibraryItem) -> dict[str, object
     cards = library.cards[item.key]
     common: dict[str, object] = {
         "cards": _card_rows(cards),
-        "audio": _audio(cards),
+        "audio": _audio(library, kind, item),
         "parameters": library.parameters,
     }
     if kind == "sentences":
         tokens = library.tokens(int(item.key))
+        wanted = (
+            None
+            if item.hidden
+            else needs(item.text, item.row["rules"], counts(library.connection))
+        )
         return common | {
             "tokens": tokens,
-            "reason": _sentence_reason(library, tokens, item),
+            "reason": f"Needs {wanted} before its cards can appear in study."
+            if wanted is not None
+            else _sentence_reason(library, tokens, item),
         }
     current = strength(item.row)
     recall = current.recall(library.now)

@@ -1,23 +1,27 @@
-import sqlite3
 from dataclasses import dataclass
-from datetime import datetime
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from flask import Blueprint, abort, render_template, request, url_for
 from fsrs import Card
 
 from yiju.core.definitions import prompt_senses, readings_payload
 from yiju.core.dictionary import decode, readings_pinyin
+from yiju.core.names import Name, chinese_text, english, letters, prompt, reading
 from yiju.core.pronunciation import pronunciation
 from yiju.core.scheduling import intervals, now_utc
 from yiju.core.strength import MEMORY
 from yiju.storage.database import ConflictError, settings
 from yiju.storage.learning import review_card, undo_review
+from yiju.storage.names import choose, pool
 from yiju.storage.queue import card_family, counts, study_queue
 from yiju.storage.sentences import set_hidden, update_sentence
 from yiju.storage.words import status, strength
 
 from . import database, refresh_caches
+
+if TYPE_CHECKING:
+    import sqlite3
+    from datetime import datetime
 
 study = Blueprint("study", __name__)
 BATCH_SIZE = 12
@@ -28,6 +32,7 @@ class StudyContext:
     now: datetime
     config: dict[str, int | float | bool]
     flagged: frozenset[str]
+    names: list[Name]
 
 
 def _context(connection: sqlite3.Connection, now: datetime) -> StudyContext:
@@ -35,6 +40,7 @@ def _context(connection: sqlite3.Connection, now: datetime) -> StudyContext:
         now,
         settings(connection),
         frozenset(row["word"] for row in connection.execute("SELECT word FROM flags")),
+        pool(connection),
     )
 
 
@@ -80,10 +86,36 @@ def _sentence_words(
     return tokens, words
 
 
+def _people(
+    card: sqlite3.Row, context: StudyContext
+) -> tuple[dict[str, Name] | None, dict[str, object]]:
+    picks = choose(card["chinese"], card["rules"], context.names)
+    if picks is None or not picks:
+        return None, {}
+    return picks, {
+        "names": {
+            letter: {
+                "chinese": name.chinese,
+                "pinyin": name.pinyin,
+                "english": name.english,
+            }
+            for letter, name in picks.items()
+        },
+        "audio": url_for(
+            "audio.pronunciation",
+            card_id=card["id"],
+            names=",".join(
+                str(picks[letter].id) for letter in letters(card["chinese"])
+            ),
+        ),
+    }
+
+
 def card_payload(
     connection: sqlite3.Connection, card: sqlite3.Row, context: StudyContext
 ) -> dict[str, object]:
     sentence = card["sentence_id"] is not None
+    picks, people = _people(card, context) if sentence else (None, {})
     text = card["chinese"] if sentence else card["word"]
     pinyin = (
         card["sentence_pinyin"]
@@ -98,8 +130,15 @@ def card_payload(
         "direction": card["card_type"],
         "kind": "sentence" if sentence else "word",
         "word": card["word"],
-        "text": text,
-        "reading": _reading(text, pinyin),
+        "text": text if picks is None else chinese_text(text, picks),
+        "reading": [
+            [characters, syllable, *([kind] if kind else [])]
+            for characters, syllable, kind in reading(
+                text, pinyin, card["rules"], picks
+            )
+        ]
+        if sentence
+        else _reading(text, pinyin),
         "new": not card["reviews"],
         "reviews": card["reviews"],
         "stability": None if memory.stability is None else round(memory.stability, 1),
@@ -116,13 +155,20 @@ def card_payload(
     }
     if sentence:
         tokens, words = _sentence_words(connection, card["sentence_id"], context)
-        payload |= {
+        translation = card["translation"]
+        payload |= people | {
             "sentence": {
                 "id": card["sentence_id"],
                 "version": card["sentence_version"],
                 "pinyin": card["sentence_pinyin"],
+                "translation": translation,
             },
-            "translation": card["translation"],
+            "translation": translation
+            if picks is None
+            else english(translation, picks),
+            "translationParts": [(translation, "")]
+            if picks is None
+            else prompt(translation, picks),
             "tokens": tokens,
             "words": words,
         }

@@ -1,12 +1,16 @@
-import sqlite3
 from datetime import UTC, datetime, timedelta
 from random import Random
+from typing import TYPE_CHECKING
 
-import pytest
 from conftest import add, set_strength, states
 
 from yiju.storage.learning import review_card
 from yiju.storage.queue import counts, overview, study_queue
+
+if TYPE_CHECKING:
+    import sqlite3
+
+    import pytest
 
 NOW = datetime(2026, 10, 1, 9, tzinfo=UTC)
 PHRASES = "".join(

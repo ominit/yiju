@@ -6,7 +6,7 @@
     ...
   }: let
     workspace = inputs.uv2nix.lib.workspace.loadWorkspace {workspaceRoot = ../.;};
-    pythonSet = (pkgs.callPackage inputs.pyproject-nix.build.packages {python = pkgs.python312;}).overrideScope (lib.composeManyExtensions [
+    pythonSet = (pkgs.callPackage inputs.pyproject-nix.build.packages {python = pkgs.python3;}).overrideScope (lib.composeManyExtensions [
       inputs.pyproject-build-systems.overlays.wheel
       (workspace.mkPyprojectOverlay {sourcePreference = "wheel";})
       (final: prev: {
@@ -18,7 +18,7 @@
         });
       })
     ]);
-    environment = pythonSet.mkVirtualEnv "yiju-checks" workspace.deps.all;
+    environment = pythonSet.mkVirtualEnv "yiju-checks" workspace.deps.default;
   in {
     checks.package = self'.packages.default;
     packages.default = pythonSet.mkVirtualEnv "yiju" workspace.deps.default;
@@ -29,9 +29,9 @@
     };
     checks.python =
       pkgs.runCommand "yiju-checks" {
-        nativeBuildInputs = [environment];
+        nativeBuildInputs = [environment pkgs.ruff pkgs.ty];
+        PYTHONPATH = pkgs.python3Packages.makePythonPath (with pkgs.python3Packages; [pytest playwright]);
         PLAYWRIGHT_BROWSERS_PATH = pkgs.playwright-driver.browsers;
-        PLAYWRIGHT_NODEJS_PATH = "${pkgs.nodejs}/bin/node";
         PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
         FONTCONFIG_FILE = pkgs.makeFontsConf {fontDirectories = [pkgs.dejavu_fonts];};
       } ''
@@ -41,7 +41,7 @@
         export HOME="$TMPDIR"
         ruff check .
         ty check --python ${environment}/bin/python
-        pytest -p no:cacheprovider
+        python -m pytest -p no:cacheprovider
         touch "$out"
       '';
   };

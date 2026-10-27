@@ -1,5 +1,5 @@
 import gzip
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from conftest import DICTIONARY
@@ -19,6 +19,9 @@ from yiju.core.dictionary import (
     syllables,
 )
 from yiju.web import create_app
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_senses_split_on_slashes_and_surface_leading_notes() -> None:
@@ -76,9 +79,16 @@ def test_numbered_pinyin_becomes_tone_marks(numbered: str, expected: str) -> Non
     assert pinyin(numbered) == expected
 
 
-def test_single_dictionary_reading_supplies_syllables() -> None:
-    assert syllables("葡萄") == ("pú", "tao")
-    assert syllables("行") is None
+def test_dictionary_readings_supply_syllables() -> None:
+    assert syllables("葡萄") == (("pú", "tao"),)
+    assert syllables("行") == (("háng",), ("héng",), ("xíng",))
+
+
+def test_other_pronunciations_are_kept_apart_from_meanings() -> None:
+    (reading,) = lookup("谁")
+    assert reading.senses == (Sense("who"),)
+    assert reading.also_pronounced == ("shuí",)
+    assert decode(encode((reading,))) == (reading,)
 
 
 def test_readings_round_trip_through_json() -> None:

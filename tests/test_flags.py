@@ -1,10 +1,13 @@
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from conftest import SAMPLE, add, csrf, database, page_context, study_cards
-from flask import Flask
-from flask.testing import FlaskClient
 
 from yiju.storage.database import initialize
+
+if TYPE_CHECKING:
+    from flask import Flask
+    from flask.testing import FlaskClient
 
 JSON = {"Accept": "application/json"}
 

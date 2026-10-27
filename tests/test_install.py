@@ -1,6 +1,8 @@
 import struct
+from typing import TYPE_CHECKING
 
-from flask.testing import FlaskClient
+if TYPE_CHECKING:
+    from flask.testing import FlaskClient
 
 
 def test_manifest_provides_standalone_study_app_and_valid_icons(

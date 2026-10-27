@@ -1,7 +1,10 @@
-import sqlite3
-from datetime import datetime
+from typing import TYPE_CHECKING
 
 from fsrs import Card
+
+if TYPE_CHECKING:
+    import sqlite3
+    from datetime import datetime
 
 CARD_TYPES = ("recognition", "production")
 

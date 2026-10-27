@@ -22,6 +22,7 @@ MIN_ENTRIES = 100_000
 LINE = re.compile(r"^(\S+) (\S+) \[([^\]]*)\] /(.*)/$")
 REFERENCE = re.compile(rf"(?:([{HAN}·]+)\|)?([{HAN}·]+)?\[([^\]]+)\]")
 CLASSIFIER = re.compile(r"^CL:(.+)$")
+PRONOUNCED = re.compile(r"^(?:also )?pr\. (.+)$")
 NOTE = re.compile(r"^\(([^()]*(?:\([^()]*\)[^()]*)*)\)\s*")
 VARIANT = re.compile(
     r"^(?:old |archaic |unofficial |Japanese |erhua |ancient |Korean )?"
@@ -44,6 +45,7 @@ class Reading:
     senses: tuple[Sense, ...]
     classifiers: tuple[str, ...] = ()
     traditional: tuple[str, ...] = ()
+    also_pronounced: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,9 +98,12 @@ def _sense(text: str) -> Sense:
 
 
 @cache
-def _parse(definition: str) -> tuple[tuple[Sense, ...], tuple[str, ...]]:
+def _parse(
+    definition: str,
+) -> tuple[tuple[Sense, ...], tuple[str, ...], tuple[str, ...]]:
     senses = []
     classifiers: list[str] = []
+    pronounced: list[str] = []
     for part in definition.split("/"):
         if not part.strip():
             continue
@@ -106,9 +111,11 @@ def _parse(definition: str) -> tuple[tuple[Sense, ...], tuple[str, ...]]:
             classifiers.extend(
                 value.strip() for value in _references(match[1]).split(",")
             )
+        elif (match := PRONOUNCED.match(_references(part).strip())) is not None:
+            pronounced.append(match[1])
         else:
             senses.append(_sense(part))
-    return tuple(senses), tuple(classifiers)
+    return tuple(senses), tuple(classifiers), tuple(pronounced)
 
 
 class DictionaryUnavailableError(OSError):
@@ -250,19 +257,26 @@ def lookup(word: str) -> tuple[Reading, ...]:
     readings = []
     for numbered, group in merged.items():
         parsed = [_parse(entry.definition) for entry in group]
-        senses = tuple(dict.fromkeys(sense for senses, _ in parsed for sense in senses))
+        senses = tuple(
+            dict.fromkeys(sense for senses, _, _ in parsed for sense in senses)
+        )
         readings.append(
             Reading(
                 pinyin(numbered),
                 tuple(sense for sense in senses if not _self_reference(sense, word))
                 or senses,
-                tuple(dict.fromkeys(value for _, values in parsed for value in values)),
+                tuple(
+                    dict.fromkeys(value for _, values, _ in parsed for value in values)
+                ),
                 tuple(
                     dict.fromkeys(
                         entry.traditional
                         for entry in group
                         if entry.traditional != word
                     )
+                ),
+                tuple(
+                    dict.fromkeys(value for _, _, values in parsed for value in values)
                 ),
             )
         )
@@ -279,18 +293,19 @@ def contains(word: str) -> bool:
     return word in simplified or word in traditional
 
 
-def syllables(word: str) -> tuple[str, ...] | None:
+def syllables(word: str) -> tuple[tuple[str, ...], ...]:
     simplified, traditional = _index()
     entries = simplified.get(word) or traditional.get(word) or []
-    readings = {
+    readings = [
         entry.pinyin
         for entry in entries
         if not _variant_only(entry) and len(entry.pinyin.split()) == len(word)
-    }
-    readings = {value for value in readings if not value[:1].isupper()} or readings
-    if len(readings) != 1:
-        return None
-    return tuple(syllable(part) for part in readings.pop().split())
+    ]
+    readings = [value for value in readings if not value[:1].isupper()] or readings
+    return tuple(
+        tuple(syllable(part) for part in value.split())
+        for value in dict.fromkeys(readings)
+    )
 
 
 def encode(readings: tuple[Reading, ...]) -> str:
@@ -308,6 +323,7 @@ def encode(readings: tuple[Reading, ...]) -> str:
                 ],
                 "classifiers": list(reading.classifiers),
                 "traditional": list(reading.traditional),
+                "also_pronounced": list(reading.also_pronounced),
             }
             for reading in readings
         ],
@@ -326,6 +342,7 @@ def decode(value: str) -> tuple[Reading, ...]:
             ),
             tuple(item["classifiers"]),
             tuple(item["traditional"]),
+            tuple(item.get("also_pronounced", ())),
         )
         for item in json.loads(value)
     )

@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+{% from 'macros/ui.html' import icon, library_tabs %}
+{% block title %}Names · Library · Yiju{% endblock %}
+{% block content %}
+  <header class="page-head">
+    <h1>Library</h1>
+    <div class="page-actions">
+      <a class="button" href="{{ url_for('pages.import_page') }}#names">{{ icon('plus', 18) }}Add</a>
+    </div>
+  </header>
+  {{ library_tabs('names', counts) }}
+  {% if names %}
+    <p class="muted small names-note">Study fills the people in your sentences with these names, picked at random every time a card is shown.</p>
+    <ul class="check-list">
+      {% for name in names %}
+        <li class="panel check-item">
+          <form class="name-form"
+                method="post"
+                action="{{ url_for('actions.save_name', name_id=name.id) }}">
+            <button type="submit" hidden></button>
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="hidden" name="version" value="{{ name.version }}">
+            <p class="check-word" lang="zh-Hans">{{ name.chinese }}</p>
+            <div class="check-fields name-fields">
+              <label>
+                Pinyin
+                <input name="pinyin"
+                       autocomplete="off"
+                       spellcheck="false"
+                       value="{{ name.pinyin }}"
+                       required>
+              </label>
+              <label>
+                English
+                <input name="english"
+                       autocomplete="off"
+                       spellcheck="false"
+                       value="{{ name.english }}"
+                       required>
+              </label>
+              <label>
+                Gender
+                <select name="gender">
+                  {% for gender in ('male', 'female') %}
+                    <option value="{{ gender }}"
+                            {% if name.gender == gender %}selected{% endif %}>{{ gender | capitalize }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+            </div>
+            <div class="form-actions">
+              <button class="button small danger" type="submit" name="remove" value="1">Remove</button>
+              <button class="button small primary" type="submit">Save</button>
+            </div>
+          </form>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <section class="empty compact">
+      <h2>No names yet</h2>
+      <p class="muted">Sentences with people in them wait until you have names to fill them.</p>
+      <a class="button primary"
+         href="{{ url_for('pages.import_page') }}#names">{{ icon('plus', 18) }}Add names</a>
+    </section>
+  {% endif %}
+{% endblock %}

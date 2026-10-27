@@ -67,6 +67,18 @@ Spaces inside the Chinese set the word split by hand, for when jieba gets it
 wrong. A line of words with no translation adds those words without a sentence. `yiju import format` prints the
 full description.
 
+People in sentences are slots instead of names:
+
+```
+{A}给{B}一本书。 | {A} gave {B} a book.
+{A}和{B}是兄弟。 | {A} and {B} are brothers. | A=male B=male
+```
+
+Every time a card is shown, study fills each slot with a random name from the
+Names tab, and `{A.他}` becomes 他 or 她 to match. The optional third part sets
+gender rules. You add names the same way as sentences, and they wait on the
+same check screen.
+
 ### Using an agent
 
 The CLI is meant for scripts and LLM agents, and every command except `serve`
@@ -80,7 +92,9 @@ they work from any machine that can reach it. Pass the address with `--url` or
 set `YIJU_URL`, for example `YIJU_URL=http://localhost:8000 yiju stats`.
 
 Run `yiju --help` for the full list. It also covers reading your library,
-flagged words and the review log.
+flagged words and the review log. [docs/agent-guide.md](docs/agent-guide.md)
+is a guide written for agents. Point an agent at it and it has everything it
+needs to write and stage sentences and names.
 
 ## Running it
 

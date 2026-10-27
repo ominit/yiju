@@ -1,6 +1,5 @@
 import json
-import sqlite3
-from datetime import datetime
+from typing import TYPE_CHECKING
 
 from fsrs import Card, Rating
 
@@ -11,6 +10,10 @@ from .database import ConflictError, parameter_set, settings, transaction
 from .graph import refresh
 from .sentences import words_of
 from .words import strength
+
+if TYPE_CHECKING:
+    import sqlite3
+    from datetime import datetime
 
 
 def _targets(

@@ -1,3 +1,5 @@
+from typing import TYPE_CHECKING
+
 from conftest import (
     SAMPLE,
     add,
@@ -7,14 +9,16 @@ from conftest import (
     set_strength,
     states,
 )
-from flask import Flask
-from flask.testing import FlaskClient
 from fsrs import Card, State
 
 from yiju.core.scheduling import now_utc
 from yiju.storage.queue import overview
 from yiju.storage.sentences import statuses
 from yiju.storage.stats import activity
+
+if TYPE_CHECKING:
+    from flask import Flask
+    from flask.testing import FlaskClient
 
 
 def keys(client: FlaskClient, url: str) -> list[str]:

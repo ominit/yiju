@@ -1,12 +1,16 @@
 import json
-import sqlite3
-from datetime import datetime
+from typing import TYPE_CHECKING
 
-from yiju.core.definitions import readings_payload, summary
+from yiju.core.definitions import brief_readings, summary
 from yiju.core.dictionary import decode, readings_pinyin
 
+from .names import counts, needs
 from .sentences import statuses, words_of
 from .words import status, strength
+
+if TYPE_CHECKING:
+    import sqlite3
+    from datetime import datetime
 
 WORD_STATUSES = ("locked", "unlocked", "learning", "learned")
 SENTENCE_STATUSES = ("locked", "eligible", "unlocked", "learning", "learned")
@@ -44,7 +48,7 @@ def word_info(
         "status": status(row),
         "manual_unlock": bool(row["manual"]),
         "source": row["source"],
-        "readings": readings_payload(row["readings"]),
+        "readings": brief_readings(row["readings"]),
         "strength": {
             "stability_days": current.stability,
             "difficulty": current.memory.difficulty if current.memory else None,
@@ -100,14 +104,17 @@ def list_sentences(
     connection: sqlite3.Connection, sentence_status: str | None = None
 ) -> list[dict[str, object]]:
     status_of = statuses(connection)
+    available = counts(connection)
     return [
         {
             "id": row["id"],
             "chinese": row["chinese"],
             "pinyin": row["pinyin"],
             "translation": row["translation"],
+            "rules": row["rules"],
             "status": status_of[row["id"]],
             "skipped": bool(row["hidden"]),
+            "needs_names": needs(row["chinese"], row["rules"], available),
             "words": list(words_of(connection, row["id"])),
         }
         for row in connection.execute("SELECT * FROM sentences ORDER BY id")
@@ -123,7 +130,7 @@ def flagged_words(connection: sqlite3.Connection) -> list[dict[str, object]]:
             "created": row["created"],
             "updated": row["updated"],
             "source": row["source"],
-            "readings": readings_payload(row["readings"]),
+            "readings": brief_readings(row["readings"]),
             "sentences": _sentences(connection, row["word"]),
         }
         for row in connection.execute(

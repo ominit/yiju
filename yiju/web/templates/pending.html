@@ -15,9 +15,9 @@
       <a class="button" href="{{ url_for('pages.import_page') }}">Add more</a>
     </div>
   {% else %}
+    {% set adds = [(pending.adds.sentences, 'sentence'), (pending.adds.words, 'new word')] + ([(pending.adds.names, 'name')] if pending.adds.names else []) %}
     <p class="lead">
-      Adds <strong>{{ pending.adds.sentences }}</strong> sentence{{ '' if pending.adds.sentences == 1 else 's' }}
-      and <strong>{{ pending.adds.words }}</strong> new word{{ '' if pending.adds.words == 1 else 's' }}.
+      Adds {% for count, noun in adds %}{{ ', ' if not loop.first and not loop.last }}{{ ' and ' if loop.last and not loop.first }}<strong>{{ count }}</strong> {{ noun }}{{ '' if count == 1 else 's' }}{% endfor %}.
     </p>
     {% if pending.issues %}
       <section class="panel issues-panel" role="alert">
@@ -25,7 +25,7 @@
         <ul>
           {% for issue in pending.issues %}<li>{{ issue }}</li>{% endfor %}
         </ul>
-        <p class="muted small">Fix the words or exclude the sentence, then save.</p>
+        <p class="muted small">Fix the problems or discard the sentence.</p>
       </section>
     {% endif %}
     <form class="check"
@@ -40,30 +40,37 @@
       <input type="hidden"
              name="shown"
              value='{{ pending.words | map(attribute="word") | list | tojson }}'>
+      <input type="hidden"
+             name="names"
+             value='{{ pending.names | map(attribute="id") | list | tojson }}'>
       {% if pending.sentences %}
         <h2 class="section-title">Sentences</h2>
         <ol class="check-list">
           {% for sentence in pending.sentences %}
             {% set prefix = 's' ~ sentence.id %}
-            <li class="panel check-item{% if not sentence.included %} excluded{% endif %}{% if sentence.issues %} has-issues{% endif %}">
+            <li class="panel check-item{% if sentence.issues %} has-issues{% endif %}">
               <header class="check-head">
                 <p class="check-sentence" lang="zh-Hans">
                   {% for token in sentence.words %}
-                    <span class="token{% if token.new %} new{% endif %}{% if token.choices %} several{% endif %}"
-                          title="{{ 'New word' if token.new else 'Already in your library' }}{{ '. Has more than one reading, so check the one picked below.' if token.choices }}">{{ token.text }}</span>
+                    {% if token.slot %}
+                      <span class="token person" title="A person, filled with a random name">{{ token.text | slots }}</span>
+                    {% else %}
+                      <span class="token{% if token.new %} new{% endif %}{% if token.choices %} several{% endif %}"
+                            title="{{ 'New word' if token.new else 'Already in your library' }}{{ '. Has more than one reading, so check the one picked below.' if token.choices }}">{{ token.text }}</span>
+                    {% endif %}
                   {% endfor %}
                 </p>
-                <label class="check-include">
-                  <input type="checkbox"
-                         name="{{ prefix }}-included"
-                         {% if sentence.included %}checked{% endif %}>
-                  Include
-                </label>
-                <button class="button small"
-                        type="submit"
-                        name="approve"
-                        value="{{ sentence.id }}"
-                        {% if sentence.issues %}disabled{% endif %}>Approve</button>
+                <div class="check-buttons">
+                  <button class="button small danger"
+                          type="submit"
+                          name="discard"
+                          value="{{ sentence.id }}">Discard</button>
+                  <button class="button small"
+                          type="submit"
+                          name="approve"
+                          value="{{ sentence.id }}"
+                          {% if sentence.issues or sentence.duplicate %}disabled{% endif %}>Approve</button>
+                </div>
               </header>
               {% if sentence.words | selectattr('choices') | first %}
                 <div class="readings" data-readings="{{ prefix }}-pinyin">
@@ -93,6 +100,7 @@
                 </div>
               {% endif %}
               {% if sentence.duplicate %}<p class="muted small">Already in your library, so it will not be added again.</p>{% endif %}
+              {% if sentence.needs_names %}<p class="muted small">Needs {{ sentence.needs_names }} before its cards can appear in study.</p>{% endif %}
               {% for issue in sentence.issues %}<p class="issue small">{{ issue }}</p>{% endfor %}
               <div class="check-fields">
                 <label>
@@ -116,6 +124,15 @@
                          autocomplete="off"
                          value="{{ sentence.translation }}">
                 </label>
+                {% if sentence.people %}
+                  <label>
+                    Gender rules
+                    <input name="{{ prefix }}-rules"
+                           autocomplete="off"
+                           spellcheck="false"
+                           value="{{ sentence.rules }}">
+                  </label>
+                {% endif %}
               </div>
             </li>
           {% endfor %}
@@ -126,18 +143,18 @@
         <ul class="check-list">
           {% for word in pending.words %}
             {% set prefix = 'w' ~ loop.index0 %}
-            <li class="panel check-item{% if not word.included %} excluded{% endif %}">
+            <li class="panel check-item">
               <header class="check-head">
                 <p class="check-word" lang="zh-Hans">{{ word.word }}</p>
                 <span class="muted small">
                   {% if word.sentences %}In sentence{{ '' if word.sentences|length == 1 else 's' }} {% for position in word.sentences %}{{ position }}{{ ', ' if not loop.last }}{% endfor %}{% else %}On its own{% endif %}
                 </span>
-                <label class="check-include">
-                  <input type="checkbox"
-                         name="{{ prefix }}-included"
-                         {% if word.included %}checked{% endif %}>
-                  Add
-                </label>
+                {% if not word.sentences %}
+                  <button class="button small danger"
+                          type="submit"
+                          name="discard-word"
+                          value="{{ word.word }}">Discard</button>
+                {% endif %}
               </header>
               {% if word.readings and not word.manual %}
                 {{ brief(word.readings) }}
@@ -165,10 +182,61 @@
           {% endfor %}
         </ul>
       {% endif %}
+      {% if pending.names %}
+        <h2 class="section-title">Names</h2>
+        <ul class="check-list">
+          {% for name in pending.names %}
+            {% set prefix = 'n' ~ name.id %}
+            <li class="panel check-item{% if name.issues %} has-issues{% endif %}">
+              <header class="check-head">
+                <p class="check-word" lang="zh-Hans">{{ name.chinese }}</p>
+                <div class="check-buttons">
+                  <button class="button small danger"
+                          type="submit"
+                          name="discard-name"
+                          value="{{ name.id }}">Discard</button>
+                  <button class="button small"
+                          type="submit"
+                          name="approve-name"
+                          value="{{ name.id }}"
+                          {% if name.issues or name.duplicate %}disabled{% endif %}>Approve</button>
+                </div>
+              </header>
+              {% if name.duplicate %}<p class="muted small">Already one of your names, so it will not be added again.</p>{% endif %}
+              {% for issue in name.issues %}<p class="issue small">{{ issue }}</p>{% endfor %}
+              <div class="check-fields name-fields">
+                <label>
+                  Pinyin
+                  <input name="{{ prefix }}-pinyin"
+                         autocomplete="off"
+                         spellcheck="false"
+                         value="{{ name.pinyin }}">
+                </label>
+                <label>
+                  English
+                  <input name="{{ prefix }}-english"
+                         autocomplete="off"
+                         spellcheck="false"
+                         value="{{ name.english }}">
+                </label>
+                <label>
+                  Gender
+                  <select name="{{ prefix }}-gender">
+                    {% for gender in ('male', 'female') %}
+                      <option value="{{ gender }}"
+                              {% if name.gender == gender %}selected{% endif %}>{{ gender | capitalize }}</option>
+                    {% endfor %}
+                  </select>
+                </label>
+              </div>
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
       <div class="form-actions sticky">
         <button class="button danger" type="submit" name="step" value="discard">Discard all</button>
         <button class="button" type="submit" name="step" value="save">Save changes</button>
-        <button class="button primary" type="submit" name="step" value="approve">Approve and add</button>
+        <button class="button primary" type="submit" name="step" value="approve">Approve all</button>
       </div>
     </form>
   {% endif %}

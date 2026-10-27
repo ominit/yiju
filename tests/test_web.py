@@ -1,6 +1,7 @@
 import gzip
 import sqlite3
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from conftest import (
@@ -15,12 +16,14 @@ from conftest import (
     start_import,
     states,
 )
-from flask import Flask
-from flask.testing import FlaskClient
 
 from yiju.storage.database import settings
 from yiju.storage.pending import stage
 from yiju.web import create_app
+
+if TYPE_CHECKING:
+    from flask import Flask
+    from flask.testing import FlaskClient
 
 JSON = {"Accept": "application/json"}
 
@@ -166,13 +169,13 @@ def test_changing_the_split_requires_another_look_before_approval(
         }
 
 
-def test_excluding_a_sentence_can_be_approved_in_one_step(
+def test_a_discarded_sentence_leaves_the_rest_ready(
     client: FlaskClient, app: Flask
 ) -> None:
     start_import(client, "你好 | Hello\n嗯嗯嗯 好 | Mm, good.\n")
-    form = check_form(client)
-    del form["s2-included"]
-    client.post("/pending", data={**form, "step": "approve"})
+    client.post("/pending", data={**check_form(client), "discard": "2"})
+    assert "Discarded the sentence." in client.get("/pending").get_data(as_text=True)
+    client.post("/pending", data={**check_form(client), "step": "approve"})
     with database(app) as db:
         assert [row[0] for row in db.execute("SELECT word FROM words")] == ["你好"]
         assert db.execute("SELECT count(*) FROM pending_sentences").fetchone()[0] == 0

@@ -1,6 +1,9 @@
 import json
-import sqlite3
-from collections.abc import Iterable
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import sqlite3
+    from collections.abc import Iterable
 
 SENTENCE_COUNTS = (
     "SELECT s.id, s.state, s.hidden, "

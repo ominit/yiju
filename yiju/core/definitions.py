@@ -37,6 +37,7 @@ def readings_payload(readings: str) -> list[dict[str, object]]:
                 for sense in reading.senses
             ],
             "classifiers": list(reading.classifiers),
+            "also_pronounced": list(reading.also_pronounced),
         }
         for reading in decode(readings)
     ]
@@ -57,3 +58,24 @@ def search_text(readings: str) -> str:
         [reading.pinyin for reading in decode(readings)]
         + [sense.text for reading in decode(readings) for sense in reading.senses]
     )
+
+
+def brief_readings(readings: str) -> list[dict[str, object]]:
+    return [
+        {
+            "pinyin": reading.pinyin,
+            "meanings": [
+                f"{sense.text} ({', '.join(sense.notes)})"
+                if sense.notes
+                else sense.text
+                for sense in reading.senses
+            ],
+        }
+        | ({"classifiers": list(reading.classifiers)} if reading.classifiers else {})
+        | (
+            {"also_pronounced": list(reading.also_pronounced)}
+            if reading.also_pronounced
+            else {}
+        )
+        for reading in decode(readings)
+    ]

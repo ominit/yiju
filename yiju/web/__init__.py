@@ -1,16 +1,22 @@
 import os
 import secrets
-import sqlite3
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from flask import Flask, current_app, g, url_for
+from markupsafe import Markup, escape
 
 from yiju.core import dictionary
+from yiju.core.names import SLOT, label, reading
 from yiju.core.pronunciation import pronunciation
 from yiju.storage.database import connect, initialize
 
 from .security import register_handlers
+
+if TYPE_CHECKING:
+    import sqlite3
+
+    from flask.json.provider import DefaultJSONProvider
 
 
 def database() -> sqlite3.Connection:
@@ -35,6 +41,22 @@ def _asset(filename: str) -> str:
     return url_for("static", filename=filename, v=int(path.stat().st_mtime))
 
 
+def slot_markup(text: str) -> Markup:
+    parts = []
+    position = 0
+    for match in SLOT.finditer(text):
+        shown, letter = label(match.group())
+        parts += [
+            escape(text[position : match.start()]),
+            Markup('<span class="slot">{}{}</span>').format(
+                shown, Markup("<sub>{}</sub>").format(letter) if letter else ""
+            ),
+        ]
+        position = match.end()
+    parts.append(escape(text[position:]))
+    return Markup("").join(parts)
+
+
 def _close_database(_error: BaseException | None) -> None:
     connection = g.pop("database", None)
     if connection is not None:
@@ -47,7 +69,10 @@ def refresh_caches() -> None:
 
 def create_app(database_path: Path | None = None, *, prefill: bool = False) -> Flask:
     app = Flask(__name__)
+    cast("DefaultJSONProvider", app.json).sort_keys = False
     app.jinja_env.filters["pronunciation"] = pronunciation
+    app.jinja_env.filters["reading"] = reading
+    app.jinja_env.filters["slots"] = slot_markup
     app.add_template_global(_asset, "asset")
     path = (
         database_path or Path(os.environ.get("YIJU_DATA_DIR", "data")) / "yiju.sqlite3"

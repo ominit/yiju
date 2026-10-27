@@ -6,12 +6,12 @@ from werkzeug.wrappers import Response
 from yiju.core.dictionary import published
 from yiju.core.scheduling import now_utc
 from yiju.storage.database import settings
-from yiju.storage.pending import FORMAT, preview, waiting
+from yiju.storage.pending import FORMAT, NAME_FORMAT, preview, waiting
 from yiju.storage.queue import overview
 from yiju.storage.stats import activity
 
 from . import database
-from .library import item_location, item_response, library_response
+from .library import item_location, item_response, library_counts, library_response
 
 pages = Blueprint("pages", __name__)
 FORECAST_DAYS = 7
@@ -58,7 +58,12 @@ def home() -> str:
 
 @pages.get("/import")
 def import_page() -> str:
-    return render_template("import.html", waiting=waiting(database()), format=FORMAT)
+    return render_template(
+        "import.html",
+        waiting=waiting(database()),
+        format=FORMAT,
+        name_format=NAME_FORMAT,
+    )
 
 
 @pages.get("/pending")
@@ -80,6 +85,16 @@ def library_item(kind: str, key: str) -> str | Response:
     if request.headers.get("X-Fragment") is not None:
         return item_response(kind, key, now_utc())
     return redirect(item_location(kind, key, now_utc()))
+
+
+@pages.get("/library/names")
+def names() -> str:
+    connection = database()
+    return render_template(
+        "names.html",
+        names=connection.execute("SELECT * FROM names ORDER BY id").fetchall(),
+        counts=library_counts(connection),
+    )
 
 
 @pages.get("/library/words/<word>")

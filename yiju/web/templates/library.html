@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% from 'macros/ui.html' import icon %}
+{% from 'macros/ui.html' import icon, library_tabs %}
 {% block title %}{{ 'Words' if kind == 'words' else 'Sentences' }} · Library · Yiju{% endblock %}
 {% block content %}
   {% set endpoint = 'pages.library' if kind == 'words' else 'pages.sentences' %}
@@ -12,12 +12,7 @@
       <a class="button" href="{{ url_for('pages.import_page') }}">{{ icon('plus', 18) }}Add</a>
     </div>
   </header>
-  <nav class="segmented" aria-label="Library content">
-    <a href="{{ url_for('pages.library') }}"
-       {% if kind == 'words' %}aria-current="page"{% endif %}>Words <span>{{ word_count }}</span></a>
-    <a href="{{ url_for('pages.sentences') }}"
-       {% if kind == 'sentences' %}aria-current="page"{% endif %}>Sentences <span>{{ sentence_count }}</span></a>
-  </nav>
+  {{ library_tabs(kind, library_counts) }}
   <form class="toolbar" method="get" role="search" data-live-search>
     <input type="hidden" name="filter" value="{{ state }}">
     <label class="search">

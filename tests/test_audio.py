@@ -2,14 +2,17 @@ import asyncio
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from conftest import SAMPLE, add, database
-from flask import Flask
-from flask.testing import FlaskClient
 
 from yiju.storage.database import connect
 from yiju.web import audio
+
+if TYPE_CHECKING:
+    from flask import Flask
+    from flask.testing import FlaskClient
 
 JSON = {"Accept": "application/json"}
 

@@ -1,15 +1,18 @@
-import logging
 import re
 from collections import Counter
 from contextlib import closing
-from pathlib import Path
 from threading import Event, Thread
+from typing import TYPE_CHECKING
 
 from yiju.core import dictionary
 from yiju.core.text import HAN
 from yiju.storage.database import connect
 
 from . import audio, strokes
+
+if TYPE_CHECKING:
+    import logging
+    from pathlib import Path
 
 RETRY_SECONDS = 600
 MAX_ATTEMPTS = 3

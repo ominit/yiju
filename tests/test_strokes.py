@@ -1,12 +1,15 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
-from flask import Flask
-from flask.testing import FlaskClient
 
 from yiju.web import strokes
+
+if TYPE_CHECKING:
+    from flask import Flask
+    from flask.testing import FlaskClient
 
 
 @pytest.fixture

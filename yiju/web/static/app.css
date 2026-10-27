@@ -1675,6 +1675,50 @@ a.token:hover {
   color: var(--hard);
 }
 
+.slot {
+  display: inline-block;
+  margin-inline: 2px;
+  padding: 0 0.35em;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-family: var(--sans);
+  font-size: 0.75em;
+  font-weight: 600;
+  line-height: 1.5;
+  vertical-align: 0.1em;
+}
+
+.slot sub {
+  margin-left: 1px;
+  font-size: 0.7em;
+  vertical-align: baseline;
+  opacity: 0.75;
+}
+
+.token.person .slot {
+  margin: 0;
+  font-size: 0.6em;
+}
+
+.proper-name {
+  padding-bottom: 1px;
+  border-bottom: 2px solid currentColor;
+}
+
+.name-fields {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.name-form {
+  display: grid;
+  gap: 10px;
+}
+
+.names-note {
+  margin-bottom: 12px;
+}
+
 .editor summary,
 .source summary,
 .issues summary {
@@ -2703,7 +2747,8 @@ main.study {
 }
 
 .import input,
-.check-fields input {
+.check-fields input,
+.check-fields select {
   width: 100%;
   color: var(--ink);
   font-size: 16px;
@@ -2785,10 +2830,6 @@ main.study {
 .check-item {
   display: grid;
   gap: 10px;
-}
-
-.check-item.excluded {
-  opacity: 0.55;
 }
 
 .check-item.has-issues {
@@ -2930,13 +2971,9 @@ main.study {
   font-size: 14px;
 }
 
-.check-include {
+.check-buttons {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--muted);
-  font-size: 14px;
-  cursor: pointer;
+  gap: 8px;
 }
 
 .check-fields {

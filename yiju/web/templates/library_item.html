@@ -21,8 +21,8 @@
       </span>
     {% else %}
       <span class="row-body">
-        <span class="row-sentence" lang="zh-Hans">{{ item.text }}</span>
-        <span class="row-meaning">{{ item.meaning }}</span>
+        <span class="row-sentence" lang="zh-Hans">{{ item.text | slots }}</span>
+        <span class="row-meaning">{{ item.meaning | slots }}</span>
       </span>
       <span class="row-meta">
         {{ status(item.status, item.hidden, 'Skipped') }}
@@ -108,8 +108,8 @@
                 <li>
                   <a href="{{ url_for('pages.sentence_detail', sentence_id=sentence.key) }}">
                     <span class="row-body">
-                      <span class="row-sentence" lang="zh-Hans">{{ sentence.text }}</span>
-                      <span class="row-meaning">{{ sentence.meaning }}</span>
+                      <span class="row-sentence" lang="zh-Hans">{{ sentence.text | slots }}</span>
+                      <span class="row-meaning">{{ sentence.meaning | slots }}</span>
                     </span>
                     {{ status(sentence.status, sentence.hidden, 'Skipped') }}
                   </a>
@@ -122,14 +122,17 @@
         {% set sentence = item.row %}
         <header class="details-head">
           <div>
-            <p class="details-sentence">{{ hanzi(sentence.chinese, sentence.pinyin, strokes=true) }}</p>
-            <p class="details-translation">{{ sentence.translation }}</p>
+            <p class="details-sentence">{{ hanzi(sentence.chinese, sentence.pinyin, strokes=true, rules=sentence.rules) }}</p>
+            <p class="details-translation">{{ sentence.translation | slots }}</p>
+            {% if sentence.rules %}<p class="muted small">Gender rules: {{ sentence.rules }}</p>{% endif %}
           </div>
           <div class="details-actions">
-            <button class="icon-button"
-                    type="button"
-                    data-say="{{ details.audio }}"
-                    title="Play pronunciation">{{ icon("audio") }}<span class="sr-only">Play pronunciation</span></button>
+            {% if details.audio %}
+              <button class="icon-button"
+                      type="button"
+                      data-say="{{ details.audio }}"
+                      title="Play pronunciation">{{ icon("audio") }}<span class="sr-only">Play pronunciation</span></button>
+            {% endif %}
           </div>
         </header>
         <div class="details-grid">
@@ -143,7 +146,7 @@
             </p>
             <p class="muted small">{{ details.reason }}</p>
             <details class="editor">
-              <summary>{{ icon('edit', 18) }}Edit pinyin and translation</summary>
+              <summary>{{ icon('edit', 18) }}Edit pinyin and translation{{ ' and gender rules' if '{' in sentence.chinese }}</summary>
               <form method="post"
                     action="{{ url_for('actions.save_sentence', sentence_id=sentence.id) }}"
                     data-item-form>
@@ -154,6 +157,15 @@
                 <label>
                   Translation<textarea name="translation" rows="2" maxlength="2000" required>{{ sentence.translation }}</textarea>
                 </label>
+                {% if '{' in sentence.chinese or sentence.rules %}
+                  <label>
+                    Gender rules
+                    <input name="rules"
+                           autocomplete="off"
+                           spellcheck="false"
+                           value="{{ sentence.rules }}">
+                  </label>
+                {% endif %}
                 <div class="form-actions">
                   <button class="button primary small" type="submit">Save</button>
                 </div>

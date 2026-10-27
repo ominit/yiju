@@ -1,16 +1,21 @@
-import sqlite3
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 from random import SystemRandom
+from typing import TYPE_CHECKING
 
 from yiju.core.definitions import prompt_senses
 
 from .database import settings
+from .names import counts as name_counts
+from .names import needs
 from .pending import waiting
 from .sentences import askable, statuses
 
+if TYPE_CHECKING:
+    import sqlite3
+
 CARD_QUERY = (
-    "SELECT c.*, w.readings, s.chinese, "
+    "SELECT c.*, w.readings, s.chinese, s.rules, "
     "s.pinyin AS sentence_pinyin, s.translation, s.version AS sentence_version, "
     "EXISTS (SELECT 1 FROM cards o WHERE o.id != c.id AND o.reviews > 0 "
     "AND (o.word = c.word OR o.sentence_id = c.sentence_id)) AS started "
@@ -60,6 +65,7 @@ def study_queue(
     connection: sqlite3.Connection, now: datetime, *, card_id: int | None = None
 ) -> list[sqlite3.Row]:
     now = now.astimezone(UTC)
+    available = name_counts(connection)
     rows: list[sqlite3.Row] = [
         row
         for row in connection.execute(
@@ -70,6 +76,10 @@ def study_queue(
             (now.isoformat(), card_id) if card_id is not None else (now.isoformat(),),
         )
         if _askable(row)
+        and (
+            row["sentence_id"] is None
+            or needs(row["chinese"], row["rules"], available) is None
+        )
     ]
     random = SystemRandom()
     reviews = [row for row in rows if row["reviews"]]

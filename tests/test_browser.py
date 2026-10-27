@@ -1,14 +1,12 @@
 import json
 import re
-import sqlite3
 import threading
 import time
-from collections.abc import Generator
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from conftest import add, set_strength
-from flask import Flask
 from playwright.sync_api import Browser, Page, expect, sync_playwright
 from werkzeug.serving import make_server
 
@@ -17,6 +15,12 @@ from yiju.storage.database import connect
 from yiju.storage.graph import refresh
 from yiju.web import audio, create_app
 from yiju.web.strokes import DATA_VERSION
+
+if TYPE_CHECKING:
+    import sqlite3
+    from collections.abc import Generator
+
+    from flask import Flask
 
 CONTENT = """\
 我去。 | I am going.
@@ -228,8 +232,8 @@ def test_pasted_sentences_are_checked_then_approved(page: Page, server: Server) 
     pinyin.fill("Tā pǎo děi hěn kuài.")
     expect(reading.get_by_role("radio", name="děi to have to")).to_be_checked()
     pinyin.fill("Tā pǎo de hěn kuài.")
-    page.get_by_role("button", name="Approve and add").click()
-    expect(page.locator(".toast")).to_contain_text("Added 1 sentences")
+    page.get_by_role("button", name="Approve all").click()
+    expect(page.locator(".toast")).to_contain_text("Added 1 sentence")
     with server.database() as db:
         assert (
             db.execute(

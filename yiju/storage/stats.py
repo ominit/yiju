@@ -1,7 +1,10 @@
-import sqlite3
 from datetime import datetime, timedelta
+from typing import TYPE_CHECKING
 
 from fsrs import Rating
+
+if TYPE_CHECKING:
+    import sqlite3
 
 
 def activity(connection: sqlite3.Connection, now: datetime) -> dict[str, object]:

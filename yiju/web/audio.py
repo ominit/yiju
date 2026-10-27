@@ -10,7 +10,10 @@ import edge_tts
 from aiohttp import ClientError
 from edge_tts import communicate
 from edge_tts.constants import TRUSTED_CLIENT_TOKEN
-from flask import Blueprint, Response, abort, current_app, send_file
+from flask import Blueprint, Response, abort, current_app, request, send_file
+
+from yiju.core.names import chinese_text, letters
+from yiju.storage.names import chosen
 
 from . import database
 
@@ -112,6 +115,11 @@ def pronunciation(card_id: int) -> Response:
     if row is None:
         abort(404)
     text = row["chinese"] or row["word"]
+    if row["chinese"] and letters(row["chinese"]):
+        names = chosen(database(), row["chinese"], request.args.get("names", ""))
+        if names is None:
+            abort(404, "Pick names for every person in this sentence.")
+        text = chinese_text(row["chinese"], names)
     directory = Path(current_app.config["DATABASE"]).resolve().parent / "audio"
     if not available(text, directory):
         abort(503, "Pronunciation is unavailable. Try again in a few minutes.")

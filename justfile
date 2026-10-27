@@ -12,7 +12,7 @@ lint:
     ty check
 
 test:
-    uv run --locked pytest
+    uv run --locked python -m pytest
 
 build:
     uv build --no-sources

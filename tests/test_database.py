@@ -1,11 +1,14 @@
-import sqlite3
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from conftest import SAMPLE, add
 
 from yiju.storage import database
 from yiju.storage.database import SCHEMA_VERSION, connect, initialize
+
+if TYPE_CHECKING:
+    import sqlite3
+    from pathlib import Path
 
 
 def version(path: Path) -> int:

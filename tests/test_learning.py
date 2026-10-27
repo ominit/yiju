@@ -1,13 +1,15 @@
 import json
-import sqlite3
 from datetime import UTC, datetime, timedelta
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from conftest import add, set_strength, states
 
 from yiju.storage.database import ConflictError
 from yiju.storage.learning import review_card, undo_review
+
+if TYPE_CHECKING:
+    import sqlite3
 
 NOW = datetime(2026, 10, 1, 9, tzinfo=UTC)
 

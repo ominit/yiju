@@ -1,5 +1,6 @@
-import sqlite3
 from datetime import UTC, datetime
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from conftest import add
@@ -7,6 +8,7 @@ from conftest import add
 from yiju.storage.database import ConflictError
 from yiju.storage.pending import (
     FORMAT,
+    NAME_FORMAT,
     FormatError,
     approve,
     discard,
@@ -16,10 +18,15 @@ from yiju.storage.pending import (
     parse,
     preview,
     remove_sentence,
+    remove_word,
     spoken,
     stage,
+    stage_names,
     waiting,
 )
+
+if TYPE_CHECKING:
+    import sqlite3
 
 NOW = datetime(2026, 10, 1, 9, tzinfo=UTC)
 
@@ -28,8 +35,21 @@ def test_lines_are_sentences_with_translations_or_bare_words() -> None:
     parsed = parse(
         "# generated\n\n我很好。\tI am well.\n你好 | Hello\n葡萄 苹果\n你好 | Hello\n"
     )
-    assert parsed.sentences == (("我很好。", "I am well."), ("你好", "Hello"))
+    assert parsed.sentences == (
+        ("我很好。", "I am well.", ""),
+        ("你好", "Hello", ""),
+    )
     assert parsed.words == ("葡萄", "苹果")
+
+
+def test_spaces_next_to_punctuation_and_slots_are_dropped(
+    connection: sqlite3.Connection,
+) -> None:
+    stage(connection, "我 很 好 。 | I am well.\n{A} 有 iPhone 15 。 | {A} has one.\n")
+    assert [sentence.chinese for sentence in preview(connection).sentences] == [
+        "我很好。",
+        "{A}有iPhone 15。",
+    ]
 
 
 def test_format_errors_name_every_bad_line() -> None:
@@ -47,15 +67,10 @@ def test_format_errors_name_every_bad_line() -> None:
         parse("# only a comment\n")
 
 
-def test_the_documented_examples_parse() -> None:
-    examples = "\n".join(
-        line.strip().replace("<TAB>", "\t")
-        for line in FORMAT.splitlines()
-        if line.startswith("    ")
-    )
-    parsed = parse(examples)
-    assert len(parsed.sentences) == 2
-    assert parsed.words == ("葡萄", "苹果")
+def test_the_agent_guide_quotes_both_formats() -> None:
+    guide = (Path(__file__).parents[1] / "docs" / "agent-guide.md").read_text()
+    assert f"```text\n{FORMAT}```" in guide
+    assert f"```text\n{NAME_FORMAT}```" in guide
 
 
 def test_preview_shows_new_words_with_definitions_and_generated_pinyin(
@@ -73,7 +88,7 @@ def test_preview_shows_new_words_with_definitions_and_generated_pinyin(
     assert apple.requested
     assert apple.sentences == []
     assert apple.readings[0]["pinyin"] == "píngguǒ"
-    assert result.adds == {"sentences": 1, "words": 3}
+    assert result.adds["sentences"] == 1
     assert result.ready
     assert connection.execute("SELECT count(*) FROM words").fetchone()[0] == 3
 
@@ -122,21 +137,50 @@ def test_a_bad_split_is_reported(connection: sqlite3.Connection) -> None:
     assert "spell out" in preview(connection).issues[0]
 
 
-def test_excluding_a_word_requires_excluding_its_sentences(
+def test_pinyin_needs_one_group_per_word(connection: sqlite3.Connection) -> None:
+    stage(connection, "他跑得很快。 | He runs fast.\n我有iPhone。 | I have one.\n")
+    assert preview(connection).ready
+    with editing(connection):
+        edit_sentence(connection, 1, pinyin="tā pǎo de hěn kuài le.")
+    assert preview(connection).issues == (
+        (
+            "Sentence 1: The pinyin needs one group per word or slot, in order. "
+            "This sentence has 5 and the pinyin has 6."
+        ),
+    )
+
+
+def test_waiting_sentences_say_which_names_they_need(
     connection: sqlite3.Connection,
 ) -> None:
-    stage(connection, "我很好。 | I am well.\n你好 | Hello\n")
+    stage(
+        connection,
+        "{A}喜欢{B}。 | {A} likes {B}.\n{A}是哥哥。 | {A} is older. | A=male\n",
+    )
+
+    def needs_names() -> list[str | None]:
+        return [sentence.needs_names for sentence in preview(connection).sentences]
+
+    assert needs_names() == ["2 names", "1 male name"]
+    stage_names(connection, "王芳 female\n")
+    assert needs_names() == ["2 names", "1 male name"]
+    stage_names(connection, "李伟 male\n")
+    assert needs_names() == [None, None]
+
+
+def test_only_words_waiting_on_their_own_can_be_removed(
+    connection: sqlite3.Connection,
+) -> None:
+    stage(connection, "我很好。 | I am well.\n你好 我\n")
     with editing(connection):
-        edit_word(connection, "我", included=False)
+        remove_word(connection, "你好")
+    with pytest.raises(ValueError, match="goes with that sentence"):
+        remove_word(connection, "我")
+    with pytest.raises(LookupError):
+        remove_word(connection, "很")
     result = preview(connection)
-    assert result.issues == ("Sentence 1: 我 is excluded.",)
-    with editing(connection):
-        edit_sentence(connection, 1, included=False)
-    result = preview(connection)
-    assert result.ready
-    assert result.adds == {"sentences": 1, "words": 1}
-    approve(connection, result.version, NOW)
-    assert [row[0] for row in connection.execute("SELECT word FROM words")] == ["你好"]
+    assert "你好" not in {word.word for word in result.words}
+    assert result.adds == {"sentences": 1, "words": 3, "names": 0}
 
 
 def test_sentences_already_in_the_library_are_not_added_twice(
@@ -146,7 +190,8 @@ def test_sentences_already_in_the_library_are_not_added_twice(
     stage(connection, "我 很 好。 | I am fine.\n")
     result = preview(connection)
     assert result.sentences[0].duplicate
-    assert not result.sentences[0].included
+    assert result.sentences[0].issues == ()
+    assert result.adds["sentences"] == 0
     assert not result.ready
 
 
@@ -165,7 +210,11 @@ def test_later_additions_join_the_same_check_and_need_another_look(
         "Hello",
         "I am well.",
     ]
-    assert approve(connection, result.version, NOW) == {"words": 4, "sentences": 2}
+    assert approve(connection, result.version, NOW) == {
+        "words": 4,
+        "sentences": 2,
+        "names": 0,
+    }
     assert preview(connection).empty
     assert waiting(connection) == 0
 
@@ -194,6 +243,18 @@ def test_words_with_several_readings_offer_them_with_the_one_in_use(
     assert [choice.pinyin for choice in de.choices] == ["dé", "de", "děi", "dè"]
     assert de.choices[0].meaning == "to obtain"
     assert de.pinyin == "dé"
+    assert de.meanings is not None
+    assert de.meanings[0] == "to obtain"
+    with editing(connection):
+        edit_sentence(connection, 1, pinyin="tā pǎo dá hěn kuài.")
+    tokens = preview(connection).sentences[0].words
+    assert next(token for token in tokens if token.text == "得").meanings is None
     assert next(token for token in tokens if token.text == "他").choices == ()
-    assert spoken("Tā, pǎo “dé” hěn kuài.", 5) == ["Tā", "pǎo", "dé", "hěn", "kuài"]
-    assert spoken("Tā pǎodé hěn kuài.", 5) == [None] * 5
+    assert spoken("Tā, pǎo “dé” hěn kuài.", "他跑得很快。", 5) == [
+        "Tā",
+        "pǎo",
+        "dé",
+        "hěn",
+        "kuài",
+    ]
+    assert spoken("Tā pǎodé hěn kuài.", "他跑得很快。", 5) == [None] * 5

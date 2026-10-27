@@ -1,24 +1,27 @@
 import gzip
 import json
 import re
-import sqlite3
-from collections.abc import Generator
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
 import pytest
 from flask import Flask, template_rendered
-from flask.testing import FlaskClient
 from fsrs import Card, State
-from werkzeug.test import TestResponse
 
 from yiju.core import dictionary
 from yiju.storage.database import connect, initialize
 from yiju.storage.graph import refresh
 from yiju.storage.pending import approve, preview, stage
 from yiju.web import create_app
+
+if TYPE_CHECKING:
+    import sqlite3
+    from collections.abc import Generator
+
+    from flask.testing import FlaskClient
+    from werkzeug.test import TestResponse
 
 DICTIONARY = Path(__file__).with_name("cedict.u8")
 ITEM_URL = re.compile(r"^/(?:library/words|sentences)/[^/]+$")
@@ -125,13 +128,9 @@ def check_form(client: FlaskClient) -> dict[str, str]:
         form[f"{prefix}-words"] = " ".join(token.text for token in sentence.words)
         form[f"{prefix}-pinyin"] = sentence.pinyin
         form[f"{prefix}-translation"] = sentence.translation
-        if sentence.included:
-            form[f"{prefix}-included"] = "on"
     for index, word in enumerate(waiting.words):
         form[f"w{index}-pinyin"] = word.pinyin
         form[f"w{index}-meanings"] = word.meanings
-        if word.included:
-            form[f"w{index}-included"] = "on"
     return form
 
 

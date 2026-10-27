@@ -58,8 +58,8 @@
     {%- endif -%}
   </svg>
 {%- endmacro %}
-{% macro hanzi(text, pinyin, class='', strokes=false) -%}
-  {%- set parts = text | pronunciation(pinyin) -%}
+{% macro hanzi(text, pinyin, class='', strokes=false, rules='') -%}
+  {%- set parts = text | reading(pinyin, rules) -%}
   <span class="hanzi {{ class }}"
         lang="zh-Hans"
         {% if strokes %} data-strokes-text{% endif %}>
@@ -68,11 +68,12 @@
     {%- elif parts|length == 1 and parts[0][0]|length > 1 and parts[0][1] -%}
       <ruby>{{ parts[0][0] }}<rt>{{ parts[0][1] }}</rt></ruby>
     {%- else -%}
-      {%- for character, syllable in parts -%}
-        {%- if syllable -%}<ruby>{{ character }}<rt>{{ syllable }}</rt></ruby>{%- else -%}{{ character }}{%- endif -%}
-      {%- endfor -%}
-    {%- endif -%}
-  </span>
+      {%- for character, syllable, kind in parts -%}
+        {%- if kind.startswith('slot:') -%}<span class="slot">{{ character }}</span>
+    {%- elif syllable -%}<ruby>{{ character }}<rt>{{ syllable }}</rt></ruby>{%- else -%}{{ character }}{%- endif -%}
+  {%- endfor -%}
+{%- endif -%}
+</span>
 {%- endmacro %}
 {% macro senses(readings) %}
   {% if readings %}
@@ -90,6 +91,9 @@
         </ol>
         {% if reading.classifiers %}
           <p class="classifiers muted small">Measure word{{ 's' if reading.classifiers|length > 1 else '' }}: <span lang="zh-Hans">{{ reading.classifiers|join(", ") }}</span></p>
+        {% endif %}
+        {% if reading.also_pronounced %}
+          <p class="classifiers muted small">Also pronounced {{ reading.also_pronounced|join(", ") }}</p>
         {% endif %}
       </section>
     {% endfor %}
@@ -164,4 +168,14 @@
       </div>
   {% endfor %}
   </div>
+{% endmacro %}
+{% macro library_tabs(kind, counts) %}
+  <nav class="segmented" aria-label="Library content">
+    <a href="{{ url_for('pages.library') }}"
+       {% if kind == 'words' %}aria-current="page"{% endif %}>Words <span>{{ counts.words }}</span></a>
+    <a href="{{ url_for('pages.sentences') }}"
+       {% if kind == 'sentences' %}aria-current="page"{% endif %}>Sentences <span>{{ counts.sentences }}</span></a>
+    <a href="{{ url_for('pages.names') }}"
+       {% if kind == 'names' %}aria-current="page"{% endif %}>Names <span>{{ counts.names }}</span></a>
+  </nav>
 {% endmacro %}

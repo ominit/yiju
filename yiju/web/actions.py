@@ -3,6 +3,7 @@ import json
 import sqlite3
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from flask import (
     Blueprint,
@@ -14,28 +15,40 @@ from flask import (
     send_file,
     url_for,
 )
-from werkzeug.wrappers import Response
 
 from yiju.core.scheduling import now_utc
 from yiju.storage.database import ConflictError, parameters, transaction
+from yiju.storage.names import remove_name, update_name
 from yiju.storage.pending import (
     FORMAT,
+    NAME_FORMAT,
     FormatError,
     approve,
+    approve_name,
     approve_sentence,
     discard,
+    edit_name,
     edit_sentence,
     edit_word,
     editing,
     preview,
+    remove_sentence,
+    remove_word,
     stage,
+    stage_names,
     waiting,
+)
+from yiju.storage.pending import (
+    remove_name as remove_pending_name,
 )
 from yiju.storage.sentences import set_hidden, update_sentence
 from yiju.storage.words import reclassify, set_manual, set_paused
 
 from . import database, refresh_caches
 from .library import item_response
+
+if TYPE_CHECKING:
+    from werkzeug.wrappers import Response
 
 actions = Blueprint("actions", __name__)
 SETTING_RANGES = {
@@ -81,11 +94,29 @@ def start_import() -> Response | tuple[str, int]:
         "import.html",
         waiting=waiting(database()),
         format=FORMAT,
+        name_format=NAME_FORMAT,
         errors=errors,
         chinese=chinese,
         translation=translation,
         text=request.form.get("text", ""),
     ), 400
+
+
+@actions.post("/import/names")
+def start_name_import() -> Response | tuple[str, int]:
+    text = request.form.get("names", "")
+    try:
+        stage_names(database(), text)
+    except FormatError as error:
+        return render_template(
+            "import.html",
+            waiting=waiting(database()),
+            format=FORMAT,
+            name_format=NAME_FORMAT,
+            errors=error.errors,
+            names=text,
+        ), 400
+    return redirect(url_for("pages.pending_page"), code=303)
 
 
 def _apply_edits(connection: sqlite3.Connection) -> None:
@@ -98,7 +129,7 @@ def _apply_edits(connection: sqlite3.Connection) -> None:
             words=form.get(f"{prefix}-words"),
             pinyin=form.get(f"{prefix}-pinyin"),
             translation=form.get(f"{prefix}-translation"),
-            included=form.get(f"{prefix}-included") == "on",
+            rules=form.get(f"{prefix}-rules"),
         )
     for index, word in enumerate(json.loads(form.get("shown", "[]"))):
         prefix = f"w{index}"
@@ -107,8 +138,40 @@ def _apply_edits(connection: sqlite3.Connection) -> None:
             str(word),
             pinyin=form.get(f"{prefix}-pinyin"),
             meanings=form.get(f"{prefix}-meanings"),
-            included=form.get(f"{prefix}-included") == "on",
         )
+    for name_id in json.loads(form.get("names", "[]")):
+        prefix = f"n{name_id}"
+        edit_name(
+            connection,
+            int(name_id),
+            pinyin=form.get(f"{prefix}-pinyin"),
+            english=form.get(f"{prefix}-english"),
+            gender=form.get(f"{prefix}-gender"),
+        )
+
+
+def _discard_item(connection: sqlite3.Connection) -> str | None:
+    form = request.form
+    if form.get("discard") is not None:
+        remove_sentence(connection, integer("discard"))
+        return "Discarded the sentence."
+    if form.get("discard-name") is not None:
+        remove_pending_name(connection, integer("discard-name"))
+        return "Discarded the name."
+    word = form.get("discard-word")
+    if word is not None:
+        remove_word(connection, word)
+        return "Discarded the word."
+    return None
+
+
+def _added(added: dict[str, int]) -> str:
+    parts = [
+        f"{added[kind]} {kind if added[kind] != 1 else kind[:-1]}"
+        for kind in ("sentences", "words", "names")
+        if added[kind] or kind != "names"
+    ]
+    return f"Added {', '.join(parts[:-1])} and {parts[-1]}."
 
 
 @actions.post("/pending")
@@ -124,41 +187,54 @@ def save_pending() -> Response:
             return redirect(url_for("pages.import_page"), code=303)
         with editing(connection, checked):
             _apply_edits(connection)
+            discarded = _discard_item(connection)
+        if discarded is not None:
+            flash(discarded)
+            return redirect(location, code=303)
         single = request.form.get("approve")
-        if step != "approve" and single is None:
-            return redirect(location, code=303)
-        result = preview(connection)
-        words = {word.word for word in result.words if word.included}
-        sentence = None
-        if single is not None:
-            sentence_id = integer("approve")
-            sentence = next(
-                (item for item in result.sentences if item.id == sentence_id), None
+        message = None
+        if request.form.get("approve-name") is not None:
+            approve_name(
+                connection,
+                preview(connection).version,
+                integer("approve-name"),
+                now_utc(),
             )
-            if sentence is None:
-                flash("That sentence is no longer waiting for your check.")
-                return redirect(location, code=303)
-            words &= {token.text for token in sentence.words}
-        if words - set(json.loads(request.form.get("shown", "[]"))):
-            flash("The word list changed. Check the new words, then approve again.")
-            return redirect(location, code=303)
-        if sentence is None:
-            added = approve(connection, result.version, now_utc())
-            message = (
-                f"Added {added['sentences']} sentences and {added['words']} words."
-            )
-        else:
-            added = approve_sentence(connection, result.version, sentence.id, now_utc())
-            count = added["words"]
-            message = f"Added {sentence.chinese}" + (
-                f" with {count} new word{'' if count == 1 else 's'}." if count else ""
-            )
-    except ConflictError as error:
+            message = "Added the name."
+        elif step == "approve" or single is not None:
+            message = _approve_items(connection, single)
+    except (ConflictError, LookupError) as error:
         flash(str(error))
         return redirect(location, code=303)
-    refresh_caches()
-    flash(message)
+    if message is not None:
+        refresh_caches()
+        flash(message)
     return redirect(location, code=303)
+
+
+def _approve_items(connection: sqlite3.Connection, single: str | None) -> str | None:
+    result = preview(connection)
+    words = {word.word for word in result.words}
+    sentence = None
+    if single is not None:
+        sentence_id = integer("approve")
+        sentence = next(
+            (item for item in result.sentences if item.id == sentence_id), None
+        )
+        if sentence is None:
+            flash("That sentence is no longer waiting for your check.")
+            return None
+        words &= {token.text for token in sentence.words}
+    if words - set(json.loads(request.form.get("shown", "[]"))):
+        flash("The word list changed. Check the new words, then approve again.")
+        return None
+    if sentence is None:
+        return _added(approve(connection, result.version, now_utc()))
+    added = approve_sentence(connection, result.version, sentence.id, now_utc())
+    count = added["words"]
+    return f"Added {sentence.chinese}" + (
+        f" with {count} new word{'' if count == 1 else 's'}." if count else ""
+    )
 
 
 @actions.post("/words/<word>/pause")
@@ -193,6 +269,7 @@ def save_sentence(sentence_id: int) -> str:
                 integer("version"),
                 request.form.get("pinyin", ""),
                 request.form.get("translation", ""),
+                request.form.get("rules"),
             )
     except ConflictError:
         raise
@@ -200,6 +277,30 @@ def save_sentence(sentence_id: int) -> str:
         abort(400, str(error))
     refresh_caches()
     return item_response("sentences", str(sentence_id), now_utc())
+
+
+@actions.post("/names/<int:name_id>")
+def save_name(name_id: int) -> Response:
+    connection = database()
+    try:
+        if request.form.get("remove") is not None:
+            removed = remove_name(connection, name_id, integer("version"))
+            flash(f"Removed {removed}.")
+        else:
+            update_name(
+                connection,
+                name_id,
+                integer("version"),
+                request.form.get("pinyin", ""),
+                request.form.get("english", ""),
+                request.form.get("gender", ""),
+            )
+            flash("Saved the name.")
+    except ConflictError:
+        raise
+    except ValueError as error:
+        abort(400, str(error))
+    return redirect(url_for("pages.names"), code=303)
 
 
 @actions.post("/settings")

@@ -80,7 +80,7 @@ function plural(count, word) {
   return `${count} ${word}${count === 1 ? "" : "s"}`;
 }
 
-function hanzi(reading) {
+function hanzi(reading, names = {}) {
   const element = h("span", { class: "hanzi", lang: "zh-Hans" });
   if (reading.length === 1 && reading[0][0].length > 4 && reading[0][1]) {
     element.append(
@@ -105,12 +105,26 @@ function hanzi(reading) {
       : null;
   const lead = hang(reading.slice(0, start), "start");
   if (lead) element.append(lead);
-  for (const [text, syllable] of reading.slice(start, end)) {
-    if (syllable)
-      element.append(
-        h("ruby", {}, ...strokes.glyphs(text), h("rt", {}, syllable)),
-      );
-    else element.append(...strokes.glyphs(text));
+  let group = null;
+  for (const [text, syllable, kind = ""] of reading.slice(start, end)) {
+    const glyphs = syllable
+      ? [h("ruby", {}, ...strokes.glyphs(text), h("rt", {}, syllable))]
+      : strokes.glyphs(text);
+    if (!kind.startsWith("name:")) {
+      group = null;
+      element.append(...glyphs);
+      continue;
+    }
+    if (group?.dataset.name !== kind) {
+      const name = names[kind.slice(5)];
+      group = h("span", {
+        class: "proper-name",
+        title: name ? `${name.english}, a name` : null,
+        dataset: { name: kind },
+      });
+      element.append(group);
+    }
+    group.append(...glyphs);
   }
   const trail = hang(reading.slice(end), "end");
   if (trail) element.append(trail);
@@ -270,6 +284,13 @@ function readingList(readings, { limit = Infinity } = {}) {
             h("span", { lang: "zh-Hans" }, reading.classifiers.join(", ")),
           )
         : null,
+      reading.also_pronounced.length && limit === Infinity
+        ? h(
+            "p",
+            { class: "classifiers muted small" },
+            `Also pronounced ${reading.also_pronounced.join(", ")}`,
+          )
+        : null,
     ),
   );
 }
@@ -328,6 +349,18 @@ function missToggle(word) {
   );
 }
 
+function promptText(parts) {
+  return parts.map(([text, name]) =>
+    name
+      ? h(
+          "span",
+          { class: "proper-name", lang: "zh-Hans", title: `${text}, a name` },
+          name,
+        )
+      : text,
+  );
+}
+
 function sentenceEditor(card) {
   const field = (name, label, value, attributes = {}) =>
     h(
@@ -347,7 +380,7 @@ function sentenceEditor(card) {
       },
     },
     field("pinyin", "Pinyin", card.sentence.pinyin || "", { maxlength: 1000 }),
-    field("translation", "Translation", card.translation, {
+    field("translation", "Translation", card.sentence.translation, {
       maxlength: 2000,
       required: true,
     }),
@@ -374,7 +407,7 @@ function renderCard(card) {
     {
       class: `headword${sentence ? " sentence" : ""}${sentence && card.text.length > 16 ? " long" : ""}`,
     },
-    hanzi(card.reading),
+    hanzi(card.reading, card.names),
     sayButton(),
   );
   if (sentence)
@@ -386,7 +419,11 @@ function renderCard(card) {
   if (writing) {
     face.append(
       sentence
-        ? h("p", { class: "prompt prompt-translation" }, card.translation)
+        ? h(
+            "p",
+            { class: "prompt prompt-translation" },
+            h("span", {}, promptText(card.translationParts)),
+          )
         : h("div", { class: "prompt" }, promptList(card.prompt)),
     );
   }
@@ -926,7 +963,9 @@ async function toggleFlag(word) {
 
 function loadAudio(card) {
   player = new Audio(card.audio);
-  player.preload = state.autoplay ? "auto" : "none";
+  player.preload = state.autoplay || card.names ? "auto" : "none";
+  const upcoming = state.queue.find((other) => !state.consumed.has(key(other)));
+  if (upcoming?.names) fetch(upcoming.audio).catch(() => {});
   const playing = (value) =>
     dom?.stage.querySelector("[data-play]")?.classList.toggle("playing", value);
   player.addEventListener("playing", () => playing(true));
