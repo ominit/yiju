@@ -75,6 +75,10 @@ and `backup` prints JSON. An agent can generate sentences, stage them with
 `yiju import edit-word`. It cannot approve them. Approving happens only in the
 web app, so you see everything before it reaches your library.
 
+These commands talk to a running server through its `/api/agent` routes, so
+they work from any machine that can reach it. Pass the address with `--url` or
+set `YIJU_URL`, for example `YIJU_URL=http://localhost:8000 yiju stats`.
+
 Run `yiju --help` for the full list. It also covers reading your library,
 flagged words and the review log.
 

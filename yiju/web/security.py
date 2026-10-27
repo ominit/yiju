@@ -35,7 +35,10 @@ def wants_json() -> bool:
 def protect_forms() -> None:
     if "csrf" not in session:
         session["csrf"] = secrets.token_urlsafe(32)
-    if request.method == "POST":
+    if request.method == "POST" and request.blueprint == "agents":
+        if not request.is_json:
+            abort(400, "Expected a JSON body.")
+    elif request.method == "POST":
         token = request.headers.get("X-CSRF-Token") or request.form.get("csrf", "")
         if not secrets.compare_digest(str(session["csrf"]).encode(), token.encode()):
             abort(400, "This page has expired. Reload it and try again.")

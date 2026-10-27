@@ -63,6 +63,7 @@ def create_app(database_path: Path | None = None, *, prefill: bool = False) -> F
     register_handlers(app)
     app.teardown_appcontext(_close_database)
     from .actions import actions
+    from .agents import agents
     from .audio import audio
     from .flags import flags
     from .install import install
@@ -78,6 +79,7 @@ def create_app(database_path: Path | None = None, *, prefill: bool = False) -> F
     app.register_blueprint(pages)
     app.register_blueprint(study)
     app.register_blueprint(actions)
+    app.register_blueprint(agents)
     app.register_blueprint(audio)
     app.register_blueprint(flags)
     app.register_blueprint(install)

@@ -3,38 +3,41 @@ import json
 import os
 import sqlite3
 import sys
+import urllib.error
+import urllib.request
 from collections.abc import Callable
-from contextlib import closing
 from pathlib import Path
-from typing import Any
+from urllib.parse import quote, urlencode
 
-from .core import dictionary
-from .core.scheduling import now_utc
 from .storage import pending
-from .storage.database import ConflictError, connect, initialize
-from .storage.export import (
-    SENTENCE_STATUSES,
-    WORD_STATUSES,
-    flagged_words,
-    list_sentences,
-    list_words,
-    review_log,
-    word_info,
-)
-from .storage.queue import overview
+from .storage.export import SENTENCE_STATUSES, WORD_STATUSES
 
 AGENT_HELP = """\
 Commands other than serve and backup print JSON and are meant for scripts and
-agents. Imports never change the library directly: `yiju import add` puts the
-items on the check screen in the web app, next to anything else waiting there,
-and prints exactly what approving would add. Agents can revise waiting items
-with the edit commands, but only the user can approve them.
+agents. They talk to a running web app through its /api/agent routes, at the
+address in --url or YIJU_URL. Imports never change the library directly:
+`yiju import add` puts the items on the check screen in the web app, next to
+anything else waiting there, and prints exactly what approving would add.
+Agents can revise waiting items with the edit commands, but only the user can
+approve them.
 """
+DEFAULT_URL = "http://127.0.0.1:8000"
+
+type Body = dict[str, object]
+type Call = tuple[str, str, Body | None]
 
 
 def _data_dir(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--data-dir", type=Path, default=Path(os.environ.get("YIJU_DATA_DIR", "data"))
+    )
+
+
+def _url(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--url",
+        default=os.environ.get("YIJU_URL", DEFAULT_URL),
+        help=f"Address of the running web app. Defaults to YIJU_URL or {DEFAULT_URL}.",
     )
 
 
@@ -89,7 +92,7 @@ def _parser() -> argparse.ArgumentParser:
         "reviews",
         "dictionary",
     ):
-        _data_dir(commands.choices[name])
+        _url(commands.choices[name])
 
     _import_parser(
         commands.add_parser("import", help="Add and revise items waiting for a check.")
@@ -124,8 +127,9 @@ def _import_parser(imports: argparse.ArgumentParser) -> None:
     _inclusion(word_edit)
     remove = actions.add_parser("remove-sentence", help="Drop a sentence.")
     remove.add_argument("id", type=int)
-    for action in actions.choices.values():
-        _data_dir(action)
+    for name, action in actions.choices.items():
+        if name != "format":
+            _url(action)
 
 
 def _inclusion(parser: argparse.ArgumentParser) -> None:
@@ -139,83 +143,98 @@ def _print(value: object) -> None:
     sys.stdout.write("\n")
 
 
-def _pending(connection: sqlite3.Connection) -> dict[str, Any]:
-    result = pending.preview(connection).to_json()
-    result["check_screen"] = "/pending"
-    return result
+def _path(*parts: str | int) -> str:
+    return "/" + "/".join(quote(str(part), safe="") for part in parts)
 
 
-def _import(connection: sqlite3.Connection, args: argparse.Namespace) -> object:
-    if args.action == "format":
-        return {"format": pending.FORMAT}
+def _query(path: str, **params: str | bool | None) -> str:
+    present = {
+        name: "1" if value is True else value
+        for name, value in params.items()
+        if value not in {None, False}
+    }
+    return f"{path}?{urlencode(present)}" if present else path
+
+
+def _import(args: argparse.Namespace) -> Call:
     if args.action == "add":
         text = sys.stdin.read() if args.file == "-" else Path(args.file).read_text()
-        pending.stage(connection, text)
-        return _pending(connection)
-    if args.action == "show":
-        return _pending(connection)
-    if args.action == "edit-word" and args.word not in {
-        word.word for word in pending.preview(connection).words
-    }:
-        message = f"{args.word} is not a new word waiting for a check."
-        raise LookupError(message)
-    with pending.editing(connection):
-        if args.action == "edit-sentence":
-            pending.edit_sentence(
-                connection,
-                args.id,
-                words=args.words,
-                pinyin=args.pinyin,
-                translation=args.translation,
-                included=args.included,
-            )
-        elif args.action == "edit-word":
-            pending.edit_word(
-                connection,
-                args.word,
-                pinyin=args.pinyin,
-                meanings=None
+        return "POST", "/pending", {"text": text}
+    if args.action == "edit-sentence":
+        return (
+            "POST",
+            _path("pending", "sentences", args.id),
+            {
+                "words": args.words,
+                "pinyin": args.pinyin,
+                "translation": args.translation,
+                "included": args.included,
+            },
+        )
+    if args.action == "edit-word":
+        return (
+            "POST",
+            _path("pending", "words", args.word),
+            {
+                "pinyin": args.pinyin,
+                "meanings": None
                 if args.meanings is None
                 else args.meanings.replace("\\n", "\n"),
-                included=args.included,
-            )
-        else:
-            pending.remove_sentence(connection, args.id)
-    return _pending(connection)
+                "included": args.included,
+            },
+        )
+    if args.action == "remove-sentence":
+        return "POST", _path("pending", "sentences", args.id, "remove"), {}
+    return "GET", "/pending", None
 
 
-def _word(connection: sqlite3.Connection, args: argparse.Namespace) -> object:
-    info = word_info(connection, args.word, now_utc())
-    if info is None:
-        message = f"{args.word} is not in the library."
-        raise LookupError(message)
-    return info
-
-
-def _dictionary(_connection: sqlite3.Connection, args: argparse.Namespace) -> object:
-    if args.update:
-        published = dictionary.update()
-    else:
-        dictionary.ensure()
-        published = dictionary.published()
-    return {"path": str(dictionary.SOURCE.path), "published": published}
-
-
-QUERIES: dict[str, Callable[[sqlite3.Connection, argparse.Namespace], object]] = {
-    "word": _word,
-    "words": lambda connection, args: list_words(
-        connection,
-        word_status=args.status,
-        flagged=args.flagged,
-        backlog=args.backlog,
+CALLS: dict[str, Callable[[argparse.Namespace], Call]] = {
+    "word": lambda args: ("GET", _path("words", args.word), None),
+    "words": lambda args: (
+        "GET",
+        _query(
+            "/words", status=args.status, flagged=args.flagged, backlog=args.backlog
+        ),
+        None,
     ),
-    "sentences": lambda connection, args: list_sentences(connection, args.status),
-    "flags": lambda connection, _args: flagged_words(connection),
-    "stats": lambda connection, _args: overview(connection, now_utc()),
-    "reviews": lambda connection, args: review_log(connection, args.since),
+    "sentences": lambda args: ("GET", _query("/sentences", status=args.status), None),
+    "flags": lambda _args: ("GET", "/flags", None),
+    "stats": lambda _args: ("GET", "/stats", None),
+    "reviews": lambda args: ("GET", _query("/reviews", since=args.since), None),
+    "dictionary": lambda args: (
+        ("POST", "/dictionary", {}) if args.update else ("GET", "/dictionary", None)
+    ),
     "import": _import,
-    "dictionary": _dictionary,
 }
+
+
+class RequestError(Exception):
+    def __init__(self, payload: object) -> None:
+        super().__init__(payload)
+        self.payload = payload
+
+
+def _send(base: str, call: Call) -> object:
+    method, path, body = call
+    url = f"{base.rstrip('/')}/api/agent{path}"
+    request = urllib.request.Request(  # noqa: S310
+        url,
+        data=None if body is None else json.dumps(body).encode(),
+        method=method,
+        headers={"Accept": "application/json", "Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request) as response:  # noqa: S310
+            return json.load(response)
+    except urllib.error.HTTPError as error:
+        try:
+            payload = json.load(error)
+        except ValueError:
+            payload = {"error": f"{url} answered {error.code} {error.reason}."}
+        raise RequestError(payload) from error
+    except urllib.error.URLError as error:
+        message = f"Could not reach yiju at {base}: {error.reason}"
+        raise RequestError({"error": message}) from error
 
 
 def _serve(args: argparse.Namespace) -> None:
@@ -253,20 +272,16 @@ def main() -> None:
     if args.command == "backup":
         _backup(parser, args)
         return
-    path = args.data_dir / "yiju.sqlite3"
-    initialize(path)
-    dictionary.use(args.data_dir / dictionary.FILENAME)
-    with closing(connect(path)) as connection:
-        try:
-            _print(QUERIES[args.command](connection, args))
-        except pending.FormatError as error:
-            _print(
-                {
-                    "error": "The text is not in the import format.",
-                    "lines": error.errors,
-                }
-            )
-            sys.exit(1)
-        except (LookupError, ConflictError, ValueError, OSError) as error:
-            _print({"error": str(error)})
-            sys.exit(1)
+    if args.command == "import" and args.action == "format":
+        _print({"format": pending.FORMAT})
+        return
+    if not args.url.startswith(("http://", "https://")):
+        parser.error("--url must start with http:// or https://.")
+    try:
+        _print(_send(args.url, CALLS[args.command](args)))
+    except RequestError as error:
+        _print(error.payload)
+        sys.exit(1)
+    except OSError as error:
+        _print({"error": str(error)})
+        sys.exit(1)
