@@ -119,6 +119,21 @@ def parse_words(text: str) -> tuple[str, ...]:
     )
 
 
+def with_slots(chinese: str, words: tuple[str, ...]) -> tuple[str, ...]:
+    tokens: list[str] = []
+    remaining = list(words)
+    for piece in _slotted(chinese):
+        if is_slot(piece):
+            tokens.append(piece)
+            continue
+        wanted = len(han(piece))
+        while wanted > 0 and remaining:
+            word = remaining.pop(0)
+            tokens.append(word)
+            wanted -= len(word)
+    return (*tokens, *remaining)
+
+
 def _spelled(text: str) -> list[str]:
     return [
         part

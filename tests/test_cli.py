@@ -385,3 +385,55 @@ def test_agent_routes_take_json_without_a_form_token(
     assert study.json is not None
     assert "expired" in study.json["error"]
     assert client.get("/api/agent/words?status=nope").status_code == 400
+
+
+def test_agents_propose_library_changes_that_wait_for_the_user(
+    app: Flask,
+    server: str,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with database(app) as db:
+        add(db, "我喜欢喝茶。 | I like drinking tea.\n我去。 | I am going.\n")
+
+    def library(*args: str, status: int = 0) -> Any:  # noqa: ANN401
+        return run(server, capsys, monkeypatch, "library", *args, status=status)
+
+    result = library("edit-sentence", "1", "--words", "我 喜欢 喝 茶")
+    [change] = result["changes"]
+    assert change["kind"] == "sentence"
+    assert change["action"] == "edit"
+    assert change["after"]["pinyin"] == "wǒ xǐhuan hē chá."
+    assert [word["word"] for word in result["words"]] == ["喝", "茶"]
+    assert result["adds"] == {"sentences": 0, "words": 2, "names": 0, "changes": 1}
+    assert result["ready"]
+    assert library("edit-sentence", "1", "--words", "我 茶", status=1) == {
+        "error": "The words must spell out the sentence's characters in order."
+    }
+    assert "no sentence 9" in library("remove-sentence", "9", status=1)["error"]
+    assert "not in your library" in library("remove-word", "茶", status=1)["error"]
+    removal = library("remove-word", "喝茶")["changes"][0]
+    assert removal["action"] == "remove"
+    assert removal["issues"] == []
+    definition = library("edit-word", "去", "--meanings", "to go\\nto leave")
+    assert definition["changes"][0]["after"] == [
+        {"pinyin": "qù", "meanings": ["to go", "to leave"]}
+    ]
+    shown = run(server, capsys, monkeypatch, "import", "show")
+    assert [item["id"] for item in shown["changes"]] == [1, 2, 3]
+    assert run(server, capsys, monkeypatch, "stats")["pending"] == 3
+    run(server, capsys, monkeypatch, "import", "remove-change", "3")
+    assert (
+        "no pending change 3"
+        in run(server, capsys, monkeypatch, "import", "remove-change", "3", status=1)[
+            "error"
+        ]
+    )
+    with database(app) as db:
+        assert db.execute("SELECT count(*) FROM pending_changes").fetchone()[0] == 2
+        assert (
+            db.execute(
+                "SELECT count(*) FROM sentence_words WHERE word = '喝茶'"
+            ).fetchone()[0]
+            == 1
+        )

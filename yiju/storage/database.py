@@ -8,8 +8,25 @@ from yiju.core.strength import Parameters
 
 type Migration = Callable[[sqlite3.Connection], None]
 
+
+def add_pending_changes(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS pending_changes ("
+        "id INTEGER PRIMARY KEY, "
+        "kind TEXT NOT NULL CHECK (kind IN ('sentence', 'word')), "
+        "target TEXT NOT NULL, "
+        "remove INTEGER NOT NULL DEFAULT 0, "
+        "words TEXT, "
+        "pinyin TEXT, "
+        "translation TEXT, "
+        "rules TEXT, "
+        "readings TEXT, "
+        "UNIQUE (kind, target))"
+    )
+
+
 BASELINE_VERSION = 1
-MIGRATIONS: tuple[Migration, ...] = ()
+MIGRATIONS: tuple[Migration, ...] = (add_pending_changes,)
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)
 
 DEFAULT_SETTINGS: dict[str, int | float | bool] = {

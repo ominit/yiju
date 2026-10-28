@@ -369,8 +369,58 @@ const search = {
   },
 };
 
+async function copyText(button) {
+  const text = button.dataset.copy;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const field = document.createElement("textarea");
+    field.value = text;
+    field.setAttribute("readonly", "");
+    field.style.position = "fixed";
+    field.style.opacity = "0";
+    document.body.append(field);
+    field.select();
+    document.execCommand("copy");
+    field.remove();
+  }
+  toast(button.dataset.copied || "Copied.");
+}
+
+function showTab(link) {
+  const key = link.dataset.tab;
+  for (const tab of document.querySelectorAll("[data-tab]")) {
+    if (tab.dataset.tab === key) tab.setAttribute("aria-current", "page");
+    else tab.removeAttribute("aria-current");
+  }
+  for (const panel of document.querySelectorAll("[data-tab-panel]"))
+    panel.hidden = panel.dataset.tabPanel !== key;
+  const field = link.closest("form")?.elements.tab;
+  if (field) field.value = key;
+  const url = new URL(location.href);
+  url.searchParams.set("tab", key);
+  history.replaceState(history.state, "", url);
+}
+
 document.addEventListener("click", (event) => {
   if (event.defaultPrevented) return;
+  const copy = event.target.closest("[data-copy]");
+  if (copy) {
+    copyText(copy);
+    return;
+  }
+  const more = event.target.closest("[data-more]");
+  if (more) {
+    more.previousElementSibling.hidden = false;
+    more.remove();
+    return;
+  }
+  const tab = event.target.closest("[data-tab]");
+  if (tab && event.button === 0 && !event.metaKey && !event.ctrlKey) {
+    event.preventDefault();
+    showTab(tab);
+    return;
+  }
   const flag = event.target.closest("[data-flag]");
   if (flag) {
     toggleFlag(flag);
@@ -465,9 +515,7 @@ function pinyinWords(block) {
   const words = pieces.flatMap((piece, index) =>
     /\p{L}/u.test(piece) ? [index] : [],
   );
-  const count = block
-    .closest(".check-item")
-    .querySelectorAll(".check-sentence .token").length;
+  const count = Number(block.dataset.tokens);
   return { field, pieces, words: words.length === count ? words : [] };
 }
 
@@ -483,7 +531,17 @@ function syncReadings(block) {
       input.disabled = current === null;
       input.checked = input.value.toLowerCase() === current;
     }
+    showMeanings(reading);
   }
+}
+
+function showMeanings(reading) {
+  const picked = reading.querySelector("input:checked");
+  const value = picked ? picked.value.toLowerCase() : "";
+  for (const line of reading.parentElement.querySelectorAll(
+    "[data-meanings-for]",
+  ))
+    line.hidden = line.dataset.meaningsFor !== value;
 }
 
 function chooseReading(input) {
@@ -498,6 +556,7 @@ function chooseReading(input) {
     : input.value;
   pieces[index] = before + value + after;
   field.value = pieces.join("");
+  showMeanings(input.closest(".reading"));
 }
 
 document.addEventListener("input", (event) => {

@@ -1,4 +1,5 @@
 from datetime import timedelta
+from typing import Any
 
 from flask import Blueprint, redirect, render_template, request
 from werkzeug.wrappers import Response
@@ -6,7 +7,13 @@ from werkzeug.wrappers import Response
 from yiju.core.dictionary import published
 from yiju.core.scheduling import now_utc
 from yiju.storage.database import settings
-from yiju.storage.pending import FORMAT, NAME_FORMAT, preview, waiting
+from yiju.storage.pending import (
+    FORMAT,
+    NAME_FORMAT,
+    Preview,
+    preview,
+    waiting,
+)
 from yiju.storage.queue import overview
 from yiju.storage.stats import activity
 
@@ -15,6 +22,13 @@ from .library import item_location, item_response, library_counts, library_respo
 
 pages = Blueprint("pages", __name__)
 FORECAST_DAYS = 7
+CHECK_TABS = {
+    "sentences": "Sentences",
+    "words": "Words",
+    "names": "Names",
+    "edits": "Edits",
+    "removals": "Removals",
+}
 
 
 @pages.get("/")
@@ -66,9 +80,33 @@ def import_page() -> str:
     )
 
 
+def check_tabs(result: Preview) -> list[dict[str, Any]]:
+    return [
+        {
+            "key": key,
+            "label": label,
+            "items": items,
+            "problems": result.problems[key],
+        }
+        for key, label in CHECK_TABS.items()
+        if (items := result.section(key))
+    ]
+
+
 @pages.get("/pending")
 def pending_page() -> str:
-    return render_template("pending.html", pending=preview(database()))
+    result = preview(database())
+    tabs = check_tabs(result)
+    keys = [tab["key"] for tab in tabs]
+    wanted = request.args.get("tab", "")
+    return render_template(
+        "pending.html",
+        pending=result,
+        tabs=tabs,
+        selected=wanted if wanted in keys else next(iter(keys), ""),
+        word_index={word.word: index for index, word in enumerate(result.words)},
+        new_words={word.word: word for word in result.words},
+    )
 
 
 @pages.get("/library")

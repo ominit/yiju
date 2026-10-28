@@ -1,4 +1,5 @@
 import gzip
+import re
 import sqlite3
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -18,7 +19,7 @@ from conftest import (
 )
 
 from yiju.storage.database import settings
-from yiju.storage.pending import stage
+from yiju.storage.pending import editing, propose_removal, propose_sentence, stage
 from yiju.web import create_app
 
 if TYPE_CHECKING:
@@ -226,7 +227,7 @@ def test_discarding_and_bad_input_leave_the_library_alone(
     assert client.post("/import", data={"text": "你好 | Hello"}).status_code == 400
     start_import(client, "你好 | Hello\n")
     response = client.post("/pending", data={**check_form(client), "step": "discard"})
-    assert response.headers["Location"] == "/import"
+    assert response.headers["Location"] == "/pending"
     with database(app) as db:
         assert db.execute("SELECT count(*) FROM pending_sentences").fetchone()[0] == 0
         assert db.execute("SELECT count(*) FROM words").fetchone()[0] == 0
@@ -333,3 +334,60 @@ def test_about_page_credits_cc_cedict(client: FlaskClient) -> None:
     assert "CC-CEDICT" in page
     assert "creativecommons.org/licenses/by-sa/4.0" in page
     assert "Denisowski" in page
+
+
+def test_library_changes_wait_on_the_check_screen(
+    client: FlaskClient, app: Flask
+) -> None:
+    with database(app) as db:
+        add(db, "我喜欢喝茶。 | I like drinking tea.\n我去。 | I am going.\n")
+        stage_changes(db)
+    tabs = page_context(client, "/pending")["tabs"]
+    assert [(tab["key"], len(tab["items"]), tab["problems"]) for tab in tabs] == [
+        ("edits", 1, ()),
+        ("removals", 1, ()),
+    ]
+    assert page_context(client, "/pending")["selected"] == "edits"
+    assert page_context(client, "/pending?tab=removals")["selected"] == "removals"
+    assert page_context(client, "/pending?tab=nonsense")["selected"] == "edits"
+    html = client.get("/pending").get_data(as_text=True)
+    assert re.search(r'data-tab-panel="edits"\s*>', html)
+    assert re.search(r'data-tab-panel="removals"\s+hidden', html)
+    assert "changes <strong>2</strong> items already in your library" in html
+    assert '<del class="token gone" title="Leaves this sentence">喝茶</del>' in html
+    assert "Deletes its cards" not in html
+    assert ">Sentence 2<" not in html
+    assert '<span class="word-row-han" lang="zh-Hans">去</span>' in html
+    assert html.count('<span class="status status-adding">Adding</span>') == 2
+    form = check_form(client)
+    form["c1-translation"] = "I like tea."
+    response = client.post("/pending", data={**form, "approve-change": "1"})
+    page = client.get(response.headers["Location"]).get_data(as_text=True)
+    assert "Changed 我喜欢喝茶。 and added 2 new words." in page
+    with database(app) as db:
+        assert (
+            db.execute("SELECT translation FROM sentences WHERE id = 1").fetchone()[0]
+            == "I like tea."
+        )
+    response = client.post(
+        "/pending",
+        data={**check_form(client), "discard-change": "2", "tab": "removals"},
+    )
+    assert response.headers["Location"] == "/pending?tab=removals"
+    page = client.get(response.headers["Location"]).get_data(as_text=True)
+    assert "Discarded the change." in page
+    assert "Nothing is waiting for your check." in page
+    with database(app) as db:
+        stage_changes(db, sentence=False)
+    response = client.post("/pending", data={**check_form(client), "step": "approve"})
+    page = client.get(response.headers["Location"]).get_data(as_text=True)
+    assert "Made 1 change to your library." in page
+    with database(app) as db:
+        assert [row[0] for row in db.execute("SELECT id FROM sentences")] == [1]
+
+
+def stage_changes(db: sqlite3.Connection, *, sentence: bool = True) -> None:
+    with editing(db):
+        if sentence:
+            propose_sentence(db, 1, words="我 喜欢 喝 茶")
+        propose_removal(db, "sentence", "2")

@@ -24,9 +24,15 @@ address in --url or YIJU_URL. Imports never change the library directly:
 anything else waiting there, and prints what it staged with any problems.
 Agents can revise waiting items with the edit commands, but only the user can
 approve them. `yiju names add` does the same for the names that fill the
-people in sentences.
+people in sentences. `yiju library` proposes changes to approved sentences and
+words, which also wait on the check screen until the user approves them.
 """
 DEFAULT_URL = "http://127.0.0.1:8000"
+REMOVALS = {
+    "remove-sentence": "sentences",
+    "remove-word": "words",
+    "remove-change": "changes",
+}
 WIDTH = 100
 
 type Body = dict[str, object]
@@ -112,7 +118,51 @@ def _parser() -> argparse.ArgumentParser:
             "names", help="List names and add or revise names waiting for a check."
         )
     )
+    _library_parser(
+        commands.add_parser(
+            "library",
+            help="Propose changes to approved sentences and words. They wait for a "
+            "check like imports.",
+        )
+    )
     return parser
+
+
+def _library_parser(library: argparse.ArgumentParser) -> None:
+    actions = library.add_subparsers(dest="action", required=True)
+    sentence = actions.add_parser(
+        "edit-sentence",
+        help="Propose a new split, pinyin, translation or rules for a sentence. "
+        "Options you leave out keep their current or already proposed value.",
+    )
+    sentence.add_argument("id", type=int, help="The sentence's ID in the library.")
+    sentence.add_argument("--words", help='Space-separated words, e.g. "我 很 好".')
+    sentence.add_argument("--pinyin")
+    sentence.add_argument("--translation")
+    sentence.add_argument(
+        "--rules", help='Gender rules, e.g. "A=male A!=B". An empty value clears them.'
+    )
+    remove = actions.add_parser(
+        "remove-sentence",
+        help="Propose deleting a sentence with its cards and review history.",
+    )
+    remove.add_argument("id", type=int, help="The sentence's ID in the library.")
+    word = actions.add_parser(
+        "edit-word", help="Propose your own definition for a word in the library."
+    )
+    word.add_argument("word")
+    word.add_argument("--pinyin", help="The reading for your meanings.")
+    word.add_argument(
+        "--meanings", required=True, help="Meanings separated by newlines or \\n."
+    )
+    remove_word = actions.add_parser(
+        "remove-word",
+        help="Propose deleting a word with its cards and review history. No "
+        "sentence may use it by then.",
+    )
+    remove_word.add_argument("word")
+    for action in actions.choices.values():
+        _url(action)
 
 
 def _import_parser(imports: argparse.ArgumentParser) -> None:
@@ -149,6 +199,10 @@ def _import_parser(imports: argparse.ArgumentParser) -> None:
         "remove-word", help="Drop a word that is waiting on its own."
     )
     remove_word.add_argument("word")
+    remove_change = actions.add_parser(
+        "remove-change", help="Drop a proposed change to the library."
+    )
+    remove_change.add_argument("id", type=int)
     for name, action in actions.choices.items():
         if name != "format":
             _url(action)
@@ -234,11 +288,33 @@ def _import(args: argparse.Namespace) -> Call:
                 else args.meanings.replace("\\n", "\n"),
             },
         )
-    if args.action == "remove-sentence":
-        return "POST", _path("pending", "sentences", args.id, "remove"), {}
-    if args.action == "remove-word":
-        return "POST", _path("pending", "words", args.word, "remove"), {}
+    if args.action in REMOVALS:
+        key = args.word if args.action == "remove-word" else args.id
+        return "POST", _path("pending", REMOVALS[args.action], key, "remove"), {}
     return "GET", "/pending", None
+
+
+def _library(args: argparse.Namespace) -> Call:
+    if args.action == "edit-sentence":
+        return (
+            "POST",
+            _path("library", "sentences", args.id),
+            {
+                "words": args.words,
+                "pinyin": args.pinyin,
+                "translation": args.translation,
+                "rules": args.rules,
+            },
+        )
+    if args.action == "remove-sentence":
+        return "POST", _path("library", "sentences", args.id, "remove"), {}
+    if args.action == "edit-word":
+        return (
+            "POST",
+            _path("library", "words", args.word),
+            {"pinyin": args.pinyin, "meanings": args.meanings.replace("\\n", "\n")},
+        )
+    return "POST", _path("library", "words", args.word, "remove"), {}
 
 
 def _names(args: argparse.Namespace) -> Call:
@@ -278,6 +354,7 @@ CALLS: dict[str, Callable[[argparse.Namespace], Call]] = {
     ),
     "import": _import,
     "names": _names,
+    "library": _library,
 }
 
 

@@ -6,7 +6,7 @@ from fsrs import Card
 from yiju.core.names import clean_rules, slot_error
 from yiju.core.text import contains_han
 
-from .cards import create_cards
+from .cards import card_ids, create_cards, delete_cards
 from .database import ConflictError, parameters, transaction
 from .graph import refresh
 
@@ -55,6 +55,13 @@ def status(row: sqlite3.Row, cards: Iterable[sqlite3.Row], values: Parameters) -
         for card in shown
     )
     return "learned" if learned else "learning"
+
+
+def sentence_status(connection: sqlite3.Connection, row: sqlite3.Row) -> str:
+    cards = connection.execute(
+        "SELECT * FROM cards WHERE sentence_id = ? ORDER BY id", (row["id"],)
+    ).fetchall()
+    return status(row, cards, parameters(connection))
 
 
 def statuses(connection: sqlite3.Connection) -> dict[int, str]:
@@ -156,3 +163,45 @@ def set_hidden(
             (int(hidden), sentence_id),
         )
         refresh(connection, words_of(connection, sentence_id))
+
+
+def replace_sentence(
+    connection: sqlite3.Connection,
+    sentence_id: int,
+    words: tuple[str, ...],
+    pinyin: str,
+    translation: str,
+    rules: str,
+) -> None:
+    old = words_of(connection, sentence_id)
+    connection.execute(
+        "UPDATE sentences SET pinyin = ?, translation = ?, rules = ?, "
+        "version = version + 1 WHERE id = ?",
+        (pinyin, translation, rules, sentence_id),
+    )
+    if words != old:
+        connection.execute(
+            "UPDATE sentences SET state = 'locked' WHERE id = ?", (sentence_id,)
+        )
+        connection.execute(
+            "DELETE FROM sentence_words WHERE sentence_id = ?", (sentence_id,)
+        )
+        connection.executemany(
+            "INSERT INTO sentence_words(sentence_id, position, word) VALUES (?, ?, ?)",
+            [(sentence_id, position, word) for position, word in enumerate(words)],
+        )
+    refresh(connection, (*old, *words))
+
+
+def delete_sentence(connection: sqlite3.Connection, sentence_id: int) -> None:
+    old = words_of(connection, sentence_id)
+    delete_cards(connection, card_ids(connection, sentence_id=sentence_id))
+    connection.execute(
+        "DELETE FROM review_changes WHERE kind = 'sentence' AND key = ?",
+        (str(sentence_id),),
+    )
+    connection.execute(
+        "DELETE FROM sentence_words WHERE sentence_id = ?", (sentence_id,)
+    )
+    connection.execute("DELETE FROM sentences WHERE id = ?", (sentence_id,))
+    refresh(connection, old)

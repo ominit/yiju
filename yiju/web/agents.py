@@ -82,10 +82,18 @@ def _pending(touched: pending.Staged | None = None) -> dict[str, Any]:
         result["sentences"] = [
             sentence for sentence in result["sentences"] if sentence["id"] in shown_ids
         ]
+        result["changes"] = [
+            change for change in result["changes"] if change["id"] in touched.changes
+        ]
         shown = {
             token["text"]
             for sentence in result["sentences"]
             for token in sentence["words"]
+        } | {
+            token["text"]
+            for change in result["changes"]
+            if change["kind"] == "sentence" and "after" in change
+            for token in change["after"]["words"]
         }
         result["words"] = [
             word
@@ -235,6 +243,63 @@ def edit_pending_word(word: str) -> dict[str, Any]:
 def remove_pending_word(word: str) -> dict[str, Any]:
     with pending.editing(database()):
         pending.remove_word(database(), word)
+    return _pending(pending.Staged())
+
+
+@agents.post("/library/sentences/<int:sentence_id>")
+def propose_sentence(sentence_id: int) -> dict[str, Any]:
+    data = _body()
+    words = _optional(data, "words", str)
+    with pending.editing(database()):
+        error = (
+            None
+            if words is None
+            else pending.library_words_error(database(), sentence_id, words)
+        )
+        if error is not None:
+            raise ValueError(error)
+        change = pending.propose_sentence(
+            database(),
+            sentence_id,
+            words=words,
+            pinyin=_optional(data, "pinyin", str),
+            translation=_optional(data, "translation", str),
+            rules=_optional(data, "rules", str),
+        )
+    return _pending(pending.Staged(changes=(change,)))
+
+
+@agents.post("/library/sentences/<int:sentence_id>/remove")
+def propose_sentence_removal(sentence_id: int) -> dict[str, Any]:
+    with pending.editing(database()):
+        change = pending.propose_removal(database(), "sentence", str(sentence_id))
+    return _pending(pending.Staged(changes=(change,)))
+
+
+@agents.post("/library/words/<word>")
+def propose_word(word: str) -> dict[str, Any]:
+    data = _body()
+    meanings = _optional(data, "meanings", str)
+    if meanings is None:
+        abort(400, "Missing meanings.")
+    with pending.editing(database()):
+        change = pending.propose_word(
+            database(), word, meanings=meanings, pinyin=_optional(data, "pinyin", str)
+        )
+    return _pending(pending.Staged(changes=(change,)))
+
+
+@agents.post("/library/words/<word>/remove")
+def propose_word_removal(word: str) -> dict[str, Any]:
+    with pending.editing(database()):
+        change = pending.propose_removal(database(), "word", word)
+    return _pending(pending.Staged(changes=(change,)))
+
+
+@agents.post("/pending/changes/<int:change_id>/remove")
+def remove_pending_change(change_id: int) -> dict[str, Any]:
+    with pending.editing(database()):
+        pending.remove_change(database(), change_id)
     return _pending(pending.Staged())
 
 

@@ -84,8 +84,12 @@ same check screen.
 The CLI is meant for scripts and LLM agents, and every command except `serve`
 and `backup` prints JSON. An agent can generate sentences, stage them with
 `yiju import add`, and revise them with `yiju import edit-sentence` and
-`yiju import edit-word`. It cannot approve them. Approving happens only in the
-web app, so you see everything before it reaches your library.
+`yiju import edit-word`. With `yiju library` it can also propose a new split,
+pinyin, translation or definition for something already in your library, or
+propose deleting it. Those changes wait on the same check screen, showing what
+is there now next to what it would become. It cannot approve anything.
+Approving happens only in the web app, so you see everything before it reaches
+your library.
 
 These commands talk to a running server through its `/api/agent` routes, so
 they work from any machine that can reach it. Pass the address with `--url` or

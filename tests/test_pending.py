@@ -180,7 +180,7 @@ def test_only_words_waiting_on_their_own_can_be_removed(
         remove_word(connection, "很")
     result = preview(connection)
     assert "你好" not in {word.word for word in result.words}
-    assert result.adds == {"sentences": 1, "words": 3, "names": 0}
+    assert result.adds == {"sentences": 1, "words": 3, "names": 0, "changes": 0}
 
 
 def test_sentences_already_in_the_library_are_not_added_twice(
@@ -214,6 +214,8 @@ def test_later_additions_join_the_same_check_and_need_another_look(
         "words": 4,
         "sentences": 2,
         "names": 0,
+        "changes": 0,
+        "waiting": 0,
     }
     assert preview(connection).empty
     assert waiting(connection) == 0
@@ -242,6 +244,12 @@ def test_words_with_several_readings_offer_them_with_the_one_in_use(
     de = next(token for token in tokens if token.text == "得")
     assert [choice.pinyin for choice in de.choices] == ["dé", "de", "děi", "dè"]
     assert de.choices[0].meaning == "to obtain"
+    assert de.choices[0].meanings[0] == "to obtain"
+    assert len(de.choices[0].meanings) > 1
+    assert preview(connection).to_json()["sentences"][0]["words"][2]["choices"][0] == {
+        "pinyin": "dé",
+        "meaning": "to obtain",
+    }
     assert de.pinyin == "dé"
     assert de.meanings is not None
     assert de.meanings[0] == "to obtain"

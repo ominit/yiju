@@ -4,7 +4,7 @@ from fsrs import Card
 
 from yiju.core.strength import Parameters, Strength, learned
 
-from .cards import create_cards
+from .cards import card_ids, create_cards, delete_cards
 from .database import ConflictError, transaction
 from .graph import refresh
 
@@ -77,6 +77,24 @@ def set_paused(
             "UPDATE cards SET suspended = ?, version = version + 1 WHERE word = ?",
             (int(paused), word),
         )
+
+
+def set_readings(connection: sqlite3.Connection, word: str, readings: str) -> None:
+    connection.execute(
+        "UPDATE words SET readings = ?, source = 'manual', version = version + 1 "
+        "WHERE word = ?",
+        (readings, word),
+    )
+
+
+def delete_word(connection: sqlite3.Connection, word: str) -> None:
+    delete_cards(connection, card_ids(connection, word=word))
+    connection.execute("DELETE FROM review_words WHERE word = ?", (word,))
+    connection.execute(
+        "DELETE FROM review_changes WHERE kind = 'word' AND key = ?", (word,)
+    )
+    connection.execute("DELETE FROM flags WHERE word = ?", (word,))
+    connection.execute("DELETE FROM words WHERE word = ?", (word,))
 
 
 def reclassify(connection: sqlite3.Connection, parameters: Parameters) -> None:

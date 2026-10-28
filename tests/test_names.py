@@ -186,9 +186,15 @@ def test_slot_sentences_and_names_wait_on_the_same_check(
         ("王芳", "Wáng Fāng", "Wang Fang"),
         ("李伟", "Lǐ Wěi", "Li Wei"),
     ]
-    assert result.adds == {"sentences": 1, "words": 0, "names": 2}
+    assert result.adds == {"sentences": 1, "words": 0, "names": 2, "changes": 0}
     assert waiting(connection) == 3
-    assert approve_all(connection) == {"words": 0, "sentences": 1, "names": 2}
+    assert approve_all(connection) == {
+        "words": 0,
+        "sentences": 1,
+        "names": 2,
+        "changes": 0,
+        "waiting": 0,
+    }
     assert [
         row["word"] for row in connection.execute("SELECT word FROM sentence_words")
     ] == ["喜欢"]

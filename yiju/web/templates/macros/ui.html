@@ -51,6 +51,9 @@
       <path d="m13.5 6.5 4 4" />
     {%- elif name == 'pause' -%}
       <path d="M8.5 5v14M15.5 5v14" />
+    {%- elif name == 'copy' -%}
+      <rect x="8.5" y="8.5" width="11" height="11" rx="2" />
+      <path d="M15.5 5.5v-.5a1.5 1.5 0 0 0-1.5-1.5H6A1.5 1.5 0 0 0 4.5 5v8A1.5 1.5 0 0 0 6 14.5h.5" />
     {%- elif name == 'check' -%}
       <path d="m5 12.5 4.5 4.5L19 7.5" />
     {%- elif name == 'more' -%}
@@ -101,12 +104,19 @@
     <p class="muted">No definition</p>
   {% endif %}
 {% endmacro %}
+{% macro more(items, limit=4) -%}
+  {{ items[:limit] | join("; ") }}
+  {%- if items | length > limit -%}
+    <span class="more-rest" hidden>; {{ items[limit:] | join("; ") }}</span>
+    <button class="more" type="button" data-more>and {{ items | length - limit }} more</button>
+  {%- endif -%}
+{%- endmacro %}
 {% macro brief(readings, limit=4) %}
   <ul class="brief">
     {% for reading in readings %}
       <li>
         <span class="reading-pinyin">{{ reading.pinyin }}</span>
-        {{ reading.senses[:limit] | map(attribute='text') | join('; ') }}{% if reading.senses|length > limit %}<span class="muted">and {{ reading.senses|length - limit }} more</span>{% endif %}
+        {{ more(reading.senses | map(attribute='text') | list, limit) }}
       </li>
     {% endfor %}
   </ul>

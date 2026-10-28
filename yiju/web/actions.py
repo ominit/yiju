@@ -24,18 +24,23 @@ from yiju.storage.pending import (
     NAME_FORMAT,
     FormatError,
     approve,
+    approve_change,
     approve_name,
     approve_sentence,
+    approve_word,
     discard,
+    edit_change,
     edit_name,
     edit_sentence,
     edit_word,
     editing,
     preview,
+    remove_change,
     remove_sentence,
     remove_word,
     stage,
     stage_names,
+    version,
     waiting,
 )
 from yiju.storage.pending import (
@@ -46,6 +51,7 @@ from yiju.storage.words import reclassify, set_manual, set_paused
 
 from . import database, refresh_caches
 from .library import item_response
+from .pages import CHECK_TABS
 
 if TYPE_CHECKING:
     from werkzeug.wrappers import Response
@@ -148,6 +154,17 @@ def _apply_edits(connection: sqlite3.Connection) -> None:
             english=form.get(f"{prefix}-english"),
             gender=form.get(f"{prefix}-gender"),
         )
+    for change_id in json.loads(form.get("changes", "[]")):
+        prefix = f"c{change_id}"
+        edit_change(
+            connection,
+            int(change_id),
+            words=form.get(f"{prefix}-words"),
+            pinyin=form.get(f"{prefix}-pinyin"),
+            translation=form.get(f"{prefix}-translation"),
+            rules=form.get(f"{prefix}-rules"),
+            meanings=form.get(f"{prefix}-meanings"),
+        )
 
 
 def _discard_item(connection: sqlite3.Connection) -> str | None:
@@ -155,6 +172,9 @@ def _discard_item(connection: sqlite3.Connection) -> str | None:
     if form.get("discard") is not None:
         remove_sentence(connection, integer("discard"))
         return "Discarded the sentence."
+    if form.get("discard-change") is not None:
+        remove_change(connection, integer("discard-change"))
+        return "Discarded the change."
     if form.get("discard-name") is not None:
         remove_pending_name(connection, integer("discard-name"))
         return "Discarded the name."
@@ -166,43 +186,73 @@ def _discard_item(connection: sqlite3.Connection) -> str | None:
 
 
 def _added(added: dict[str, int]) -> str:
+    waiting = added.get("waiting", 0)
+    if not waiting:
+        return _done(added)
+    left = (
+        f"{waiting} removal{'' if waiting == 1 else 's'} still "
+        f"wait{'s' if waiting == 1 else ''} on other changes, so approve those first."
+    )
+    if not any(added[kind] for kind in ("sentences", "words", "names", "changes")):
+        return left.capitalize()
+    return f"{_done(added)} {left.capitalize()}"
+
+
+def _done(added: dict[str, int]) -> str:
+    changed = added.get("changes", 0)
     parts = [
         f"{added[kind]} {kind if added[kind] != 1 else kind[:-1]}"
         for kind in ("sentences", "words", "names")
-        if added[kind] or kind != "names"
+        if added[kind] or (kind != "names" and not changed)
     ]
-    return f"Added {', '.join(parts[:-1])} and {parts[-1]}."
+    if not changed:
+        return f"Added {', '.join(parts[:-1])} and {parts[-1]}."
+    changes = f"made {changed} change{'' if changed == 1 else 's'} to your library"
+    if not parts:
+        return f"{changes.capitalize()}."
+    added_text = (
+        parts[0] if len(parts) == 1 else f"{', '.join(parts[:-1])} and {parts[-1]}"
+    )
+    return f"Added {added_text}, and {changes}."
 
 
 @actions.post("/pending")
 def save_pending() -> Response:
     connection = database()
     step = request.form.get("step", "save")
-    location = url_for("pages.pending_page")
+    tab = request.form.get("tab")
+    section = tab if tab in CHECK_TABS else None
+    location = url_for("pages.pending_page", tab=section)
     checked = request.form.get("version", "")
     try:
         if step == "discard":
-            discard(connection, checked)
-            flash("Discarded everything waiting for your check.")
-            return redirect(url_for("pages.import_page"), code=303)
+            discard(connection, checked, section)
+            flash(
+                "Discarded everything waiting for your check."
+                if section is None
+                else f"Discarded all {CHECK_TABS[section].lower()}."
+            )
+            return redirect(location, code=303)
         with editing(connection, checked):
             _apply_edits(connection)
             discarded = _discard_item(connection)
+            fresh = version(connection)
         if discarded is not None:
             flash(discarded)
             return redirect(location, code=303)
         single = request.form.get("approve")
         message = None
         if request.form.get("approve-name") is not None:
-            approve_name(
-                connection,
-                preview(connection).version,
-                integer("approve-name"),
-                now_utc(),
-            )
+            approve_name(connection, fresh, integer("approve-name"), now_utc())
             message = "Added the name."
+        elif request.form.get("approve-change") is not None:
+            message = _approve_change(connection, fresh)
+        elif request.form.get("approve-word") is not None:
+            word = request.form.get("approve-word", "")
+            approve_word(connection, fresh, word, now_utc())
+            message = f"Added {word}."
         elif step == "approve" or single is not None:
-            message = _approve_items(connection, single)
+            message = _approve_items(connection, fresh, single, section)
     except (ConflictError, LookupError) as error:
         flash(str(error))
         return redirect(location, code=303)
@@ -212,9 +262,14 @@ def save_pending() -> Response:
     return redirect(location, code=303)
 
 
-def _approve_items(connection: sqlite3.Connection, single: str | None) -> str | None:
+def _approve_items(
+    connection: sqlite3.Connection,
+    checked: str,
+    single: str | None,
+    section: str | None,
+) -> str | None:
     result = preview(connection)
-    words = {word.word for word in result.words}
+    words = {word.word for word in result.words if result.wanted(word, section)}
     sentence = None
     if single is not None:
         sentence_id = integer("approve")
@@ -229,11 +284,35 @@ def _approve_items(connection: sqlite3.Connection, single: str | None) -> str | 
         flash("The word list changed. Check the new words, then approve again.")
         return None
     if sentence is None:
-        return _added(approve(connection, result.version, now_utc()))
-    added = approve_sentence(connection, result.version, sentence.id, now_utc())
+        return _added(approve(connection, checked, now_utc(), section))
+    added = approve_sentence(connection, checked, sentence.id, now_utc())
     count = added["words"]
     return f"Added {sentence.chinese}" + (
         f" with {count} new word{'' if count == 1 else 's'}." if count else ""
+    )
+
+
+def _approve_change(connection: sqlite3.Connection, checked: str) -> str | None:
+    result = preview(connection)
+    change_id = integer("approve-change")
+    change = next((item for item in result.changes if item.id == change_id), None)
+    if change is None:
+        flash("That change is no longer waiting for your check.")
+        return None
+    words = {word.word for word in result.words}
+    if change.after is not None:
+        words &= {token.text for token in change.after.words}
+    else:
+        words = set()
+    if words - set(json.loads(request.form.get("shown", "[]"))):
+        flash("The word list changed. Check the new words, then approve again.")
+        return None
+    added = approve_change(connection, checked, change_id, now_utc())
+    count = added["words"]
+    subject = change.target if change.before is None else change.before.chinese
+    verb = "Removed" if change.action == "remove" else "Changed"
+    return f"{verb} {subject}" + (
+        f" and added {count} new word{'' if count == 1 else 's'}." if count else "."
     )
 
 

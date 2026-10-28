@@ -131,6 +131,18 @@ def check_form(client: FlaskClient) -> dict[str, str]:
     for index, word in enumerate(waiting.words):
         form[f"w{index}-pinyin"] = word.pinyin
         form[f"w{index}-meanings"] = word.meanings
+    form["changes"] = json.dumps([change.id for change in waiting.changes])
+    for change in waiting.changes:
+        prefix = f"c{change.id}"
+        if change.after is not None:
+            form[f"{prefix}-words"] = " ".join(
+                token.text for token in change.after.words
+            )
+            form[f"{prefix}-pinyin"] = change.after.pinyin
+            form[f"{prefix}-translation"] = change.after.translation
+        elif change.kind == "word" and change.action == "edit":
+            form[f"{prefix}-pinyin"] = change.pinyin
+            form[f"{prefix}-meanings"] = change.meanings
     return form
 
 
