@@ -13,7 +13,7 @@ def test_manifest_provides_standalone_study_app_and_valid_icons(
     assert response.mimetype == "application/manifest+json"
     manifest = response.get_json()
     assert manifest["id"] == "/"
-    assert manifest["start_url"] == "/study"
+    assert manifest["start_url"] == "/"
     assert manifest["scope"] == "/"
     assert manifest["display"] == "standalone"
     assert f'name="theme-color" content="{manifest["theme_color"]}"' in client.get(

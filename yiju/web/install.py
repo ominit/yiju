@@ -11,7 +11,7 @@ def manifest() -> Response:
         short_name="Yiju",
         description="Chinese vocabulary and sentence study",
         lang="en",
-        start_url=url_for("study.page"),
+        start_url=url_for("pages.home"),
         scope=url_for("pages.home"),
         display="standalone",
         background_color="#0e1012",
