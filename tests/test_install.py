@@ -34,7 +34,10 @@ def test_pages_include_install_metadata_and_settings_controls(
     client: FlaskClient,
 ) -> None:
     page = client.get("/settings").get_data(as_text=True)
-    assert 'rel="manifest" href="/manifest.webmanifest"' in page
+    assert (
+        'rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials"'
+        in " ".join(page.split())
+    )
     assert 'rel="apple-touch-icon"' in page
     assert 'name="apple-mobile-web-app-capable" content="yes"' in page
     assert "data-install" in page
