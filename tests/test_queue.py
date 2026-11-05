@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from conftest import add, set_strength, states
 
 from yiju.storage.learning import review_card
-from yiju.storage.queue import counts, overview, study_queue
+from yiju.storage.queue import counts, overview, study_queue, upcoming
 
 if TYPE_CHECKING:
     import sqlite3
@@ -212,3 +212,22 @@ def test_overview_counts_states(connection: sqlite3.Connection) -> None:
     assert stats["sentences_eligible"] == 4
     assert stats["sentences_locked"] == 1
     assert stats["pending"] == 0
+
+
+def test_upcoming_lists_reviews_to_come_and_the_next_day_new_cards(
+    connection: sqlite3.Connection,
+) -> None:
+    add(connection, PHRASES, NOW)
+    limit(connection, 2)
+    queue = study_queue(connection, NOW)
+    for row in queue:
+        rate(connection, row, NOW, 4)
+    schedule = upcoming(connection, NOW)
+    reviewed = connection.execute(
+        "SELECT due FROM cards WHERE reviews > 0 ORDER BY due, id"
+    ).fetchall()
+    assert schedule["times"] == [row["due"] for row in reviewed]
+    assert schedule["day_end"] == "2026-10-02T00:00:00+00:00"
+    assert schedule["new_next_day"] == 2
+    later = NOW + timedelta(days=400)
+    assert upcoming(connection, later)["times"] == []

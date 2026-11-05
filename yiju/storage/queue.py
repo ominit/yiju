@@ -23,7 +23,7 @@ CARD_QUERY = (
     "LEFT JOIN sentences s ON s.id = c.sentence_id "
 )
 STUDYABLE = (
-    "WHERE c.suspended = 0 AND c.due <= ? "
+    "WHERE c.suspended = 0 "
     "AND ((c.word IS NOT NULL AND w.state != 'locked') "
     "OR (s.state = 'unlocked' AND s.hidden = 0)) "
 )
@@ -61,19 +61,14 @@ def _askable(card: sqlite3.Row) -> bool:
     return bool(prompt_senses(card["readings"]))
 
 
-def study_queue(
-    connection: sqlite3.Connection, now: datetime, *, card_id: int | None = None
+def _studyable(
+    connection: sqlite3.Connection, condition: str, parameters: tuple[object, ...]
 ) -> list[sqlite3.Row]:
-    now = now.astimezone(UTC)
     available = name_counts(connection)
-    rows: list[sqlite3.Row] = [
+    return [
         row
         for row in connection.execute(
-            CARD_QUERY
-            + STUDYABLE
-            + ("AND c.id = ? " if card_id is not None else "")
-            + "ORDER BY c.due, c.id",
-            (now.isoformat(), card_id) if card_id is not None else (now.isoformat(),),
+            CARD_QUERY + STUDYABLE + condition + "ORDER BY c.due, c.id", parameters
         )
         if _askable(row)
         and (
@@ -81,6 +76,17 @@ def study_queue(
             or needs(row["chinese"], row["rules"], available) is None
         )
     ]
+
+
+def study_queue(
+    connection: sqlite3.Connection, now: datetime, *, card_id: int | None = None
+) -> list[sqlite3.Row]:
+    now = now.astimezone(UTC)
+    rows = _studyable(
+        connection,
+        "AND c.due <= ? " + ("AND c.id = ? " if card_id is not None else ""),
+        (now.isoformat(), card_id) if card_id is not None else (now.isoformat(),),
+    )
     random = SystemRandom()
     reviews = [row for row in rows if row["reviews"]]
     started = [row for row in rows if not row["reviews"] and row["started"]]
@@ -91,6 +97,24 @@ def study_queue(
         0, int(settings(connection)["new_per_day"]) - introduced_today(connection, now)
     )
     return reviews + (started + fresh)[:remaining]
+
+
+def upcoming(connection: sqlite3.Connection, now: datetime) -> dict[str, object]:
+    now = now.astimezone(UTC)
+    end = day_bounds(now)[1]
+    return {
+        "times": [
+            row["due"]
+            for row in _studyable(
+                connection, "AND c.reviews > 0 AND c.due > ? ", (now.isoformat(),)
+            )
+        ],
+        "day_end": f"{end}T00:00:00+00:00",
+        "new_next_day": min(
+            int(settings(connection)["new_per_day"]),
+            len(_studyable(connection, "AND c.reviews = 0 AND c.due < ? ", (end,))),
+        ),
+    }
 
 
 def counts(queue: list[sqlite3.Row]) -> dict[str, int]:

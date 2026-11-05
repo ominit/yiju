@@ -14,7 +14,7 @@ from yiju.storage.pending import (
     preview,
     waiting,
 )
-from yiju.storage.queue import overview
+from yiju.storage.queue import overview, upcoming
 from yiju.storage.stats import activity
 
 from . import database
@@ -56,17 +56,14 @@ def home() -> str:
         for offset in range(FORECAST_DAYS)
         for day in [now.date() + timedelta(days=offset)]
     ]
-    upcoming = connection.execute(
-        "SELECT min(due) FROM cards WHERE reviews > 0 AND suspended = 0 AND due > ?",
-        (now.isoformat(),),
-    ).fetchone()[0]
     return render_template(
         "home.html",
         stats=stats,
         activity=activity(connection, now),
         forecast=forecast,
         forecast_max=max(1, *(day["count"] for day in forecast)),
-        upcoming=upcoming,
+        schedule=upcoming(connection, now)
+        | {"reviews": stats["due"], "new": stats["new"], "today": stats["today"]},
     )
 
 

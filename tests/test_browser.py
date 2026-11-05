@@ -2,6 +2,7 @@ import json
 import re
 import threading
 import time
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -269,3 +270,23 @@ def test_missed_words_are_sent_with_a_sentence_rating(
         assert dict(db.execute("SELECT word, role FROM review_words").fetchall()) == {
             "去": "marked"
         }
+
+
+def test_today_counts_a_review_once_it_comes_due(page: Page, server: Server) -> None:
+    server.only("上", "recognition")
+    due = datetime.now(UTC) + timedelta(seconds=3)
+    with server.database() as db:
+        db.execute(
+            "UPDATE cards SET reviews = 1, due = ? WHERE suspended = 0",
+            (due.isoformat(),),
+        )
+    page.goto(server.url)
+    page.evaluate("window.marker = 1")
+    heading = page.locator(".greeting h1")
+    study = page.locator(".greeting").get_by_role("link", name="Study")
+    expect(heading).to_have_text("All caught up.")
+    expect(page.locator(".greeting time")).to_be_visible()
+    expect(study).to_be_hidden()
+    expect(heading).to_have_text("1 review today.", timeout=10000)
+    expect(study).to_be_visible()
+    assert page.evaluate("window.marker") == 1

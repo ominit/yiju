@@ -45,7 +45,9 @@
       <a class="button primary" href="{{ url_for('pages.import_page') }}">{{ icon("plus") }}Add sentences</a>
     </section>
   {% else %}
-    <header class="greeting">
+    {% set waiting = not total and not stats.learning and not stats.learned and not stats.unlocked %}
+    <header class="greeting"
+            {% if not waiting %} data-schedule='{{ schedule | tojson }}'{% endif %}>
       <div class="greeting-copy">
         {% if total %}
           <h1>
@@ -54,19 +56,21 @@
             {%- if stats.new %}{{ stats.new }} new card{{ '' if stats.new == 1 else 's' }}{% endif %} today.
           </h1>
           <p>{{ stats.today ~ ' done so far.' if stats.today else 'Nothing done yet.' }}</p>
-        {% elif not stats.learning and not stats.learned and not stats.unlocked %}
+        {% elif waiting %}
           <h1>Nothing is unlocked yet.</h1>
           <p>Every sentence has more than two words you have not learned. Unlock a few words by hand in the <a class="link" href="{{ url_for('pages.library', filter='locked') }}">library</a>, or add short phrases of one or two words.</p>
         {% else %}
           <h1>All caught up.</h1>
           <p>
-            {% if upcoming %}Next review <time datetime="{{ upcoming }}" data-relative>{{ upcoming[:16].replace('T', ' ') }}</time>.{% else %}Nothing is scheduled.{% endif %}
+            {% if schedule.times %}Next review <time datetime="{{ schedule.times[0] }}" data-relative>{{ schedule.times[0][:16].replace('T', ' ') }}</time>.{% else %}Nothing is scheduled.{% endif %}
             {% if stats.today %}{{ stats.today }} done today.{% endif %}
           </p>
         {% endif %}
       </div>
-      {% if total %}
-        <a class="button primary large" href="{{ url_for('study.page') }}">Study {{ icon('next', 18) }}</a>
+      {% if not waiting %}
+        <a class="button primary large"
+           href="{{ url_for('study.page') }}"
+           {% if not total %} hidden{% endif %}>Study {{ icon('next', 18) }}</a>
       {% endif %}
     </header>
     <div class="dashboard">

@@ -18,6 +18,7 @@ let navigating = false;
 let visiting = 0;
 let installPrompt = null;
 let speaker = null;
+let clock = null;
 
 function csrf() {
   return document.querySelector('meta[name="csrf"]')?.content || "";
@@ -39,6 +40,54 @@ function formatTimes(root = document) {
     if (!Number.isNaN(date.getTime()))
       element.textContent = date.toLocaleString();
   }
+}
+
+function counted(count, word) {
+  return `${count} ${word}${count === 1 ? "" : "s"}`;
+}
+
+function updateGreeting() {
+  clearTimeout(clock);
+  const greeting = document.querySelector("[data-schedule]");
+  if (!greeting) return;
+  const schedule = JSON.parse(greeting.dataset.schedule);
+  const now = Date.now();
+  const dayEnd = Date.parse(schedule.day_end);
+  const later = schedule.times.filter((time) => Date.parse(time) > now);
+  const rolled = now >= dayEnd;
+  const reviews = schedule.reviews + schedule.times.length - later.length;
+  const fresh = rolled ? schedule.new_next_day : schedule.new;
+  const today = rolled ? 0 : schedule.today;
+  const heading = document.createElement("h1");
+  const line = document.createElement("p");
+  if (reviews || fresh) {
+    heading.textContent = `${[
+      reviews && counted(reviews, "review"),
+      fresh && counted(fresh, "new card"),
+    ]
+      .filter(Boolean)
+      .join(" and ")} today.`;
+    line.textContent = today ? `${today} done so far.` : "Nothing done yet.";
+  } else {
+    heading.textContent = "All caught up.";
+    if (later.length) {
+      const time = document.createElement("time");
+      time.dateTime = later[0];
+      time.dataset.relative = "";
+      line.append("Next review ", time, ".");
+    } else line.append("Nothing is scheduled.");
+    if (today) line.append(` ${today} done today.`);
+  }
+  const copy = greeting.querySelector(".greeting-copy");
+  copy.replaceChildren(heading, line);
+  formatTimes(copy);
+  greeting.querySelector(".button").hidden = !(reviews || fresh);
+  const next = Math.min(
+    later.length ? Date.parse(later[0]) : Infinity,
+    rolled ? Infinity : dayEnd,
+    now + 30000,
+  );
+  clock = setTimeout(updateGreeting, Math.max(next - now, 0) + 250);
 }
 
 async function errorMessage(response) {
@@ -107,6 +156,7 @@ const progress = {
 
 async function mountPage() {
   formatTimes();
+  updateGreeting();
   enhance(document);
   for (const button of document.querySelectorAll("[data-back]"))
     button.hidden = history.length < 2;
@@ -126,6 +176,7 @@ async function mountPage() {
 }
 
 function unmountPage() {
+  clearTimeout(clock);
   page?.unmount();
   page = null;
 }
@@ -610,6 +661,10 @@ window.addEventListener("popstate", (event) => {
     push: false,
     scroll: positions.get(event.state?.key) || 0,
   });
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) updateGreeting();
 });
 
 window.addEventListener("scroll", remember, { passive: true });
