@@ -6,7 +6,7 @@ from fsrs import Card
 
 from yiju.core.definitions import prompt_senses, readings_payload
 from yiju.core.dictionary import decode, readings_pinyin
-from yiju.core.names import Name, chinese_text, english, letters, prompt, reading
+from yiju.core.names import Name, chinese_text, english, letters, reading
 from yiju.core.pronunciation import pronunciation
 from yiju.core.scheduling import intervals, now_utc
 from yiju.core.strength import MEMORY
@@ -166,9 +166,6 @@ def card_payload(
             "translation": translation
             if picks is None
             else english(translation, picks),
-            "translationParts": [(translation, "")]
-            if picks is None
-            else prompt(translation, picks),
             "tokens": tokens,
             "words": words,
         }

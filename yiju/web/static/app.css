@@ -1701,11 +1701,6 @@ a.token:hover {
   font-size: 0.6em;
 }
 
-.proper-name {
-  padding-bottom: 1px;
-  border-bottom: 2px solid currentColor;
-}
-
 .name-fields {
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }

@@ -97,7 +97,6 @@ def test_sentence_cards_list_each_word_with_its_status(
         "pinyin": "wǒ qù.",
         "translation": "I am going.",
     }
-    assert card["translationParts"] == [["I am going.", ""]]
     assert card["tokens"] == [
         {"text": "我", "status": "learning"},
         {"text": "去", "status": "learning"},

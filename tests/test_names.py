@@ -16,7 +16,6 @@ from yiju.core.names import (
     name_pinyin,
     parse_rules,
     pick,
-    prompt,
     reading,
     slot_error,
 )
@@ -145,12 +144,6 @@ def test_names_fill_the_sentence_pinyin_and_translation() -> None:
     assert english(translation, picks) == (
         "Wang Fang likes Li Wei. She gave her her own herself."
     )
-    assert prompt("{A} likes {B}.", picks) == [
-        ("Wang Fang", "王芳"),
-        (" likes ", ""),
-        ("Li Wei", "李伟"),
-        (".", ""),
-    ]
 
 
 def test_name_pinyin_handles_surnames() -> None:
@@ -276,7 +269,6 @@ def test_study_cards_show_random_names_with_matching_audio(
     assert card["translation"] == (
         f"{card['names']['A']['english']} likes {card['names']['B']['english']}."
     )
-    assert card["translationParts"][0] == [card["names"]["A"]["english"], first]
     assert card["sentence"]["translation"] == "{A} likes {B}."
     assert card["reading"][0][2] == "name:A"
     assert "?names=" in card["audio"]

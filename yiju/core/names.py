@@ -383,19 +383,6 @@ def english(translation: str, names: Mapping[str, Name]) -> str:
     return SLOT.sub(lambda match: _english(match, names), translation)
 
 
-def prompt(translation: str, names: Mapping[str, Name]) -> list[tuple[str, str]]:
-    parts = []
-    position = 0
-    for match in NAME_SLOT.finditer(translation):
-        if match.group(1) not in names:
-            continue
-        parts.append((english(translation[position : match.start()], names), ""))
-        parts.append((names[match.group(1)].english, names[match.group(1)].chinese))
-        position = match.end()
-    parts.append((english(translation[position:], names), ""))
-    return [part for part in parts if part[0]]
-
-
 def _surname(chinese: str) -> int:
     return 2 if len(chinese) > 2 and chinese[:2] in COMPOUND_SURNAMES else 1  # noqa: PLR2004
 

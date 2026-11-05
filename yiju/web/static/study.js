@@ -80,7 +80,7 @@ function plural(count, word) {
   return `${count} ${word}${count === 1 ? "" : "s"}`;
 }
 
-function hanzi(reading, names = {}) {
+function hanzi(reading) {
   const element = h("span", { class: "hanzi", lang: "zh-Hans" });
   if (reading.length === 1 && reading[0][0].length > 4 && reading[0][1]) {
     element.append(
@@ -105,27 +105,12 @@ function hanzi(reading, names = {}) {
       : null;
   const lead = hang(reading.slice(0, start), "start");
   if (lead) element.append(lead);
-  let group = null;
-  for (const [text, syllable, kind = ""] of reading.slice(start, end)) {
-    const glyphs = syllable
-      ? [h("ruby", {}, ...strokes.glyphs(text), h("rt", {}, syllable))]
-      : strokes.glyphs(text);
-    if (!kind.startsWith("name:")) {
-      group = null;
-      element.append(...glyphs);
-      continue;
-    }
-    if (group?.dataset.name !== kind) {
-      const name = names[kind.slice(5)];
-      group = h("span", {
-        class: "proper-name",
-        title: name ? `${name.english}, a name` : null,
-        dataset: { name: kind },
-      });
-      element.append(group);
-    }
-    group.append(...glyphs);
-  }
+  for (const [text, syllable] of reading.slice(start, end))
+    element.append(
+      ...(syllable
+        ? [h("ruby", {}, ...strokes.glyphs(text), h("rt", {}, syllable))]
+        : strokes.glyphs(text)),
+    );
   const trail = hang(reading.slice(end), "end");
   if (trail) element.append(trail);
   return element;
@@ -349,18 +334,6 @@ function missToggle(word) {
   );
 }
 
-function promptText(parts) {
-  return parts.map(([text, name]) =>
-    name
-      ? h(
-          "span",
-          { class: "proper-name", lang: "zh-Hans", title: `${text}, a name` },
-          name,
-        )
-      : text,
-  );
-}
-
 function sentenceEditor(card) {
   const field = (name, label, value, attributes = {}) =>
     h(
@@ -407,7 +380,7 @@ function renderCard(card) {
     {
       class: `headword${sentence ? " sentence" : ""}${sentence && card.text.length > 16 ? " long" : ""}`,
     },
-    hanzi(card.reading, card.names),
+    hanzi(card.reading),
     sayButton(),
   );
   if (sentence)
@@ -422,7 +395,7 @@ function renderCard(card) {
         ? h(
             "p",
             { class: "prompt prompt-translation" },
-            h("span", {}, promptText(card.translationParts)),
+            h("span", {}, card.translation),
           )
         : h("div", { class: "prompt" }, promptList(card.prompt)),
     );
