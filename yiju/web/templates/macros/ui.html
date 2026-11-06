@@ -126,7 +126,7 @@
     <span class="status status-hidden">{{ hidden_label }}</span>
   {%- else -%}
     <span class="status status-{{ state }}"
-          {% if title %} title="{{ title }}"{% endif %}>{{ {'learned': 'Learned', 'learning': 'Learning', 'unlocked': 'New', 'locked': 'Locked', 'eligible': 'Eligible'}[state] }}</span>
+          {% if title %} title="{{ title }}"{% endif %}>{{ {'learned': 'Learned', 'familiar': 'Familiar', 'learning': 'Learning', 'unlocked': 'New', 'locked': 'Locked', 'eligible': 'Eligible'}[state] }}</span>
   {%- endif -%}
 {%- endmacro %}
 {% macro meter(value, maximum, label) -%}

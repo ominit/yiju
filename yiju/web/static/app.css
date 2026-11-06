@@ -15,6 +15,7 @@
   --accent-soft: rgb(142 211 177 / 0.12);
   --again: #ee7f75;
   --hard: #e6b766;
+  --familiar: #c3cd78;
   --good: #82d1a2;
   --easy: #7db1f0;
   --new: #3d454c;
@@ -742,6 +743,11 @@ select {
   background: var(--accent);
 }
 
+.fill-familiar {
+  fill: var(--familiar);
+  background: var(--familiar);
+}
+
 .fill-learning {
   fill: var(--hard);
   background: var(--hard);
@@ -1084,6 +1090,11 @@ select {
 .status-learned {
   background: var(--accent-soft);
   color: var(--accent);
+}
+
+.status-familiar {
+  background: rgb(195 205 120 / 0.13);
+  color: var(--familiar);
 }
 
 .status-learning {
@@ -2208,6 +2219,10 @@ main.study {
   color: var(--accent);
 }
 
+.strength.familiar .strength-label {
+  color: var(--familiar);
+}
+
 .strength:not(:has(.strength-bar)) .strength-label {
   color: var(--ink-2);
 }
@@ -2228,6 +2243,10 @@ main.study {
 
 .strength.learned .strength-fill {
   fill: var(--accent);
+}
+
+.strength.familiar .strength-fill {
+  fill: var(--familiar);
 }
 
 .strength-value {
@@ -2259,6 +2278,11 @@ main.study {
 .strength.learned .strength-days i.on {
   border-color: var(--accent);
   background: var(--accent);
+}
+
+.strength.familiar .strength-days i.on {
+  border-color: var(--familiar);
+  background: var(--familiar);
 }
 
 .card-footer {

@@ -2,7 +2,7 @@ from typing import TYPE_CHECKING, cast
 
 from fsrs import Card
 
-from yiju.core.strength import Parameters, Strength, learned
+from yiju.core.strength import Parameters, Strength, familiar, learned
 
 from .cards import card_ids, create_cards, delete_cards
 from .database import ConflictError, transaction
@@ -16,7 +16,9 @@ if TYPE_CHECKING:
 def status(row: sqlite3.Row) -> str:
     if row["state"] != "seen":
         return str(row["state"])
-    return "learned" if row["learned"] else "learning"
+    if row["learned"]:
+        return "learned"
+    return "familiar" if row["familiar"] else "learning"
 
 
 def strength(row: sqlite3.Row) -> Strength:
@@ -25,6 +27,7 @@ def strength(row: sqlite3.Row) -> Strength:
         int(row["success_days"]),
         row["last_success"],
         bool(row["learned"]),
+        bool(row["familiar"]),
     )
 
 
@@ -101,15 +104,25 @@ def reclassify(connection: sqlite3.Connection, parameters: Parameters) -> None:
     changed = []
     for row in connection.execute("SELECT * FROM words WHERE memory IS NOT NULL"):
         current = strength(row)
-        value = learned(
-            current.stability,
-            current.success_days,
-            parameters,
-            was_learned=current.learned,
+        values = (
+            learned(
+                current.stability,
+                current.success_days,
+                parameters,
+                was_learned=current.learned,
+            ),
+            familiar(
+                current.stability,
+                current.success_days,
+                parameters,
+                was_familiar=current.familiar,
+            ),
         )
-        if value != current.learned:
-            changed.append((int(value), row["word"]))
+        if values != (current.learned, current.familiar):
+            changed.append((*map(int, values), row["word"]))
     connection.executemany(
-        "UPDATE words SET learned = ?, version = version + 1 WHERE word = ?", changed
+        "UPDATE words SET learned = ?, familiar = ?, version = version + 1 "
+        "WHERE word = ?",
+        changed,
     )
     refresh(connection)

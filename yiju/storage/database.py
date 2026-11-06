@@ -6,6 +6,8 @@ from pathlib import Path
 
 from yiju.core.strength import Parameters
 
+from .graph import refresh
+
 type Migration = Callable[[sqlite3.Connection], None]
 
 
@@ -25,8 +27,29 @@ def add_pending_changes(connection: sqlite3.Connection) -> None:
     )
 
 
+def add_familiar(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        "ALTER TABLE words ADD COLUMN familiar INTEGER NOT NULL DEFAULT 0"
+    )
+    for column in ("familiar_before", "familiar_after"):
+        connection.execute(
+            f"ALTER TABLE review_words ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0"
+        )
+    values = Parameters.from_settings(settings(connection))
+    connection.execute(
+        "UPDATE words SET familiar = 1 WHERE memory IS NOT NULL "
+        "AND json_extract(memory, '$.stability') >= ? AND success_days >= ?",
+        (values.familiar_stability, values.familiar_days),
+    )
+    connection.execute(
+        "UPDATE review_words SET familiar_before = w.familiar, "
+        "familiar_after = w.familiar FROM words w WHERE w.word = review_words.word"
+    )
+    refresh(connection)
+
+
 BASELINE_VERSION = 1
-MIGRATIONS: tuple[Migration, ...] = (add_pending_changes,)
+MIGRATIONS: tuple[Migration, ...] = (add_pending_changes, add_familiar)
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)
 
 DEFAULT_SETTINGS: dict[str, int | float | bool] = {

@@ -61,8 +61,8 @@ def set_strength(
     )
     connection.execute(
         "UPDATE words SET state = 'seen', memory = ?, success_days = ?, "
-        "last_success = ?, learned = ? WHERE word = ?",
-        (memory.to_json(), 3, now.date().isoformat(), int(learned), word),
+        "last_success = ?, learned = ?, familiar = ? WHERE word = ?",
+        (memory.to_json(), 3, now.date().isoformat(), int(learned), int(learned), word),
     )
     refresh(connection, [word])
     connection.commit()

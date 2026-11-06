@@ -60,6 +60,9 @@ actions = Blueprint("actions", __name__)
 SETTING_RANGES = {
     "new_per_day": (0, 200),
     "retention": (0.7, 0.99),
+    "familiar_stability": (0.5, 365.0),
+    "unfamiliar_stability": (0.1, 365.0),
+    "familiar_days": (1, 30),
     "learned_stability": (1.0, 365.0),
     "unlearned_stability": (0.5, 365.0),
     "learned_days": (1, 30),
@@ -394,6 +397,10 @@ def save_settings() -> Response:
         values[key] = int(value) if isinstance(low, int) else value
     if values["unlearned_stability"] > values["learned_stability"]:
         abort(400, "A word must drop out below the stability it needs to be learned.")
+    if values["unfamiliar_stability"] > values["familiar_stability"]:
+        abort(400, "A word must drop out below the stability it needs to be familiar.")
+    if values["familiar_stability"] > values["learned_stability"]:
+        abort(400, "A word must become familiar before it can be learned.")
     connection = database()
     with transaction(connection):
         connection.executemany(

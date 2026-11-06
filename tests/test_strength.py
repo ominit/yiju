@@ -3,14 +3,14 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from fsrs import Rating
 
-from yiju.core.strength import Parameters, Strength, learned, review
+from yiju.core.strength import Parameters, Strength, familiar, learned, review
 
 START = datetime(2026, 10, 1, 9, tzinfo=UTC)
 PARAMETERS = Parameters()
 
 
 def fresh() -> Strength:
-    return Strength(None, 0, None, learned=False)
+    return Strength(None, 0, None, learned=False, familiar=False)
 
 
 def test_full_reviews_count_success_days_once_per_day() -> None:
@@ -55,7 +55,7 @@ def test_learned_needs_strength_and_days_then_holds_until_a_real_drop() -> None:
 
 
 def test_time_off_does_not_unlearn_a_word() -> None:
-    strength = Strength(None, 0, None, learned=False)
+    strength = Strength(None, 0, None, learned=False, familiar=False)
     now = START
     for day in (0, 1, 3, 8, 20):
         now = START + timedelta(days=day)
@@ -67,7 +67,7 @@ def test_time_off_does_not_unlearn_a_word() -> None:
 
 
 def test_a_lapse_drops_a_learned_word_back_to_learning() -> None:
-    strength = Strength(None, 0, None, learned=False)
+    strength = Strength(None, 0, None, learned=False, familiar=False)
     now = START
     for day in (0, 1, 3, 8):
         now = START + timedelta(days=day)
@@ -82,3 +82,23 @@ def test_parameters_read_from_settings_keep_their_types() -> None:
     assert parameters.learned_days == 4
     assert isinstance(parameters.learned_days, int)
     assert parameters.learned_stability == PARAMETERS.learned_stability
+
+
+def test_familiar_needs_strength_and_days_then_holds_until_a_real_drop() -> None:
+    assert not familiar(5, 1, PARAMETERS, was_familiar=False)
+    assert not familiar(1.9, 4, PARAMETERS, was_familiar=False)
+    assert familiar(2, 2, PARAMETERS, was_familiar=False)
+    assert familiar(1, 0, PARAMETERS, was_familiar=True)
+    assert not familiar(0.9, 9, PARAMETERS, was_familiar=True)
+
+
+def test_reviews_make_a_word_familiar_before_it_is_learned() -> None:
+    strength = fresh()
+    now = START
+    for day in (0, 1):
+        now = START + timedelta(days=day)
+        strength = review(strength, Rating.Good, 1.0, now, PARAMETERS)
+    assert strength.success_days == 2
+    assert strength.stability >= PARAMETERS.familiar_stability
+    assert strength.familiar
+    assert not strength.learned

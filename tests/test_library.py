@@ -56,7 +56,7 @@ def test_sentences_are_filtered_by_state(client: FlaskClient, app: Flask) -> Non
         {"text": "学习", "status": "locked"},
         {"text": "中文", "status": "locked"},
     ]
-    assert "3 words are not learned yet" in detail["details"]["reason"]
+    assert "3 words not familiar yet" in detail["details"]["reason"]
 
 
 def test_sentences_are_learning_until_both_cards_are_strong(

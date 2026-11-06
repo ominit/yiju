@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     import sqlite3
     from datetime import datetime
 
-WORD_STATUSES = ("locked", "unlocked", "learning", "learned")
+WORD_STATUSES = ("locked", "unlocked", "learning", "familiar", "learned")
 SENTENCE_STATUSES = ("locked", "eligible", "unlocked", "learning", "learned")
 
 
@@ -164,6 +164,8 @@ def review_log(
             "success_days_before": row["success_days_before"],
             "learned_before": bool(row["learned_before"]),
             "learned_after": bool(row["learned_after"]),
+            "familiar_before": bool(row["familiar_before"]),
+            "familiar_after": bool(row["familiar_after"]),
             "parameters": json.loads(row["parameters"]),
         }
         for row in connection.execute(

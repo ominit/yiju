@@ -25,7 +25,9 @@ def see(connection: sqlite3.Connection, word: str) -> None:
 
 
 def forget(connection: sqlite3.Connection, word: str) -> None:
-    connection.execute("UPDATE words SET learned = 0 WHERE word = ?", (word,))
+    connection.execute(
+        "UPDATE words SET learned = 0, familiar = 0 WHERE word = ?", (word,)
+    )
     refresh(connection, [word])
     connection.commit()
 
@@ -154,3 +156,16 @@ def test_a_full_rebuild_matches_incremental_updates(
     refresh(connection)
     assert states(connection) == words
     assert states(connection, "sentences") == sentences
+
+
+def test_a_familiar_word_counts_as_known_for_unlocking(
+    connection: sqlite3.Connection,
+) -> None:
+    add(connection, SENTENCES)
+    assert states(connection, "sentences")["我很好"] == "locked"
+    set_strength(connection, "我", stability=2.5, learned=False)
+    assert states(connection, "sentences")["我很好"] == "locked"
+    connection.execute("UPDATE words SET familiar = 1 WHERE word = '我'")
+    refresh(connection, ["我"])
+    assert states(connection, "sentences")["我很好"] == "eligible"
+    assert states(connection)["很"] == "unlocked"

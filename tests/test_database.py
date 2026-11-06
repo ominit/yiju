@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -165,3 +166,41 @@ def test_a_baseline_database_gains_the_pending_changes_table(tmp_path: Path) -> 
         path, "pending_changes"
     )
     assert (tmp_path / f"yiju.v{database.BASELINE_VERSION}.sqlite3").exists()
+
+
+def test_a_database_without_familiar_works_it_out_from_word_strength(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "yiju.sqlite3"
+    with connect(path) as db:
+        db.executescript((Path(database.__file__).with_name("schema.sql")).read_text())
+        db.execute(f"PRAGMA user_version = {database.BASELINE_VERSION}")
+        for word, state, stability, days in (
+            ("我", "seen", 2.5, 2),
+            ("你", "seen", 1.5, 4),
+            ("他", "locked", 9, 1),
+        ):
+            db.execute(
+                "INSERT INTO words(word, readings, source, state, memory, "
+                "success_days, created) VALUES (?, '[]', 'cedict', ?, ?, ?, "
+                "'2026-10-01')",
+                (word, state, json.dumps({"stability": stability}), days),
+            )
+        db.execute(
+            "INSERT INTO sentences(id, chinese, pinyin, translation, created) "
+            "VALUES (1, '我你他', 'wǒ nǐ tā', 'me, you, him', '2026-10-01')"
+        )
+        db.executemany(
+            "INSERT INTO sentence_words(sentence_id, position, word) VALUES (1, ?, ?)",
+            enumerate("我你他"),
+        )
+    initialize(path)
+    assert version(path) == SCHEMA_VERSION
+    assert {"familiar_before", "familiar_after"} <= columns(path, "review_words")
+    with connect(path) as db:
+        assert dict(db.execute("SELECT word, familiar FROM words").fetchall()) == {
+            "我": 1,
+            "你": 0,
+            "他": 0,
+        }
+        assert db.execute("SELECT state FROM sentences").fetchone()[0] == "eligible"

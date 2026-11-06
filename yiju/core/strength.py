@@ -13,6 +13,9 @@ MEMORY = Scheduler(enable_fuzzing=False, learning_steps=(), relearning_steps=())
 
 @dataclass(frozen=True, slots=True)
 class Parameters:
+    familiar_stability: float = 2.0
+    unfamiliar_stability: float = 1.0
+    familiar_days: int = 2
     learned_stability: float = 7.0
     unlearned_stability: float = 3.0
     learned_days: int = 3
@@ -31,6 +34,9 @@ class Parameters:
 
     def values(self) -> dict[str, int | float]:
         return {
+            "familiar_stability": self.familiar_stability,
+            "unfamiliar_stability": self.unfamiliar_stability,
+            "familiar_days": self.familiar_days,
             "learned_stability": self.learned_stability,
             "unlearned_stability": self.unlearned_stability,
             "learned_days": self.learned_days,
@@ -48,6 +54,7 @@ class Strength:
     success_days: int
     last_success: str | None
     learned: bool
+    familiar: bool
 
     def recall(self, now: datetime) -> float | None:
         if self.memory is None:
@@ -83,6 +90,17 @@ def learned(
     )
 
 
+def familiar(
+    stability: float, success_days: int, parameters: Parameters, *, was_familiar: bool
+) -> bool:
+    if was_familiar:
+        return stability >= parameters.unfamiliar_stability
+    return (
+        stability >= parameters.familiar_stability
+        and success_days >= parameters.familiar_days
+    )
+
+
 def review(
     strength: Strength,
     rating: Rating,
@@ -110,4 +128,7 @@ def review(
         days,
         last_success,
         learned(full.stability or 0.0, days, parameters, was_learned=strength.learned),
+        familiar(
+            full.stability or 0.0, days, parameters, was_familiar=strength.familiar
+        ),
     )

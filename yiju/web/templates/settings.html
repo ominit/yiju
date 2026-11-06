@@ -31,8 +31,15 @@
       {{ number('retention', 'Target retention', 'How likely you should be to remember a card when it comes due. Higher means more reviews.', 0.7, 0.99, 0.01) }}
     </section>
     <section class="panel settings-group">
+      <h2>When a word counts as familiar</h2>
+      <p class="muted small">A sentence becomes eligible when all but two of its words are familiar or learned.</p>
+      {{ number('familiar_stability', 'Memory strength to become familiar (days)', "The word memory's FSRS stability: days until recall would fall to 90%.", 0.5, 365, 0.1) }}
+      {{ number('familiar_days', 'Successful days to become familiar', "Separate days with a passing review of the word's own cards since its last failure.", 1, 30) }}
+      {{ number('unfamiliar_stability', 'Memory strength to drop back (days)', 'A familiar word returns to learning only when a failure pushes its strength below this.', 0.1, 365, 0.1) }}
+    </section>
+    <section class="panel settings-group">
       <h2>When a word counts as learned</h2>
-      <p class="muted small">A sentence becomes eligible when all but two of its words are learned. These values were chosen by simulation and are recorded with every review, so they can be retuned from your own history.</p>
+      <p class="muted small">These values were chosen by simulation and are recorded with every review, so they can be retuned from your own history.</p>
       {{ number('learned_stability', 'Memory strength to become learned (days)', "The word memory's FSRS stability: days until recall would fall to 90%.", 1, 365, 0.1) }}
       {{ number('learned_days', 'Successful days to become learned', "Separate days with a passing review of the word's own cards since its last failure.", 1, 30) }}
       {{ number('unlearned_stability', 'Memory strength to drop back (days)', 'A learned word returns to learning only when a failure pushes its strength below this.', 0.5, 365, 0.1) }}

@@ -133,11 +133,11 @@ function unstudied(title) {
   );
 }
 
-function meter({ label, stability, value, learned, summary, extra }) {
+function meter({ label, stability, value, level, summary, extra }) {
   const fill = Math.min(1, stability / state.learnedAt.stability) * 100;
   return h(
     "span",
-    { class: `strength${learned ? " learned" : ""}`, title: summary },
+    { class: `strength${level ? ` ${level}` : ""}`, title: summary },
     h("span", { class: "sr-only" }, summary),
     h("span", { class: "strength-label", "aria-hidden": "true" }, label),
     svg(
@@ -173,11 +173,15 @@ function strength(word) {
   const goal = state.learnedAt;
   const { stability, days, recall } = word.strength;
   const learned = word.status === "learned";
-  const label = learned ? "Learned" : "Learning";
+  const label =
+    {
+      learned: "Learned",
+      familiar: "Familiar",
+    }[word.status] ?? "Learning";
   return meter({
     label,
     stability,
-    learned,
+    level: word.status === "learning" ? null : word.status,
     value: learned ? `${stability}d` : `${stability}/${goal.stability}d`,
     summary:
       `${label}: memory strength ${stability} of ${goal.stability} days, ` +
@@ -198,7 +202,7 @@ function sentenceStrength(card) {
   return meter({
     label: "Sentence",
     stability,
-    learned: stability >= state.learnedAt.stability,
+    level: stability >= state.learnedAt.stability ? "learned" : null,
     value: `${stability}d`,
     summary:
       `This sentence card: memory strength ${stability} days, ` +

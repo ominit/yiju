@@ -663,8 +663,8 @@ def _starts(words: tuple[str, ...], entry: Entry) -> str:
     statuses = [None if entry(word).new else entry(word).status for word in words]
     return sentence_state(
         "locked",
-        sum(status != "learned" for status in statuses),
-        sum(status not in {"learning", "learned"} for status in statuses),
+        sum(status not in {"familiar", "learned"} for status in statuses),
+        sum(status not in {"learning", "familiar", "learned"} for status in statuses),
         hidden=False,
     )
 

@@ -25,6 +25,7 @@ PAGE_SIZE = 50
 WORD_FILTERS = {
     "all": "All",
     "learning": "Learning",
+    "familiar": "Familiar",
     "learned": "Learned",
     "unlocked": "New",
     "locked": "Locked",
@@ -46,7 +47,14 @@ SORTS = {
     "recent": "Recently added",
     "length": "Shortest first",
 }
-STATUS_ORDER = {"learning": 0, "unlocked": 1, "eligible": 1, "locked": 2, "learned": 3}
+STATUS_ORDER = {
+    "learning": 0,
+    "familiar": 1,
+    "unlocked": 2,
+    "eligible": 2,
+    "locked": 3,
+    "learned": 4,
+}
 CARD_TYPES = {"recognition": "Read", "production": "Write"}
 
 
@@ -134,7 +142,7 @@ class Library:
         return [
             {"text": row["word"], "status": status(row)}
             for row in self.connection.execute(
-                "SELECT sw.word, w.state, w.learned FROM sentence_words sw "
+                "SELECT sw.word, w.state, w.learned, w.familiar FROM sentence_words sw "
                 "JOIN words w ON w.word = sw.word WHERE sw.sentence_id = ? "
                 "ORDER BY sw.position",
                 (sentence_id,),
@@ -282,7 +290,7 @@ def _sentence_reason(
     library: Library, tokens: list[dict[str, str]], item: LibraryItem
 ) -> str:
     words = {token["text"]: token["status"] for token in tokens}
-    unlearned = sum(status != "learned" for status in words.values())
+    unknown = sum(status not in {"familiar", "learned"} for status in words.values())
     unseen = sum(status in {"locked", "unlocked"} for status in words.values())
     if item.hidden:
         return "Skipped sentences never appear in study."
@@ -299,8 +307,8 @@ def _sentence_reason(
             "The sentence unlocks once you have seen every word."
         )
     return (
-        f"{unlearned} words are not learned yet. It becomes eligible at "
-        f"{MAX_UNLEARNED} or fewer."
+        f"{unknown} word{'s' if unknown != 1 else ''} not familiar yet. "
+        f"It becomes eligible at {MAX_UNLEARNED} or fewer."
     )
 
 

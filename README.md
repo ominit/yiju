@@ -20,15 +20,16 @@ who you are.
 Words and sentences form a graph. A sentence links the words inside it.
 
 - A word starts locked. It unlocks when it appears in a sentence where at most
-  two words are not learned yet, or when you unlock it by hand from its page.
+  two words are not familiar yet, or when you unlock it by hand from its page.
 - An unlocked word becomes a pair of cards: Chinese to meaning, and meaning to
   writing the characters.
 - Once you have studied every word in a sentence, the sentence unlocks and gets
   its own pair of cards.
 - Review results flow back into the words. Getting a sentence right or wrong
-  moves the strength of the words in it. A word counts as learned once FSRS
-  expects it to stick for a week and you have recalled it on three separate
-  days. Both numbers are in the settings.
+  moves the strength of the words in it. A word counts as familiar once FSRS
+  expects it to stick for two days and you have recalled it on two separate
+  days, and as learned once it would stick for a week and you have recalled it
+  on three. These numbers are in the settings.
 
 So a fresh library starts small. Short sentences unlock first, studying their
 words makes longer sentences reachable, and the rest of the library opens up

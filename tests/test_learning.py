@@ -186,7 +186,8 @@ def test_a_lapse_that_unlearns_a_word_relocks_the_graph_and_undo_restores_it(
     set_strength(connection, "我", stability=4, now=NOW)
     assert states(connection)["很"] == "unlocked"
     words_before = [
-        tuple(row) for row in connection.execute("SELECT * FROM words ORDER BY word")
+        {key: value for key, value in dict(row).items() if key != "version"}
+        for row in connection.execute("SELECT * FROM words ORDER BY word")
     ]
     review = rate(connection, card(connection, word="我"), 1, NOW + timedelta(days=3))
     assert word(connection, "我")["learned"] == 0
@@ -206,10 +207,10 @@ def test_a_lapse_that_unlearns_a_word_relocks_the_graph_and_undo_restores_it(
     undo_review(connection, review)
     assert states(connection, "sentences")["我很好"] == "eligible"
     after = [
-        tuple(row)[:-1]
+        {key: value for key, value in dict(row).items() if key != "version"}
         for row in connection.execute("SELECT * FROM words ORDER BY word")
     ]
-    assert after == [row[:-1] for row in words_before]
+    assert after == words_before
 
 
 def test_undo_restores_a_first_review_and_only_the_latest_can_be_undone(

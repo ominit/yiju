@@ -75,7 +75,7 @@
     </header>
     <div class="dashboard">
       <div class="panel overview">
-        {{ breakdown('Words', 'pages.library', [('learned', 'Learned', stats.learned, 'learned'), ('learning', 'Learning', stats.learning, 'learning'), ('unlocked', 'New', stats.unlocked, 'unlocked'), ('locked', 'Locked', stats.locked, 'locked')], stats.learned, 'learned') }}
+        {{ breakdown('Words', 'pages.library', [('learned', 'Learned', stats.learned, 'learned'), ('familiar', 'Familiar', stats.familiar, 'familiar'), ('learning', 'Learning', stats.learning, 'learning'), ('unlocked', 'New', stats.unlocked, 'unlocked'), ('locked', 'Locked', stats.locked, 'locked')], stats.learned, 'learned') }}
         {{ breakdown('Sentences', 'pages.sentences', [('learned', 'Learned', stats.sentences_learned, 'learned'), ('learning', 'Learning', stats.sentences_learning, 'learning'), ('unlocked', 'New', stats.sentences_unlocked, 'unlocked'), ('eligible', 'Eligible', stats.sentences_eligible, 'eligible'), ('locked', 'Locked', stats.sentences_locked, 'locked')], stats.sentences_learned, 'learned') }}
         <section class="column">
           <header class="column-head">

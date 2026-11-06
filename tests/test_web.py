@@ -244,6 +244,9 @@ def test_settings_validate_and_reclassify_words(
         "csrf": token,
         "new_per_day": 12,
         "retention": 0.9,
+        "familiar_stability": 2,
+        "unfamiliar_stability": 1,
+        "familiar_days": 2,
         "learned_stability": 14,
         "unlearned_stability": 12,
         "learned_days": 3,
@@ -263,6 +266,8 @@ def test_settings_validate_and_reclassify_words(
     assert "new_per_day" in invalid.json["error"]
     inverted = client.post("/settings", data={**data, "unlearned_stability": 20})
     assert inverted.status_code == 400
+    for wrong in ({"unfamiliar_stability": 3}, {"familiar_stability": 15}):
+        assert client.post("/settings", data={**data, **wrong}).status_code == 400
     assert (
         client.post("/settings", data={**data, "retention": "nan"}).status_code == 400
     )

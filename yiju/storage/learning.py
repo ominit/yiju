@@ -105,12 +105,14 @@ def review_card(
             memory = after.memory.to_json() if after.memory is not None else None
             connection.execute(
                 "UPDATE words SET memory = ?, success_days = ?, last_success = ?, "
-                "learned = ?, state = ?, version = version + 1 WHERE word = ?",
+                "learned = ?, familiar = ?, state = ?, version = version + 1 "
+                "WHERE word = ?",
                 (
                     memory,
                     after.success_days,
                     after.last_success,
                     int(after.learned),
+                    int(after.familiar),
                     state,
                     word,
                 ),
@@ -119,7 +121,8 @@ def review_card(
                 "INSERT INTO review_words(review_id, word, role, rating, weight, "
                 "recall_before, state_before, memory_before, memory_after, "
                 "success_days_before, last_success_before, learned_before, "
-                "learned_after) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "learned_after, familiar_before, familiar_after) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     review_id,
                     word,
@@ -134,9 +137,15 @@ def review_card(
                     before.last_success,
                     int(before.learned),
                     int(after.learned),
+                    int(before.familiar),
+                    int(after.familiar),
                 ),
             )
-            if after.learned != before.learned or state != row["state"]:
+            if (
+                after.learned != before.learned
+                or after.familiar != before.familiar
+                or state != row["state"]
+            ):
                 changed.append(word)
         connection.execute(
             "UPDATE cards SET scheduling = ?, due = ?, reviews = reviews + 1, "
@@ -183,12 +192,14 @@ def undo_review(connection: sqlite3.Connection, review_id: int) -> None:
         ).fetchall():
             connection.execute(
                 "UPDATE words SET memory = ?, success_days = ?, last_success = ?, "
-                "learned = ?, state = ?, version = version + 1 WHERE word = ?",
+                "learned = ?, familiar = ?, state = ?, version = version + 1 "
+                "WHERE word = ?",
                 (
                     row["memory_before"],
                     row["success_days_before"],
                     row["last_success_before"],
                     row["learned_before"],
+                    row["familiar_before"],
                     row["state_before"],
                     row["word"],
                 ),

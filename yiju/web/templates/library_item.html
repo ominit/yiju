@@ -141,7 +141,7 @@
               {% for token in details.tokens %}
                 <a class="token status-{{ token.status }}"
                    href="{{ url_for('pages.word_detail', word=token.text) }}"
-                   title="{{ {'learned': 'Learned', 'learning': 'Learning', 'unlocked': 'New', 'locked': 'Locked'}[token.status] }}">{{ token.text }}</a>
+                   title="{{ {'learned': 'Learned', 'familiar': 'Familiar', 'learning': 'Learning', 'unlocked': 'New', 'locked': 'Locked'}[token.status] }}">{{ token.text }}</a>
               {% endfor %}
             </p>
             <p class="muted small">{{ details.reason }}</p>

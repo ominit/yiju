@@ -127,7 +127,8 @@ def overview(connection: sqlite3.Connection, now: datetime) -> dict[str, int]:
     words = dict(
         connection.execute(
             "SELECT CASE WHEN state = 'seen' THEN "
-            "CASE WHEN learned THEN 'learned' ELSE 'learning' END "
+            "CASE WHEN learned THEN 'learned' WHEN familiar THEN 'familiar' "
+            "ELSE 'learning' END "
             "ELSE state END AS status, count(*) FROM words GROUP BY status"
         ).fetchall()
     )
@@ -140,6 +141,7 @@ def overview(connection: sqlite3.Connection, now: datetime) -> dict[str, int]:
     return {
         "words": sum(words.values()),
         "learned": words.get("learned", 0),
+        "familiar": words.get("familiar", 0),
         "learning": words.get("learning", 0),
         "unlocked": words.get("unlocked", 0),
         "locked": words.get("locked", 0),

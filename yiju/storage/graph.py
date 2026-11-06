@@ -7,7 +7,8 @@ if TYPE_CHECKING:
 
 SENTENCE_COUNTS = (
     "SELECT s.id, s.state, s.hidden, "
-    "count(DISTINCT CASE WHEN w.learned = 0 THEN w.word END) AS unlearned, "
+    "count(DISTINCT CASE WHEN w.learned = 0 AND w.familiar = 0 THEN w.word END) "
+    "AS unlearned, "
     "count(DISTINCT CASE WHEN w.state != 'seen' THEN w.word END) AS unseen "
     "FROM sentences s JOIN sentence_words sw ON sw.sentence_id = s.id "
     "JOIN words w ON w.word = sw.word WHERE ? IS NULL OR s.id IN "
