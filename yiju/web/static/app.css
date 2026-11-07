@@ -1140,6 +1140,10 @@ select {
   margin-top: 20px;
 }
 
+.pager > :first-child {
+  justify-self: start;
+}
+
 .pager > :last-child {
   justify-self: end;
 }
