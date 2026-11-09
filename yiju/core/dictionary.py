@@ -5,16 +5,20 @@ import os
 import re
 import tempfile
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import cache
 from pathlib import Path
 from threading import Lock
+from typing import TYPE_CHECKING
 
 from aiohttp import ClientError, ClientSession, ClientTimeout
 from pypinyin.contrib.tone_convert import to_tone
 
 from .normalization import normalize_text
 from .text import HAN
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 URL = "https://www.mdbg.net/chinese/export/cedict/cedict_1_0_ts_utf-8_mdbg.txt.gz"
 FILENAME = "cedict_ts.u8.gz"
@@ -353,6 +357,82 @@ def manual(reading: str, meanings: str) -> tuple[Reading, ...]:
         Sense(line.strip()) for line in meanings.splitlines() if line.strip()
     )
     return (Reading(normalize_text(reading), senses),) if senses else ()
+
+
+def _contents(readings: tuple[Reading, ...]) -> list[tuple[object, ...]]:
+    return sorted(
+        (
+            reading.pinyin,
+            reading.classifiers,
+            reading.traditional,
+            reading.also_pronounced,
+            sorted((sense.text, sense.notes, sense.usage) for sense in reading.senses),
+        )
+        for reading in readings
+    )
+
+
+def same_entries(first: tuple[Reading, ...], second: tuple[Reading, ...]) -> bool:
+    return _contents(first) == _contents(second)
+
+
+def _spelling(value: str) -> str:
+    return re.sub(r"[\s']", "", pinyin(normalize_text(value)))
+
+
+def _find(readings: tuple[Reading, ...], wanted: str) -> int:
+    key = _spelling(wanted)
+    matches = [
+        index
+        for index, reading in enumerate(readings)
+        if _spelling(reading.pinyin) == key
+    ] or [
+        index
+        for index, reading in enumerate(readings)
+        if _spelling(reading.pinyin).lower() == key.lower()
+    ]
+    if len(matches) > 1:
+        message = f"{wanted} matches more than one reading. Match the capitals."
+        raise ValueError(message)
+    if not matches:
+        message = (
+            f"{wanted} is not one of its readings, which are "
+            f"{', '.join(reading.pinyin for reading in readings)}."
+        )
+        raise ValueError(message)
+    return matches[0]
+
+
+def reorder(
+    readings: tuple[Reading, ...], order: Sequence[tuple[str, Sequence[int]]]
+) -> tuple[Reading, ...]:
+    chosen = [_find(readings, wanted) for wanted, _ in order]
+    if len(set(chosen)) != len(chosen):
+        message = "List each reading once."
+        raise ValueError(message)
+    placed = []
+    for index, (_, numbers) in zip(chosen, order, strict=True):
+        reading = readings[index]
+        picked = [number - 1 for number in numbers]
+        if len(set(picked)) != len(picked) or not all(
+            0 <= number < len(reading.senses) for number in picked
+        ):
+            message = (
+                f"The meanings of {reading.pinyin} are numbered 1 to "
+                f"{len(reading.senses)}. List each one at most once."
+            )
+            raise ValueError(message)
+        rest = [number for number in range(len(reading.senses)) if number not in picked]
+        placed.append(
+            replace(
+                reading,
+                senses=tuple(reading.senses[number] for number in [*picked, *rest]),
+            )
+        )
+    return (
+        *placed,
+        *(reading for index, reading in enumerate(readings) if index not in chosen),
+    )
 
 
 def readings_pinyin(readings: tuple[Reading, ...]) -> str:

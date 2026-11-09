@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 import pytest
 from conftest import add, set_strength
 
+from yiju.core.dictionary import decode, lookup, same_entries
 from yiju.storage.database import ConflictError
 from yiju.storage.learning import review_card
 from yiju.storage.pending import (
@@ -12,9 +13,12 @@ from yiju.storage.pending import (
     approve_word,
     discard,
     edit_change,
+    edit_word,
     editing,
     library_words_error,
+    order_word,
     preview,
+    propose_order,
     propose_removal,
     propose_sentence,
     propose_word,
@@ -454,3 +458,78 @@ def test_a_library_edit_after_loading_the_check_screen_is_not_undone(
         ]
         == "I love tea."
     )
+
+
+def senses(readings: str) -> list[tuple[str, list[str]]]:
+    return [
+        (reading.pinyin, [sense.text for sense in reading.senses])
+        for reading in decode(readings)
+    ]
+
+
+def test_a_new_order_keeps_the_dictionary_wording_on_approval(
+    connection: sqlite3.Connection,
+) -> None:
+    add(connection, "行\n", NOW)
+    hang, xing, heng = senses(
+        connection.execute("SELECT readings FROM words WHERE word = '行'").fetchone()[0]
+    )
+    for order, error in (
+        ([("zou3", [])], "is not one of its readings"),
+        ([("xing2", []), ("xíng", [])], "List each reading once."),
+        ([("xíng", [10])], "numbered 1 to 9"),
+        ([("xíng", [2, 2])], "numbered 1 to 9"),
+    ):
+        with pytest.raises(ValueError, match=error), editing(connection):
+            propose_order(connection, "行", order)
+    with editing(connection):
+        change = propose_order(connection, "行", [("xing2", [7, 6])])
+        propose_order(connection, "行", [("héng", []), ("xíng", [])])
+    [item] = preview(connection).changes
+    assert item.reorder
+    assert item.issues == ()
+    assert preview(connection).to_json()["changes"][0]["reorder"]
+    reordered = (xing[0], [xing[1][6], xing[1][5], *xing[1][:5], *xing[1][7:]])
+    assert senses(str(item.proposed)) == [heng, reordered, hang]
+    with editing(connection):
+        edit_change(connection, change)
+    approve_change(connection, preview(connection).version, change, NOW)
+    row = connection.execute(
+        "SELECT source, readings FROM words WHERE word = '行'"
+    ).fetchone()
+    assert row["source"] == "cedict"
+    assert senses(row["readings"]) == [heng, reordered, hang]
+
+
+def test_a_new_word_can_be_reordered_before_approval(
+    connection: sqlite3.Connection,
+) -> None:
+    stage(connection, "行\n")
+    with editing(connection):
+        order_word(connection, "行", [("xíng", [2])])
+    [word] = preview(connection).words
+    assert not word.manual
+    assert word.meanings == ""
+    assert [reading["pinyin"] for reading in word.readings] == ["xíng", "háng", "héng"]
+    with editing(connection):
+        edit_word(connection, "行", meanings="")
+        order_word(connection, "行", [("xíng", [2])])
+    assert decode(preview(connection).words[0].encoded)[0].senses[0].text == (
+        "to walk; to go; to travel"
+    )
+    with editing(connection):
+        order_word(connection, "行", [("háng", [])])
+    assert (
+        connection.execute("SELECT readings FROM pending_words").fetchone()[0] is None
+    )
+    with editing(connection):
+        order_word(connection, "行", [("xíng", [2])])
+    approve(connection, preview(connection).version, NOW)
+    row = connection.execute(
+        "SELECT source, readings FROM words WHERE word = '行'"
+    ).fetchone()
+    assert row["source"] == "cedict"
+    readings = decode(row["readings"])
+    assert readings[0].pinyin == "xíng"
+    assert readings[0].senses[0].text == "trip; journey; visit"
+    assert same_entries(readings, lookup("行"))

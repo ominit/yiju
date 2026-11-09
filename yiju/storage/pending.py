@@ -7,7 +7,14 @@ from dataclasses import asdict, dataclass, field, replace
 from typing import TYPE_CHECKING, Any, cast
 
 from yiju.core.definitions import brief_readings, readings_payload
-from yiju.core.dictionary import decode, encode, lookup, manual
+from yiju.core.dictionary import (
+    decode,
+    encode,
+    lookup,
+    manual,
+    reorder,
+    same_entries,
+)
 from yiju.core.names import (
     GENDERS,
     SLOT,
@@ -50,7 +57,7 @@ from .words import status as word_status
 
 if TYPE_CHECKING:
     import sqlite3
-    from collections.abc import Callable, Generator, Iterable, Mapping
+    from collections.abc import Callable, Generator, Iterable, Mapping, Sequence
     from datetime import datetime
 
 type Entry = Callable[[str], PreviewWord]
@@ -298,7 +305,8 @@ def editing(
 
 def _readings(row: sqlite3.Row | None, word: str) -> tuple[str, bool]:
     if row is not None and row["readings"] is not None:
-        return str(row["readings"]), True
+        stored = str(row["readings"])
+        return stored, not same_entries(decode(stored), lookup(word))
     return encode(lookup(word)), False
 
 
@@ -441,6 +449,14 @@ class PreviewChange:
     waits_on: tuple[int, ...] = ()
 
     @property
+    def reorder(self) -> bool:
+        return (
+            self.current is not None
+            and self.proposed is not None
+            and same_entries(decode(self.proposed), decode(self.current))
+        )
+
+    @property
     def readings(self) -> list[dict[str, object]]:
         return [] if self.current is None else readings_payload(self.current)
 
@@ -475,6 +491,7 @@ class PreviewChange:
                     | ({"waits_on": list(self.waits_on)} if self.waits_on else {})
                 )
             return data | {
+                "reorder": self.reorder,
                 "before": brief_readings(self.current or "[]"),
                 "after": brief_readings(self.proposed or "[]"),
             }
@@ -1107,12 +1124,39 @@ def edit_word(
         "SELECT * FROM pending_words WHERE word = ?", (word,)
     ).fetchone()
     readings = row["readings"] if row is not None else None
+    if (
+        not meanings.strip()
+        and readings is not None
+        and same_entries(decode(readings), lookup(word))
+    ):
+        return
     current = decode(readings) if readings is not None else lookup(word)
     reading = pinyin if pinyin is not None else (current[0].pinyin if current else "")
     connection.execute(
         "INSERT INTO pending_words(word, readings) VALUES (?, ?) "
         "ON CONFLICT(word) DO UPDATE SET readings = excluded.readings",
         (word, encode(manual(reading, meanings)) if meanings.strip() else None),
+    )
+
+
+def order_word(
+    connection: sqlite3.Connection,
+    word: str,
+    order: Sequence[tuple[str, Sequence[int]]],
+) -> None:
+    row = connection.execute(
+        "SELECT readings FROM pending_words WHERE word = ?", (word,)
+    ).fetchone()
+    stored = row["readings"] if row is not None else None
+    current = decode(stored) if stored is not None else lookup(word)
+    if not current:
+        message = f"{word} has no definition to reorder."
+        raise ValueError(message)
+    readings = reorder(current, order)
+    connection.execute(
+        "INSERT INTO pending_words(word, readings) VALUES (?, ?) "
+        "ON CONFLICT(word) DO UPDATE SET readings = excluded.readings",
+        (word, None if readings == lookup(word) else encode(readings)),
     )
 
 
@@ -1295,6 +1339,26 @@ def propose_word(
         readings=encode(manual(reading or word_pinyin(word), meanings))
         if meanings.strip()
         else None,
+    )
+
+
+def propose_order(
+    connection: sqlite3.Connection,
+    word: str,
+    order: Sequence[tuple[str, Sequence[int]]],
+) -> int:
+    library = _library_word(connection, word)
+    if library is None:
+        message = f"{word} is not in your library."
+        raise LookupError(message)
+    staged = _staged_change(connection, "word", word)
+    current = str(
+        library["readings"]
+        if staged is None or staged["readings"] is None
+        else staged["readings"]
+    )
+    return _stage_change(
+        connection, "word", word, readings=encode(reorder(decode(current), order))
     )
 
 

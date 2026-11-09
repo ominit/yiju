@@ -58,6 +58,30 @@ def _optional[T](data: dict[str, object], name: str, kind: type[T]) -> T | None:
     return value
 
 
+def _order(data: dict[str, object]) -> list[tuple[str, list[int]]]:
+    items = data.get("order")
+    if not isinstance(items, list) or not items:
+        abort(400, "Missing order.")
+    order = []
+    for item in cast("list[object]", items):
+        if not isinstance(item, dict):
+            abort(400, "Invalid order.")
+        entry = cast("dict[str, object]", item)
+        pinyin = entry.get("pinyin")
+        senses = entry.get("senses", [])
+        if (
+            not isinstance(pinyin, str)
+            or not isinstance(senses, list)
+            or not all(
+                isinstance(number, int) and not isinstance(number, bool)
+                for number in cast("list[object]", senses)
+            )
+        ):
+            abort(400, "Invalid order.")
+        order.append((pinyin, cast("list[int]", senses)))
+    return order
+
+
 def _status(choices: tuple[str, ...]) -> str | None:
     value = request.args.get("status")
     if value is not None and value not in choices:
@@ -239,6 +263,17 @@ def edit_pending_word(word: str) -> dict[str, Any]:
     return _pending(pending.Staged(words=(word,)))
 
 
+@agents.post("/pending/words/<word>/order")
+def order_pending_word(word: str) -> dict[str, Any]:
+    order = _order(_body())
+    if word not in {item.word for item in pending.preview(database()).words}:
+        message = f"{word} is not a new word waiting for a check."
+        raise LookupError(message)
+    with pending.editing(database()):
+        pending.order_word(database(), word, order)
+    return _pending(pending.Staged(words=(word,)))
+
+
 @agents.post("/pending/words/<word>/remove")
 def remove_pending_word(word: str) -> dict[str, Any]:
     with pending.editing(database()):
@@ -286,6 +321,14 @@ def propose_word(word: str) -> dict[str, Any]:
         change = pending.propose_word(
             database(), word, meanings=meanings, pinyin=_optional(data, "pinyin", str)
         )
+    return _pending(pending.Staged(changes=(change,)))
+
+
+@agents.post("/library/words/<word>/order")
+def propose_word_order(word: str) -> dict[str, Any]:
+    order = _order(_body())
+    with pending.editing(database()):
+        change = pending.propose_order(database(), word, order)
     return _pending(pending.Staged(changes=(change,)))
 
 

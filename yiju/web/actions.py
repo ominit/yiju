@@ -1,5 +1,6 @@
 import io
 import json
+import re
 import sqlite3
 import tempfile
 from pathlib import Path
@@ -47,7 +48,7 @@ from yiju.storage.pending import (
     remove_name as remove_pending_name,
 )
 from yiju.storage.sentences import set_hidden, update_sentence
-from yiju.storage.words import reclassify, set_manual, set_paused
+from yiju.storage.words import move_reading, reclassify, set_manual, set_paused
 
 from . import database, refresh_caches
 from .library import item_response
@@ -333,6 +334,26 @@ def unlock_word(word: str) -> str:
         database(), word, integer("version"), manual=request.form.get("manual") == "1"
     )
     return item_response("words", word, now_utc())
+
+
+@actions.post("/words/<word>/order")
+def order_word(word: str) -> str:
+    move = re.fullmatch(r"(\d+)(?:\.(\d+))?:(-1|1)", request.form.get("move", ""))
+    if move is None:
+        abort(400, "Missing or invalid move.")
+    try:
+        move_reading(
+            database(),
+            word,
+            integer("version"),
+            (int(move[1]), None if move[2] is None else int(move[2])),
+            int(move[3]),
+        )
+    except ConflictError:
+        raise
+    except ValueError as error:
+        abort(400, str(error))
+    return item_response("words", word, now_utc(), reordering=True)
 
 
 @actions.post("/sentences/<int:sentence_id>")

@@ -77,6 +77,56 @@
         <div class="details-grid">
           <section class="details-main">
             {{ senses(details.readings) }}
+            {% if details.movable %}
+              <details class="editor"{% if reordering %} open{% endif %}>
+                <summary>{{ icon('edit', 18) }}Reorder pronunciations and meanings</summary>
+                <form class="reorder"
+                      method="post"
+                      action="{{ url_for('actions.order_word', word=item.text) }}"
+                      data-item-form>
+                  <input type="hidden" name="version" value="{{ row.version }}">
+                  {% for reading in details.readings %}
+                    {% set r = loop.index0 %}
+                    <section class="reorder-reading">
+                      <div class="reorder-line reorder-pinyin">
+                        <span>{{ reading.pinyin }}</span>
+                        {% if details.readings|length > 1 %}
+                          <span class="reorder-moves">
+                            <button class="icon-button small"
+                                    name="move"
+                                    value="{{ r }}:-1"
+                                    {% if loop.first %} disabled{% endif %}>{{ icon("up") }}<span class="sr-only">Move {{ reading.pinyin }} up</span></button>
+                            <button class="icon-button small"
+                                    name="move"
+                                    value="{{ r }}:1"
+                                    {% if loop.last %} disabled{% endif %}>{{ icon("down") }}<span class="sr-only">Move {{ reading.pinyin }} down</span></button>
+                          </span>
+                        {% endif %}
+                      </div>
+                      {% if reading.senses|length > 1 %}
+                        <ol class="reorder-senses">
+                          {% for sense in reading.senses %}
+                            <li class="reorder-line">
+                              <span{% if sense.usage %} class="usage"{% endif %}>{% for note in sense.notes %}<span class="pos">{{ note }}</span>{% endfor %}{{ sense.text }}</span>
+                              <span class="reorder-moves">
+                                <button class="icon-button small"
+                                        name="move"
+                                        value="{{ r }}.{{ loop.index0 }}:-1"
+                                        {% if loop.first %} disabled{% endif %}>{{ icon("up") }}<span class="sr-only">Move up</span></button>
+                                <button class="icon-button small"
+                                        name="move"
+                                        value="{{ r }}.{{ loop.index0 }}:1"
+                                        {% if loop.last %} disabled{% endif %}>{{ icon("down") }}<span class="sr-only">Move down</span></button>
+                              </span>
+                            </li>
+                          {% endfor %}
+                        </ol>
+                      {% endif %}
+                    </section>
+                  {% endfor %}
+                </form>
+              </details>
+            {% endif %}
           </section>
           <aside class="details-side">
             {% if row.state == 'seen' %}

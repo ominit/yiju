@@ -202,7 +202,7 @@
   {% set removing = change.action == 'remove' %}
   <li class="panel check-item change{% if change.issues %} has-issues{% endif %}">
     <header class="check-head">
-      <span class="change-kind {{ change.action }}">{{ 'Remove' if removing else 'Edit' }}</span>
+      <span class="change-kind {{ change.action }}">{{ 'Remove' if removing else 'Reorder' if change.reorder else 'Edit' }}</span>
       {% if change.kind == 'word' %}
         <a class="check-word"
            lang="zh-Hans"
@@ -280,19 +280,21 @@
           {% endif %}
         </div>
         {% for issue in change.issues %}<p class="callout error small">{{ issue }}</p>{% endfor %}
-        <div class="check-fields">
-          <label>
-            Pinyin
-            <input name="{{ prefix }}-pinyin"
-                   autocomplete="off"
-                   spellcheck="false"
-                   value="{{ change.pinyin }}">
-          </label>
-          <label>
-            Meanings, one per line
-            <textarea name="{{ prefix }}-meanings" rows="3">{{ change.meanings }}</textarea>
-          </label>
-        </div>
+        {% if not change.reorder %}
+          <div class="check-fields">
+            <label>
+              Pinyin
+              <input name="{{ prefix }}-pinyin"
+                     autocomplete="off"
+                     spellcheck="false"
+                     value="{{ change.pinyin }}">
+            </label>
+            <label>
+              Meanings, one per line
+              <textarea name="{{ prefix }}-meanings" rows="3">{{ change.meanings }}</textarea>
+            </label>
+          </div>
+        {% endif %}
       {% endif %}
     {% endif %}
     {% if removing or not change.before and not change.current %}

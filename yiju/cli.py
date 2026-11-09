@@ -128,6 +128,35 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+ORDER_HELP = (
+    "Readings in the order you want, by pinyin such as xíng or xing2. Add :N,N "
+    "to put those meanings first, numbered as they are now, such as xíng:7,6. "
+    "Readings and meanings you leave out keep their order after the ones you list."
+)
+
+
+def _placement(value: str) -> dict[str, object]:
+    reading, separator, numbers = value.partition(":")
+    message = f"{value!r} should look like xíng or xíng:7,6."
+    try:
+        senses = [int(number) for number in numbers.replace(",", " ").split()]
+    except ValueError:
+        raise argparse.ArgumentTypeError(message) from None
+    if not reading.strip() or (separator and not senses):
+        raise argparse.ArgumentTypeError(message)
+    return {"pinyin": reading.strip(), "senses": senses}
+
+
+def _order_parser(
+    actions: argparse._SubParsersAction[argparse.ArgumentParser], help_text: str
+) -> None:
+    order = actions.add_parser("order-word", help=help_text)
+    order.add_argument("word")
+    order.add_argument(
+        "order", nargs="+", type=_placement, metavar="PINYIN[:N,N]", help=ORDER_HELP
+    )
+
+
 def _library_parser(library: argparse.ArgumentParser) -> None:
     actions = library.add_subparsers(dest="action", required=True)
     sentence = actions.add_parser(
@@ -154,6 +183,11 @@ def _library_parser(library: argparse.ArgumentParser) -> None:
     word.add_argument("--pinyin", help="The reading for your meanings.")
     word.add_argument(
         "--meanings", required=True, help="Meanings separated by newlines or \\n."
+    )
+    _order_parser(
+        actions,
+        "Propose a new order for a library word's readings and meanings. The "
+        "wording stays as it is.",
     )
     remove_word = actions.add_parser(
         "remove-word",
@@ -192,6 +226,11 @@ def _import_parser(imports: argparse.ArgumentParser) -> None:
         "--meanings",
         required=True,
         help="Meanings separated by newlines or \\n. An empty value removes them.",
+    )
+    _order_parser(
+        actions,
+        "Put a new word's readings and meanings in the order you give. The "
+        "wording stays as it is.",
     )
     remove = actions.add_parser("remove-sentence", help="Drop a sentence.")
     remove.add_argument("id", type=int)
@@ -288,6 +327,12 @@ def _import(args: argparse.Namespace) -> Call:
                 else args.meanings.replace("\\n", "\n"),
             },
         )
+    if args.action == "order-word":
+        return (
+            "POST",
+            _path("pending", "words", args.word, "order"),
+            {"order": args.order},
+        )
     if args.action in REMOVALS:
         key = args.word if args.action == "remove-word" else args.id
         return "POST", _path("pending", REMOVALS[args.action], key, "remove"), {}
@@ -308,6 +353,12 @@ def _library(args: argparse.Namespace) -> Call:
         )
     if args.action == "remove-sentence":
         return "POST", _path("library", "sentences", args.id, "remove"), {}
+    if args.action == "order-word":
+        return (
+            "POST",
+            _path("library", "words", args.word, "order"),
+            {"order": args.order},
+        )
     if args.action == "edit-word":
         return (
             "POST",

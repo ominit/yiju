@@ -140,7 +140,7 @@ def check_form(client: FlaskClient) -> dict[str, str]:
             )
             form[f"{prefix}-pinyin"] = change.after.pinyin
             form[f"{prefix}-translation"] = change.after.translation
-        elif change.kind == "word" and change.action == "edit":
+        elif change.kind == "word" and change.action == "edit" and not change.reorder:
             form[f"{prefix}-pinyin"] = change.pinyin
             form[f"{prefix}-meanings"] = change.meanings
     return form

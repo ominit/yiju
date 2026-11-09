@@ -437,3 +437,42 @@ def test_agents_propose_library_changes_that_wait_for_the_user(
             ).fetchone()[0]
             == 1
         )
+
+
+def test_agents_reorder_readings_and_meanings(
+    app: Flask,
+    server: str,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run(server, capsys, monkeypatch, "import", "add", stdin="行\n")
+    result = run(
+        server, capsys, monkeypatch, "import", "order-word", "行", "xing2:7,6", "héng"
+    )
+    [word] = result["words"]
+    assert not word["manual"]
+    readings = word["readings"]
+    assert [reading["pinyin"] for reading in readings] == ["xíng", "héng", "háng"]
+    assert readings[0]["meanings"][:2] == [
+        "all right; OK!; will do",
+        "capable; competent",
+    ]
+    assert (
+        "not one of its readings"
+        in run(
+            server,
+            capsys,
+            monkeypatch,
+            "import",
+            "order-word",
+            "行",
+            "zou3",
+            status=1,
+        )["error"]
+    )
+    with database(app) as db:
+        add(db, "去\n")
+    result = run(server, capsys, monkeypatch, "library", "order-word", "去", "qù:2")
+    [change] = result["changes"]
+    assert change["reorder"]
+    assert change["after"][0]["meanings"][0] == change["before"][0]["meanings"][1]

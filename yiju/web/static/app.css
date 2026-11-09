@@ -1762,6 +1762,53 @@ a.token:hover {
   font-weight: 550;
 }
 
+.reorder-reading + .reorder-reading {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.reorder-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+}
+
+.reorder-line > span:not(.reorder-moves) {
+  flex: 1;
+  min-width: 0;
+}
+
+.reorder-moves {
+  display: flex;
+  flex: none;
+}
+
+.reorder-pinyin {
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.reorder-senses {
+  counter-reset: sense;
+}
+
+.reorder-senses > li {
+  counter-increment: sense;
+}
+
+.reorder-senses > li::before {
+  content: counter(sense);
+  flex: none;
+  width: 20px;
+  color: var(--faint);
+  font-size: 13px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 .source p {
   color: var(--ink-2);
   font-size: 14px;

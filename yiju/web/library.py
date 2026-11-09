@@ -334,14 +334,13 @@ def _details(library: Library, kind: str, item: LibraryItem) -> dict[str, object
         }
     current = strength(item.row)
     recall = current.recall(library.now)
+    readings = decode(item.row["readings"])
     return common | {
-        "readings": decode(item.row["readings"]),
+        "readings": readings,
+        "movable": len(readings) > 1
+        or any(len(reading.senses) > 1 for reading in readings),
         "traditional": ", ".join(
-            dict.fromkeys(
-                form
-                for reading in decode(item.row["readings"])
-                for form in reading.traditional
-            )
+            dict.fromkeys(form for reading in readings for form in reading.traditional)
         ),
         "note": library.flags.get(item.text, ""),
         "strength": {
@@ -368,7 +367,9 @@ def _item(library: Library, kind: str, key: str) -> LibraryItem:
     return items[0]
 
 
-def item_response(kind: str, key: str, now: datetime) -> str:
+def item_response(
+    kind: str, key: str, now: datetime, *, reordering: bool = False
+) -> str:
     library = Library(database(), now)
     item = _item(library, kind, key)
     return render_template(
@@ -377,6 +378,7 @@ def item_response(kind: str, key: str, now: datetime) -> str:
         item=item,
         flags=library.flags,
         details=_details(library, kind, item),
+        reordering=reordering,
     )
 
 

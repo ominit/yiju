@@ -19,7 +19,14 @@ from conftest import (
 )
 
 from yiju.storage.database import settings
-from yiju.storage.pending import editing, propose_removal, propose_sentence, stage
+from yiju.storage.pending import (
+    editing,
+    order_word,
+    propose_order,
+    propose_removal,
+    propose_sentence,
+    stage,
+)
 from yiju.web import create_app
 
 if TYPE_CHECKING:
@@ -396,3 +403,27 @@ def stage_changes(db: sqlite3.Connection, *, sentence: bool = True) -> None:
         if sentence:
             propose_sentence(db, 1, words="我 喜欢 喝 茶")
         propose_removal(db, "sentence", "2")
+
+
+def test_saving_the_check_screen_keeps_a_new_order(
+    client: FlaskClient, app: Flask
+) -> None:
+    with database(app) as db:
+        add(db, "去\n")
+        stage(db, "行\n")
+        with editing(db):
+            order_word(db, "行", [("xíng", [])])
+            propose_order(db, "去", [("qù", [2])])
+    html = client.get("/pending").get_data(as_text=True)
+    assert ">Reorder</span>" in html
+    assert 'name="c1-meanings"' not in html
+    client.post("/pending", data={**check_form(client), "step": "save"})
+    client.post("/pending", data={**check_form(client), "step": "approve"})
+    with database(app) as db:
+        rows = {
+            row["word"]: row
+            for row in db.execute("SELECT word, source, readings FROM words")
+        }
+        assert not db.execute("SELECT 1 FROM pending_changes").fetchone()
+    assert rows["行"]["source"] == rows["去"]["source"] == "cedict"
+    assert rows["行"]["readings"].index("xíng") < rows["行"]["readings"].index("háng")

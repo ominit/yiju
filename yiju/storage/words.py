@@ -1,7 +1,9 @@
+from dataclasses import replace
 from typing import TYPE_CHECKING, cast
 
 from fsrs import Card
 
+from yiju.core.dictionary import decode, encode, same_entries
 from yiju.core.strength import Parameters, Strength, familiar, learned
 
 from .cards import card_ids, create_cards, delete_cards
@@ -83,11 +85,53 @@ def set_paused(
 
 
 def set_readings(connection: sqlite3.Connection, word: str, readings: str) -> None:
-    connection.execute(
-        "UPDATE words SET readings = ?, source = 'manual', version = version + 1 "
-        "WHERE word = ?",
-        (readings, word),
+    current = connection.execute(
+        "SELECT readings FROM words WHERE word = ?", (word,)
+    ).fetchone()
+    rewritten = current is None or not same_entries(
+        decode(readings), decode(current["readings"])
     )
+    connection.execute(
+        "UPDATE words SET readings = ?, "
+        "source = CASE WHEN ? THEN 'manual' ELSE source END, "
+        "version = version + 1 WHERE word = ?",
+        (readings, int(rewritten), word),
+    )
+
+
+def move_reading(
+    connection: sqlite3.Connection,
+    word: str,
+    version: int,
+    position: tuple[int, int | None],
+    offset: int,
+) -> None:
+    reading, sense = position
+    with transaction(connection):
+        readings = list(decode(_current(connection, word, version)["readings"]))
+        if not 0 <= reading < len(readings):
+            message = "That pronunciation does not exist."
+            raise ValueError(message)
+        if sense is None:
+            readings = _moved(readings, reading, offset)
+        else:
+            current = readings[reading]
+            if not 0 <= sense < len(current.senses):
+                message = "That meaning does not exist."
+                raise ValueError(message)
+            readings[reading] = replace(
+                current, senses=tuple(_moved(list(current.senses), sense, offset))
+            )
+        set_readings(connection, word, encode(tuple(readings)))
+
+
+def _moved[T](items: list[T], index: int, offset: int) -> list[T]:
+    target = index + offset
+    if offset not in {-1, 1} or not 0 <= target < len(items):
+        message = "It cannot move that way."
+        raise ValueError(message)
+    items[index], items[target] = items[target], items[index]
+    return items
 
 
 def delete_word(connection: sqlite3.Connection, word: str) -> None:

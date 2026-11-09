@@ -171,8 +171,21 @@ A new word keeps every reading CC-CEDICT has for it, so the sentence pinyin is
 the place to fix a reading. For a word CC-CEDICT does not have, write a
 definition with `yiju import edit-word WORD --meanings "..."`. Its `--pinyin`
 sets the reading that goes with your meanings. Write your own definition only
-when CC-CEDICT has no entry and the word cannot be split, such as 修为
-(xiūwéi) in cultivation novels, and tell the user which words have one.
+when CC-CEDICT has no entry and the word cannot be split, and tell the user
+which words have one.
+
+CC-CEDICT does not list a word's readings or meanings with the most common
+first, and the user studies them in the order they appear. So for every new
+word with more than one reading or meaning, put the most common reading first
+and, inside each reading, the most common meaning first, with
+`yiju import order-word WORD PINYIN[:N,N] ...`. List the readings in the order
+you want, by pinyin such as `xíng` or `xing2`. After a colon, list the meanings
+that go first, by their numbers in the current order, such as `xíng:7,6`.
+Readings and meanings you leave out keep their order after the ones you list.
+The wording stays CC-CEDICT's, and the word does not count as a definition you
+wrote. Move only what you are sure of. Common means what a reader of modern
+Chinese meets most. A rare or literary sense never goes first. Read the new
+order back from the output, and tell the user which words you reordered.
 
 ## The import format
 
@@ -277,6 +290,10 @@ when the user asks for it or agrees to it.
   for a library word. Follow the same rule as for new words: leave the
   dictionary definition alone unless it is missing or wrong, and tell the user
   why you changed it.
+- `yiju library order-word WORD PINYIN[:N,N] ...` proposes a new order for a
+  library word's readings and meanings, with the same arguments as
+  `yiju import order-word`. The change has `"reorder": true`, and its `before`
+  and `after` show the two orders.
 - `yiju library remove-sentence ID` and `yiju library remove-word WORD`
   propose deleting a sentence or a word together with its cards and all of its
   review history. The output's `reviews` says how many reviews would go.
@@ -328,6 +345,7 @@ for the whole check screen. `yiju import show` prints everything.
 | `yiju import show` | Changes nothing | Everything waiting |
 | `yiju import edit-sentence ID [--words W] [--pinyin P] [--translation T] [--rules R]` | Revises one sentence. An empty `--rules ""` clears the rules | The sentence and its new words |
 | `yiju import edit-word WORD --meanings M [--pinyin P]` | Writes a definition for a new word CC-CEDICT does not have. Separate meanings with a new line or a typed `\n`. An empty `--meanings ""` removes your definition | The word with its readings, and the sentences that use it |
+| `yiju import order-word WORD PINYIN[:N,N]...` | Puts a new word's readings, and the meanings listed after a colon, first in that order | The word with its readings, and the sentences that use it |
 | `yiju import remove-sentence ID` | Drops a sentence | Only the summary |
 | `yiju import remove-word WORD` | Drops a word that is waiting on its own line. A word from a sentence goes with its sentence | Only the summary |
 | `yiju names add [FILE]` | Stages names from FILE or stdin | The staged names |
@@ -335,6 +353,7 @@ for the whole check screen. `yiju import show` prints everything.
 | `yiju names remove ID` | Drops a waiting name | Only the summary |
 | `yiju library edit-sentence ID [--words W] [--pinyin P] [--translation T] [--rules R]` | Proposes a change to library sentence ID | The change and its new words |
 | `yiju library edit-word WORD --meanings M [--pinyin P]` | Proposes your own definition for a library word | The change |
+| `yiju library order-word WORD PINYIN[:N,N]...` | Proposes a new order for a library word's readings and meanings | The change |
 | `yiju library remove-sentence ID` | Proposes deleting a library sentence with its cards and history | The change |
 | `yiju library remove-word WORD` | Proposes deleting a library word with its cards and history | The change |
 | `yiju import remove-change ID` | Drops a waiting change | Only the summary |

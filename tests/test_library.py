@@ -193,3 +193,56 @@ def test_activity_counts_new_words_once(client: FlaskClient, app: Flask) -> None
         stats = activity(db, now_utc())
     assert stats["introduced"] == 2
     assert stats["reviews"] == 4
+
+
+def test_word_pronunciations_and_meanings_can_be_reordered(
+    client: FlaskClient, app: Flask
+) -> None:
+    with database(app) as db:
+        add(db, "行")
+
+    def move(value: str) -> tuple[int, str]:
+        version = page_context(client, "/library/words/行")["item"].row["version"]
+        response = client.post(
+            "/words/行/order",
+            data={"csrf": csrf(client), "version": version, "move": value},
+            headers={"X-Fragment": "1"},
+        )
+        return response.status_code, response.get_data(as_text=True)
+
+    def readings() -> list[tuple[str, list[str]]]:
+        return [
+            (reading.pinyin, [sense.text for sense in reading.senses])
+            for reading in page_context(client, "/library/words/行")["details"][
+                "readings"
+            ]
+        ]
+
+    before = readings()
+    assert [pinyin for pinyin, _ in before] == ["háng", "xíng", "héng"]
+    status, html = move("1:-1")
+    assert status == 200
+    assert '<details class="editor" open>' in html
+    assert readings() == [before[1], before[0], before[2]]
+    assert page_context(client, "/library/words/行")["item"].pinyin == (
+        "xíng, háng, héng"
+    )
+    senses = before[1][1]
+    assert move("0.6:-1")[0] == 200
+    assert readings()[0][1] == [*senses[:5], senses[6], senses[5], *senses[7:]]
+    assert move("0:-1")[0] == 400
+    assert move("2:1")[0] == 400
+    assert move("2.0:1")[0] == 400
+    assert move("0.9:1")[0] == 400
+    version = page_context(client, "/library/words/行")["item"].row["version"]
+    stale = client.post(
+        "/words/行/order",
+        data={"csrf": csrf(client), "version": version - 1, "move": "1:1"},
+        headers={"X-Fragment": "1"},
+    )
+    assert stale.status_code == 409
+    with database(app) as db:
+        assert (
+            db.execute("SELECT source FROM words WHERE word = '行'").fetchone()[0]
+            == "cedict"
+        )
