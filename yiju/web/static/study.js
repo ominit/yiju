@@ -251,7 +251,7 @@ function senseItems(senses) {
   );
 }
 
-function readingList(readings, { limit = Infinity } = {}) {
+function readingList(readings) {
   if (!readings.length) return [h("p", { class: "muted" }, "No definition")];
   return readings.map((reading) =>
     h(
@@ -263,9 +263,9 @@ function readingList(readings, { limit = Infinity } = {}) {
       h(
         "ol",
         { class: `senses${reading.senses.length === 1 ? " single" : ""}` },
-        senseItems(reading.senses.slice(0, limit)),
+        senseItems(reading.senses),
       ),
-      reading.classifiers.length && limit === Infinity
+      reading.classifiers.length
         ? h(
             "p",
             { class: "classifiers muted small" },
@@ -273,7 +273,7 @@ function readingList(readings, { limit = Infinity } = {}) {
             h("span", { lang: "zh-Hans" }, reading.classifiers.join(", ")),
           )
         : null,
-      reading.also_pronounced.length && limit === Infinity
+      reading.also_pronounced.length
         ? h(
             "p",
             { class: "classifiers muted small" },
@@ -445,7 +445,7 @@ function renderCard(card) {
                   ),
                 ),
               ),
-              readingList(word.readings, { limit: 3 }),
+              readingList(word.readings),
             ),
           ),
         ),
