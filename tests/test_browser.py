@@ -147,11 +147,11 @@ def test_library_rows_expand_inline_and_refresh_counts(
     expect(item.locator(".details")).to_be_visible()
     assert "open=" in page.url
     paused = page.locator(".chips a", has_text="Paused")
-    expect(paused).to_contain_text("0")
+    expect(paused).to_have_count(0)
     item.get_by_role("button", name="Pause").click()
     expect(item.locator(".row .status")).to_have_text("Paused")
     expect(paused).to_contain_text("1")
-    item.locator(".row").click()
+    item.get_by_role("button", name="Close 学习").click()
     expect(item.locator(".details")).to_be_hidden()
     assert "open=" not in page.url
 
@@ -201,7 +201,10 @@ def test_pad_keeps_its_place_and_collapses_extra_characters(
     page.goto(f"{server.url}/study")
     canvas = page.locator(".pad-canvas")
     canvas.wait_for()
-    page.evaluate("Promise.all(document.getAnimations().map(a => a.finished))")
+    page.evaluate(
+        "Promise.all(document.getAnimations()"
+        ".filter(a => a.timeline === document.timeline).map(a => a.finished))"
+    )
     start = canvas.bounding_box()
     assert start is not None
     for _ in range(12):
@@ -221,11 +224,12 @@ def test_pad_keeps_its_place_and_collapses_extra_characters(
 def test_pasted_sentences_are_checked_then_approved(page: Page, server: Server) -> None:
     page.goto(f"{server.url}/import")
     page.locator("textarea[name=text]").fill("他跑得很快。 | He runs fast.\n")
-    page.get_by_role("button", name="Check").nth(1).click()
-    expect(page.get_by_role("heading", name="Check before adding")).to_be_visible()
+    page.get_by_role("button", name="Check", exact=True).click()
+    expect(page.get_by_role("heading", name="Waiting for your check")).to_be_visible()
     expect(page.locator(".token.several", has_text="得")).to_be_visible()
     pinyin = page.locator("input[name=s1-pinyin]")
     expect(pinyin).to_have_value("tā pǎo dé hěn kuài.")
+    page.get_by_text("Edit sentence").click()
     reading = page.get_by_role("group", name="Reading of 得")
     row = page.locator(".word-row", has=reading)
     shown = row.locator("[data-meanings-for]:visible")
@@ -238,7 +242,7 @@ def test_pasted_sentences_are_checked_then_approved(page: Page, server: Server) 
     expect(reading.get_by_role("radio", name="děi", exact=True)).to_be_checked()
     expect(shown).to_contain_text("to have to")
     pinyin.fill("Tā pǎo de hěn kuài.")
-    page.get_by_role("button", name="Approve all").click()
+    page.get_by_role("button", name="Approve 1 sentence").click()
     expect(page.locator(".toast")).to_contain_text("Added 1 sentence")
     with server.database() as db:
         assert (

@@ -21,7 +21,7 @@
       {% endfor %}
     </svg>
     <ul class="legend">
-      {% for key, label, count, fill in parts %}
+      {% for key, label, count, fill in parts if count %}
         <li>
           <a href="{{ url_for(endpoint, filter=key) }}"><i class="dot fill-{{ fill }}"></i>{{ label }}<strong>{{ count }}</strong></a>
         </li>
@@ -31,18 +31,25 @@
 {% endmacro %}
 {% block content %}
   {% set total = stats.due + stats.new %}
-  {% if stats.pending %}
-    <a class="notice" href="{{ url_for('pages.pending_page') }}">
-      {{ stats.pending }} item{{ '' if stats.pending == 1 else 's' }} waiting for your check {{ icon('next', 18) }}
-    </a>
-  {% endif %}
+  {% set check %}
+    {% if stats.pending %}
+      <a class="check-row" href="{{ url_for('pages.pending_page') }}">
+        <span class="badge">{{ stats.pending }}</span>
+        {{ 'item' if stats.pending == 1 else 'items' }} waiting for your check {{ icon('next', 18) }}
+      </a>
+    {% endif %}
+  {% endset %}
+  <a class="icon-button settings-gear"
+     href="{{ url_for('pages.preferences') }}"
+     title="Settings">{{ icon("settings") }}<span class="sr-only">Settings</span></a>
   {% if not stats.words %}
     <h1 class="sr-only">Today</h1>
     <section class="empty">
-      <p class="empty-glyph" lang="zh-Hans">一句</p>
+      <p class="empty-glyph" lang="zh-Hans">句</p>
       <h2>Start with a few sentences</h2>
       <p class="muted">Add Chinese sentences with their translations. Yiju looks up every word in CC-CEDICT and unlocks new words as the sentences around them become readable.</p>
       <a class="button primary" href="{{ url_for('pages.import_page') }}">{{ icon("plus") }}Add sentences</a>
+      {{ check }}
     </section>
   {% else %}
     {% set waiting = not total and not stats.learning and not stats.learned and not stats.unlocked %}
@@ -67,14 +74,17 @@
           </p>
         {% endif %}
       </div>
-      {% if not waiting %}
-        <a class="button primary large"
-           href="{{ url_for('study.page') }}"
-           {% if not total %} hidden{% endif %}>Study {{ icon('next', 18) }}</a>
-      {% endif %}
+      <div class="greeting-actions">
+        {% if not waiting %}
+          <a class="button primary large"
+             href="{{ url_for('study.page') }}"
+             {% if not total %} hidden{% endif %}>Study</a>
+        {% endif %}
+        {{ check }}
+      </div>
     </header>
     <div class="dashboard">
-      <div class="panel overview">
+      <div class="overview">
         {{ breakdown('Words', 'pages.library', [('learned', 'Learned', stats.learned, 'learned'), ('familiar', 'Familiar', stats.familiar, 'familiar'), ('learning', 'Learning', stats.learning, 'learning'), ('unlocked', 'New', stats.unlocked, 'unlocked'), ('locked', 'Locked', stats.locked, 'locked')], stats.learned, 'learned') }}
         {{ breakdown('Sentences', 'pages.sentences', [('learned', 'Learned', stats.sentences_learned, 'learned'), ('learning', 'Learning', stats.sentences_learning, 'learning'), ('unlocked', 'New', stats.sentences_unlocked, 'unlocked'), ('eligible', 'Eligible', stats.sentences_eligible, 'eligible'), ('locked', 'Locked', stats.sentences_locked, 'locked')], stats.sentences_learned, 'learned') }}
         <section class="column">
@@ -92,6 +102,8 @@
                      aria-hidden="true">
                   {% if day.count %}
                     {% set height = [day.count / forecast_max * 100, 6] | max %}<rect class="{{ 'today' if loop.first else '' }}" y="{{ 100 - height }}" width="10" height="{{ height }}" />
+                  {% else %}
+                    <rect class="none" y="98" width="10" height="2" />
                   {% endif %}
                 </svg>
                 <span class="forecast-day">{{ 'Today' if loop.first else day.date.strftime("%a") }}</span>
@@ -100,8 +112,8 @@
           </ol>
         </section>
       </div>
-      <section class="panel">
-        <header class="panel-head">
+      <section class="history">
+        <header class="column-head">
           <h2>Last 30 days</h2>
           <dl class="facts">
             <div>

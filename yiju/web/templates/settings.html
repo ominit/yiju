@@ -54,14 +54,28 @@
     </div>
   </form>
   <section class="panel settings-group">
-    <h2>Data</h2>
+    <h2>On this device</h2>
     <div class="field">
       <div class="field-text">
-        <span class="label">Add sentences</span>
-        <p class="muted small">Type one sentence or paste many. Everything goes through a check screen first.</p>
+        <label for="autoplay">Play pronunciation on reveal</label>
+        <p class="muted small">Saved in this browser. R replays it on any card.</p>
       </div>
-      <a class="button" href="{{ url_for('pages.import_page') }}">{{ icon('plus', 18) }}Add</a>
+      <input id="autoplay"
+             type="checkbox"
+             role="switch"
+             data-autoplay
+             {% if autoplay %}checked{% endif %}>
     </div>
+    <div class="field" data-install hidden>
+      <div class="field-text">
+        <span class="label">Install app</span>
+        <p class="muted small" data-install-status>Add Yiju to your home screen for a full-screen study app.</p>
+      </div>
+      <button class="button" type="button" data-install-button>Install</button>
+    </div>
+  </section>
+  <section class="panel settings-group">
+    <h2>Data</h2>
     <div class="field">
       <div class="field-text">
         <span class="label">Backup</span>
@@ -76,19 +90,12 @@
       </div>
       <a class="button" href="{{ url_for('flags.export_flags') }}" download>{{ icon('download', 18) }}Export</a>
     </div>
-    <div class="field">
+    <a class="field field-link" href="{{ url_for('pages.about') }}">
       <div class="field-text">
-        <span class="label">About</span>
+        <span class="label">About Yiju</span>
         <p class="muted small">Dictionary credits and licenses.</p>
       </div>
-      <a class="button" href="{{ url_for('pages.about') }}">About</a>
-    </div>
-    <div class="field" data-install hidden>
-      <div class="field-text">
-        <span class="label">Install app</span>
-        <p class="muted small" data-install-status>Add Yiju to your home screen for a full-screen study app.</p>
-      </div>
-      <button class="button" type="button" data-install-button>Install</button>
-    </div>
+      {{ icon('next', 18) }}
+    </a>
   </section>
 {% endblock %}

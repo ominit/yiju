@@ -105,7 +105,18 @@ function draw(element, data) {
   element.classList.add("stroke-ready");
 }
 
+let warmed = false;
+
+function warm() {
+  if (warmed || !writerSource()) return;
+  warmed = true;
+  const start = () => library().catch(() => (warmed = false));
+  if ("requestIdleCallback" in window) requestIdleCallback(start);
+  else setTimeout(start, 200);
+}
+
 export function render(root) {
+  if (root.querySelector(".glyph")) warm();
   for (const element of root.querySelectorAll(
     ".glyph:not(.stroke-ready, .stroke-fallback)",
   )) {
@@ -155,6 +166,25 @@ export function stop() {
   previous.overlay.remove();
 }
 
+function settle(request) {
+  active = null;
+  const { element, overlay } = request;
+  const glyph = element.querySelector(".stroke-glyph");
+  element.classList.remove("stroke-animating");
+  if (!glyph) {
+    overlay.remove();
+    return;
+  }
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    overlay.remove();
+  };
+  glyph.addEventListener("transitionend", finish, { once: true });
+  setTimeout(finish, 250);
+}
+
 async function play(element) {
   const character = element.dataset.strokes;
   stop();
@@ -167,22 +197,20 @@ async function play(element) {
   try {
     const [HanziWriter, data] = await Promise.all([library(), load(character)]);
     if (active !== request) return;
-    const styles = getComputedStyle(element);
-    const size = Number.parseFloat(styles.fontSize) * glyphScale;
-    const color = styles.color;
-    const outline = getComputedStyle(document.documentElement)
-      .getPropertyValue("--line-strong")
-      .trim();
+    draw(element, data);
+    const color = getComputedStyle(element).color;
     element.append(overlay);
+    const size =
+      overlay.getBoundingClientRect().width ||
+      Number.parseFloat(getComputedStyle(element).fontSize) * glyphScale;
     const writer = HanziWriter.create(overlay, character, {
       width: size,
       height: size,
       padding: 0,
       showCharacter: false,
-      showOutline: true,
+      showOutline: false,
       strokeColor: color,
       radicalColor: color,
-      outlineColor: outline,
       strokeAnimationSpeed: 1.15,
       delayBetweenStrokes: 140,
       charDataLoader: (_character, done) => done(data),
@@ -191,8 +219,7 @@ async function play(element) {
     element.classList.add("stroke-animating");
     await writer.animateCharacter();
     if (active !== request) return;
-    draw(element, data);
-    stop();
+    settle(request);
   } catch {
     if (active !== request) return;
     stop();

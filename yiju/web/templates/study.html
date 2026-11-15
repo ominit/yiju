@@ -7,9 +7,15 @@
     <a class="icon-button"
        href="{{ url_for('pages.home') }}"
        title="Leave study">{{ icon("close") }}<span class="sr-only">Leave study</span></a>
-    <div class="study-count" aria-live="polite">
-      <span><strong data-reviews>{{ batch.counts.reviews }}</strong> <span data-reviews-label>review{{ '' if batch.counts.reviews == 1 else 's' }}</span></span>
-      <span><strong data-new>{{ batch.counts.new }}</strong> new</span>
+    {% set total = batch.today + batch.count %}
+    <div class="study-progress">
+      <div class="study-track" aria-hidden="true">
+        <i data-progress></i>
+      </div>
+      <p class="study-count" aria-live="polite">
+        <span><strong data-done>{{ batch.today }}</strong> of <span data-total>{{ total }}</span> done</span>
+        <span data-left {% if not batch.count %}hidden{% endif %}><strong data-reviews>{{ batch.counts.reviews }}</strong> due, <strong data-new>{{ batch.counts.new }}</strong> new</span>
+      </p>
     </div>
     <div class="study-tools">
       <button class="icon-button"
@@ -44,7 +50,7 @@
   <footer class="study-actions" data-actions>
   </footer>
   <template id="icons">
-    {% for name in ['audio', 'undo', 'erase', 'plus', 'flag', 'close', 'library'] %}
+    {% for name in ['audio', 'undo', 'erase', 'plus', 'flag', 'close', 'library', 'edit', 'next'] %}
       <span data-icon="{{ name }}">{{ icon(name) }}</span>
     {% endfor %}
   </template>

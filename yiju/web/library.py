@@ -51,9 +51,9 @@ STATUS_ORDER = {
     "learning": 0,
     "familiar": 1,
     "unlocked": 2,
-    "eligible": 2,
-    "locked": 3,
-    "learned": 4,
+    "eligible": 3,
+    "locked": 4,
+    "learned": 5,
 }
 CARD_TYPES = {"recognition": "Read", "production": "Write"}
 
@@ -140,9 +140,15 @@ class Library:
 
     def tokens(self, sentence_id: int) -> list[dict[str, str]]:
         return [
-            {"text": row["word"], "status": status(row)}
+            {
+                "text": row["word"],
+                "status": status(row),
+                "pinyin": readings_pinyin(decode(row["readings"])),
+                "meaning": summary(row["readings"]),
+            }
             for row in self.connection.execute(
-                "SELECT sw.word, w.state, w.learned, w.familiar FROM sentence_words sw "
+                "SELECT sw.word, w.state, w.learned, w.familiar, w.readings "
+                "FROM sentence_words sw "
                 "JOIN words w ON w.word = sw.word WHERE sw.sentence_id = ? "
                 "ORDER BY sw.position",
                 (sentence_id,),
@@ -155,7 +161,7 @@ def _sort_key(item: LibraryItem, sort: str) -> tuple[object, ...]:
         return (-item.row["added"],)
     if sort == "length":
         return (len(item.text), item.text)
-    return (5 if item.hidden else STATUS_ORDER[item.status], len(item.text), item.text)
+    return (6 if item.hidden else STATUS_ORDER[item.status], len(item.text), item.text)
 
 
 def _search_text(value: str) -> str:

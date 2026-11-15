@@ -13,7 +13,14 @@ from yiju.core.strength import MEMORY
 from yiju.storage.database import ConflictError, settings
 from yiju.storage.learning import review_card, undo_review
 from yiju.storage.names import choose, pool
-from yiju.storage.queue import card_family, counts, study_queue
+from yiju.storage.pending import waiting
+from yiju.storage.queue import (
+    card_family,
+    counts,
+    reviewed_today,
+    study_queue,
+    upcoming,
+)
 from yiju.storage.sentences import set_hidden, update_sentence
 from yiju.storage.words import status, strength
 
@@ -193,13 +200,19 @@ def study_batch() -> dict[str, object]:
     return {
         "count": len(queue),
         "counts": counts(queue),
+        "today": reviewed_today(connection, now),
         "lastReview": last["id"] if last else None,
         "learnedAt": {
             "stability": context.config["learned_stability"],
             "days": context.config["learned_days"],
         },
         "cards": [card_payload(connection, row, context) for row in queue[:BATCH_SIZE]],
-    }
+    } | ({} if queue else _finished(connection, now))
+
+
+def _finished(connection: sqlite3.Connection, now: datetime) -> dict[str, object]:
+    times = cast("list[str]", upcoming(connection, now)["times"])
+    return {"next": min(times, default=None), "pending": waiting(connection)}
 
 
 def _json_field(data: dict[str, object], name: str) -> int:

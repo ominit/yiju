@@ -13,6 +13,9 @@ const state = {
   queue: [],
   count: 0,
   fresh: 0,
+  today: 0,
+  next: null,
+  pending: 0,
   ratedSinceFetch: 0,
   current: null,
   revealed: false,
@@ -50,6 +53,7 @@ function h(tag, attributes = {}, ...children) {
   for (const [name, value] of Object.entries(attributes)) {
     if (value === null || value === undefined || value === false) continue;
     if (name === "class") element.className = value;
+    else if (name === "style") element.style.cssText = value;
     else if (name === "dataset") Object.assign(element.dataset, value);
     else if (name.startsWith("on"))
       element.addEventListener(name.slice(2), value);
@@ -251,20 +255,27 @@ function senseItems(senses) {
   );
 }
 
-function readingList(readings) {
+function readingList(readings, { skip = 0 } = {}) {
   if (!readings.length) return [h("p", { class: "muted" }, "No definition")];
-  return readings.map((reading) =>
-    h(
+  return readings.map((reading, index) => {
+    const offset = index ? 0 : skip;
+    const senses = reading.senses.slice(offset);
+    return h(
       "section",
-      { class: "reading-group" },
-      readings.length > 1
+      { class: `reading-group${index ? " other" : ""}` },
+      readings.length > 1 && !offset
         ? h("h4", { class: "reading-pinyin" }, reading.pinyin)
         : null,
-      h(
-        "ol",
-        { class: `senses${reading.senses.length === 1 ? " single" : ""}` },
-        senseItems(reading.senses),
-      ),
+      senses.length
+        ? h(
+            "ol",
+            {
+              class: `senses${reading.senses.length === 1 ? " single" : ""}`,
+              style: offset ? `counter-reset: sense ${offset}` : null,
+            },
+            senseItems(senses),
+          )
+        : null,
       reading.classifiers.length
         ? h(
             "p",
@@ -280,8 +291,8 @@ function readingList(readings) {
             `Also pronounced ${reading.also_pronounced.join(", ")}`,
           )
         : null,
-    ),
-  );
+    );
+  });
 }
 
 function promptList(prompts) {
@@ -296,31 +307,19 @@ function isFlagged(word) {
   return state.flags.get(word) ?? false;
 }
 
-function flagToggle(word) {
+function sayButton({ label = true } = {}) {
   return h(
     "button",
     {
       type: "button",
-      class: "icon-button small",
-      "aria-pressed": String(isFlagged(word)),
-      title: `Flag ${word} for correction`,
-      dataset: { flagWord: word },
-    },
-    icon("flag"),
-  );
-}
-
-function sayButton() {
-  return h(
-    "button",
-    {
-      type: "button",
-      class: "say",
+      class: `say${label ? "" : " bare"}`,
       title: "Replay pronunciation (R)",
       dataset: { play: "" },
     },
     icon("audio"),
-    h("span", { class: "sr-only" }, "Replay pronunciation"),
+    label
+      ? h("span", {}, "Replay", h("kbd", {}, "R"))
+      : h("span", { class: "sr-only" }, "Replay pronunciation"),
   );
 }
 
@@ -331,11 +330,88 @@ function missToggle(word) {
       type: "button",
       class: "miss-toggle",
       "aria-pressed": String(state.marked.has(word)),
+      "aria-label": `Mark ${word} as a word you missed`,
       title: `Mark ${word} as a word you missed`,
       dataset: { missWord: word },
     },
-    "Missed",
+    icon("close"),
   );
+}
+
+const summarySenses = 3;
+
+function senseSummary(readings) {
+  const senses = readings.flatMap((reading) => reading.senses);
+  if (!senses.length) return [h("span", { class: "muted" }, "No definition")];
+  const shown = readings[0].senses.slice(0, summarySenses);
+  const hidden = senses.length - shown.length;
+  return [
+    shown.map((sense) => sense.text).join("; "),
+    hidden ? h("span", { class: "more" }, ` +${hidden} more`) : null,
+  ];
+}
+
+function wordNote(word) {
+  const row = h(
+    "li",
+    { class: "word-note", dataset: { word: word.word } },
+    h(
+      "span",
+      { class: "word-note-word" },
+      h("span", { class: "hanzi", lang: "zh-Hans" }, strokes.glyphs(word.word)),
+      h("small", {}, word.readings[0]?.pinyin ?? ""),
+    ),
+    h(
+      "button",
+      {
+        type: "button",
+        class: "word-note-body",
+        "aria-expanded": "false",
+        dataset: { expand: "" },
+      },
+      h("span", { class: "word-note-summary" }, senseSummary(word.readings)),
+      strength(word),
+    ),
+    missToggle(word.word),
+    h(
+      "div",
+      { class: "word-note-all", hidden: true },
+      readingList(word.readings, { skip: summarySenses }),
+      h(
+        "p",
+        { class: "word-note-tools" },
+        h(
+          "button",
+          {
+            type: "button",
+            class: "link muted",
+            "aria-pressed": String(isFlagged(word.word)),
+            dataset: { flagWord: word.word },
+          },
+          h("span", { class: "when-off" }, "Flag for correction"),
+          h("span", { class: "when-on" }, "Flagged"),
+        ),
+        h(
+          "a",
+          {
+            class: "link muted",
+            href: `/library/words/${encodeURIComponent(word.word)}`,
+          },
+          "Open in library",
+        ),
+      ),
+    ),
+  );
+  return row;
+}
+
+function toggleNote(button) {
+  const row = button.closest(".word-note");
+  const open = !row.classList.contains("open");
+  row.classList.toggle("open", open);
+  button.setAttribute("aria-expanded", String(open));
+  row.querySelector(".word-note-all").hidden = !open;
+  if (open) strokes.render(row);
 }
 
 function sentenceEditor(card) {
@@ -379,19 +455,40 @@ function renderCard(card) {
   const sentence = card.kind === "sentence";
   const writing = card.direction === "production";
   const face = h("div", { class: "face" });
+  const glyphs = hanzi(card.reading);
+  const beside = sentence || !writing;
+  if (beside) {
+    const tail = [...card.text.match(/[\p{P}\s]*$/u)[0]].length;
+    glyphs.append(
+      h(
+        "span",
+        { class: "say-anchor", style: `--tail: ${tail}` },
+        sayButton({ label: false }),
+      ),
+    );
+  }
   const headword = h(
     "div",
     {
       class: `headword${sentence ? " sentence" : ""}${sentence && card.text.length > 16 ? " long" : ""}`,
     },
-    hanzi(card.reading),
-    sayButton(),
+    glyphs,
+    writing && !sentence
+      ? h(
+          "p",
+          { class: "headword-pinyin" },
+          card.reading
+            .map(([, syllable]) => syllable)
+            .filter(Boolean)
+            .join(""),
+        )
+      : null,
+    beside ? null : sayButton(),
   );
-  if (sentence)
-    headword.style.setProperty(
-      "--length",
-      [...card.text.replace(/^[\p{P}\s]+|[\p{P}\s]+$/gu, "")].length,
-    );
+  headword.style.setProperty(
+    "--length",
+    [...card.text.replace(/^[\p{P}\s]+|[\p{P}\s]+$/gu, "")].length,
+  );
   face.append(headword);
   if (writing) {
     face.append(
@@ -407,48 +504,25 @@ function renderCard(card) {
 
   const answer = h("div", { class: "answer" });
   if (sentence) {
+    const [, body, trailing] = card.translation.match(
+      /^(.*?)([\p{Po}\p{Pe}\p{Pf}]*)$/su,
+    );
     answer.append(
       h(
-        "div",
-        { class: "sentence-head" },
-        h("p", { class: "translation" }, card.translation),
-        sentenceStrength(card),
+        "p",
+        { class: "translation" },
+        h(
+          "span",
+          { class: "translation-text" },
+          body,
+          trailing ? h("span", { class: "hang-end" }, trailing) : null,
+        ),
       ),
     );
     if (card.words.length) {
       answer.append(
-        h(
-          "ul",
-          { class: "word-notes" },
-          card.words.map((word) =>
-            h(
-              "li",
-              {},
-              h(
-                "div",
-                { class: "word-note-head" },
-                h("span", { class: "word-note-word" }, hanzi(word.reading)),
-                strength(word),
-                h(
-                  "span",
-                  { class: "word-note-tools" },
-                  missToggle(word.word),
-                  flagToggle(word.word),
-                  h(
-                    "a",
-                    {
-                      class: "icon-button small",
-                      href: `/library/words/${encodeURIComponent(word.word)}`,
-                      title: `Open ${word.word} in the library`,
-                    },
-                    icon("library"),
-                  ),
-                ),
-              ),
-              readingList(word.readings),
-            ),
-          ),
-        ),
+        h("div", { class: "sentence-hint" }, sentenceStrength(card)),
+        h("ul", { class: "word-notes" }, card.words.map(wordNote)),
       );
     }
     answer.append(
@@ -457,19 +531,19 @@ function renderCard(card) {
         { class: "sentence-tools" },
         h(
           "button",
-          { type: "button", class: "link", dataset: { edit: "" } },
+          { type: "button", class: "text-button", dataset: { edit: "" } },
           "Edit pinyin or translation",
         ),
         h(
           "button",
-          { type: "button", class: "link danger", dataset: { skip: "" } },
+          { type: "button", class: "text-button", dataset: { skip: "" } },
           "Skip sentence",
         ),
       ),
     );
   } else {
     answer.append(
-      ...readingList(card.readings),
+      h("div", { class: "readings" }, readingList(card.readings)),
       h("div", { class: "card-footer" }, strength(card), reviewsNote(card)),
     );
   }
@@ -498,7 +572,7 @@ function renderActions() {
         "button",
         {
           type: "button",
-          class: "button primary reveal",
+          class: "button reveal",
           dataset: { reveal: "" },
         },
         "Show answer",
@@ -544,9 +618,14 @@ function updateChrome() {
   );
   const fresh = Math.min(state.fresh, remaining);
   const reviews = remaining - fresh;
+  const done = state.today + state.ratedSinceFetch;
+  const total = done + remaining;
   dom.reviews.textContent = String(reviews);
-  dom.reviewsLabel.textContent = reviews === 1 ? "review" : "reviews";
   dom.fresh.textContent = String(fresh);
+  dom.left.hidden = !remaining;
+  dom.done.textContent = String(done);
+  dom.total.textContent = String(total);
+  dom.progress.style.width = `${total ? (100 * done) / total : 100}%`;
   dom.undo.disabled =
     !state.lastReview || state.outbox.length > 0 || Boolean(state.failure);
   dom.flag.disabled = !state.current?.word;
@@ -601,10 +680,86 @@ function show(card, { revealed = false } = {}) {
   prefetch();
 }
 
+const snapshotSize = 160;
+
+function renderCompare(card) {
+  const drawn = pad.drawn();
+  const characters =
+    card.kind === "sentence"
+      ? []
+      : [...card.text].filter((c) => /\p{Script=Han}/u.test(c));
+  const count = Math.max(characters.length, drawn.length, 1);
+  const mine = (index) =>
+    h(
+      "span",
+      { class: "versus-mine" },
+      drawn[index] === undefined
+        ? null
+        : pad.snapshot(drawn[index], snapshotSize),
+    );
+  const pairs = characters.length
+    ? Array.from({ length: count }, (_, index) =>
+        h(
+          "div",
+          { class: "versus-pair" },
+          mine(index),
+          h(
+            "span",
+            { class: "versus-model hanzi", lang: "zh-Hans" },
+            characters[index] ? strokes.glyphs(characters[index]) : null,
+          ),
+        ),
+      )
+    : drawn.map((_, index) => h("div", { class: "versus-pair" }, mine(index)));
+  const compare = h(
+    "div",
+    {
+      class: `versus${characters.length === 1 ? " single" : ""}${characters.length ? "" : " drawings"}`,
+      style: `--count: ${Math.min(count, 4)}`,
+    },
+    characters.length
+      ? h(
+          "p",
+          { class: "versus-head" },
+          h(
+            "span",
+            { class: "versus-pinyin" },
+            card.readings?.[0]?.pinyin ?? "",
+          ),
+          sayButton({ label: false }),
+        )
+      : null,
+    h("div", { class: "versus-pairs" }, pairs),
+    h(
+      "button",
+      {
+        type: "button",
+        class: "icon-button small versus-redraw",
+        title: "Draw again",
+        "aria-label": "Draw again",
+        dataset: { redraw: "" },
+      },
+      icon("edit"),
+    ),
+  );
+  const article = dom.stage.querySelector(".card");
+  article.querySelector(".versus")?.remove();
+  article.querySelector(".answer").prepend(compare);
+  strokes.render(compare);
+}
+
+function redraw(open) {
+  const article = dom.stage.querySelector(".card");
+  if (!article || !pad) return;
+  article.classList.toggle("redraw", open);
+  if (!open) renderCompare(state.current);
+}
+
 function reveal({ silent = false } = {}) {
   if (!state.current || state.revealed) return;
   state.revealed = true;
   const article = dom.stage.querySelector(".card");
+  if (pad) renderCompare(state.current);
   article?.classList.add("revealed");
   article?.removeAttribute("data-strokes-locked");
   dom.stage.querySelector(".face")?.scrollTo({ top: 0 });
@@ -613,31 +768,60 @@ function reveal({ silent = false } = {}) {
   if (!silent && state.autoplay) playAudio();
 }
 
+const relative = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+
+function untilNext(time) {
+  const minutes = Math.max(
+    1,
+    Math.round((Date.parse(time) - Date.now()) / 60000),
+  );
+  if (minutes < 60) return relative.format(minutes, "minute");
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return relative.format(hours, "hour");
+  return relative.format(Math.round(hours / 24), "day");
+}
+
 function renderDone() {
-  const { reviewed, ratings: counts } = state.session;
-  const summary = ratings
-    .filter(([value]) => counts[value])
-    .map(([value, label]) => `${counts[value]} ${label.toLowerCase()}`)
-    .join(" · ");
+  const done = state.today + state.ratedSinceFetch;
+  const again = state.session.ratings[1];
+  const lines = [];
+  if (done)
+    lines.push(
+      `${plural(done, "card")} today${again ? `, ${again} marked Again` : ""}.`,
+    );
+  lines.push(
+    state.next
+      ? `Next card ${untilNext(state.next)}.`
+      : "Nothing is scheduled.",
+  );
   dom.stage.replaceChildren(
     h(
       "section",
       { class: "empty done" },
-      h("p", { class: "empty-glyph", lang: "zh-Hans" }, reviewed ? "好" : "空"),
-      h("h1", {}, reviewed ? "Session complete" : "Nothing due right now"),
       h(
         "p",
-        { class: "muted" },
-        reviewed
-          ? `${plural(reviewed, "card")} reviewed · ${summary}`
-          : "Come back later, or import more words.",
+        { class: "empty-glyph", lang: "zh-Hans" },
+        h("span", {}, state.session.reviewed ? "好" : "空"),
       ),
+      h(
+        "h1",
+        {},
+        state.session.reviewed ? "Session complete" : "Nothing due right now",
+      ),
+      h("p", { class: "muted" }, lines.join(" ")),
       h(
         "div",
         { class: "form-actions center" },
-        h("a", { class: "button", href: "/library" }, "Library"),
+        h("a", { class: "button", href: "/import" }, "Add sentences"),
         h("a", { class: "button primary", href: "/" }, "Done"),
       ),
+      state.pending
+        ? h(
+            "a",
+            { class: "link", href: "/pending" },
+            `${plural(state.pending, "item")} waiting for your check`,
+          )
+        : null,
     ),
   );
   dom.actions.replaceChildren();
@@ -758,6 +942,9 @@ function fetchBatch() {
       if (generation !== state.generation) return false;
       state.count = batch.count;
       state.fresh = batch.counts.new;
+      state.today = batch.today;
+      state.next = batch.next ?? null;
+      state.pending = batch.pending ?? 0;
       state.ratedSinceFetch = 0;
       state.lastReview = batch.lastReview;
       state.learnedAt = batch.learnedAt;
@@ -921,6 +1108,9 @@ function toggleMissed(button) {
   if (state.marked.has(word)) state.marked.delete(word);
   else state.marked.add(word);
   button.setAttribute("aria-pressed", String(state.marked.has(word)));
+  button
+    .closest(".word-note")
+    ?.classList.toggle("missed", state.marked.has(word));
 }
 
 async function toggleFlag(word) {
@@ -936,6 +1126,13 @@ async function toggleFlag(word) {
     state.flags.set(word, !flagged);
     fail(error, dismiss);
   }
+}
+
+function toggleAutoplay() {
+  state.autoplay = !state.autoplay;
+  document.cookie = `yiju-audio=${state.autoplay ? "on" : "off"}; path=/; max-age=31536000; samesite=lax`;
+  if (!state.autoplay) player?.pause();
+  updateChrome();
 }
 
 function loadAudio(card) {
@@ -963,13 +1160,6 @@ function stopAudio() {
   player.removeAttribute("src");
   player.load();
   player = null;
-}
-
-function toggleAutoplay() {
-  state.autoplay = !state.autoplay;
-  document.cookie = `yiju-audio=${state.autoplay ? "on" : "off"}; path=/; max-age=31536000; samesite=lax`;
-  if (!state.autoplay) player?.pause();
-  updateChrome();
 }
 
 function drawStrokes(context, lines, size, lineWidth, color) {
@@ -1005,17 +1195,31 @@ class Pad {
     this.overview = h("div", { class: "pad-overview", hidden: true });
     this.undoButton = this.tool("undo", "Undo stroke (Z)", () => this.undo());
     this.clearButton = this.tool("erase", "Clear", () => this.clear());
-    this.nextButton = this.tool("plus", "Next character", () => this.advance());
-    this.nextButton.classList.add("pad-next");
+    this.nextButton = this.tool("plus", "Next character (N)", () =>
+      this.advance(),
+    );
     slot.append(
-      h("div", { class: "pad-surface" }, this.canvas, this.overview),
       h(
         "div",
-        { class: "pad-tools" },
-        this.undoButton,
-        this.clearButton,
+        { class: "pad-surface" },
+        this.canvas,
+        h("div", { class: "pad-corner" }, this.undoButton, this.clearButton),
+        h("div", { class: "pad-corner end" }, this.nextButton),
+        this.overview,
+      ),
+      h(
+        "div",
+        { class: "pad-row" },
         this.thumbs,
-        this.nextButton,
+        h(
+          "button",
+          {
+            type: "button",
+            class: "button small pad-compare",
+            onclick: () => redraw(false),
+          },
+          "Compare",
+        ),
       ),
     );
     this.width = 0;
@@ -1236,6 +1440,30 @@ class Pad {
       ?.setAttribute("aria-expanded", "false");
   }
 
+  snapshot(index, size) {
+    const ratio = window.devicePixelRatio || 1;
+    const canvas = h("canvas", {
+      width: Math.round(size * ratio),
+      height: Math.round(size * ratio),
+    });
+    const context = canvas.getContext("2d");
+    context.scale(ratio, ratio);
+    drawStrokes(
+      context,
+      this.drawings[index] || [],
+      size,
+      Math.max(2.5, size / 48),
+      getComputedStyle(this.canvas).color,
+    );
+    return canvas;
+  }
+
+  drawn() {
+    return this.drawings
+      .map((_, index) => index)
+      .filter((index) => this.drawings[index].length);
+  }
+
   destroy() {
     this.observer.disconnect();
   }
@@ -1254,6 +1482,8 @@ function onClick(event) {
   else if (target.matches("[data-edit-cancel]"))
     show(state.current, { revealed: true });
   else if (target.matches("[data-miss-word]")) toggleMissed(target);
+  else if (target.matches("[data-expand]")) toggleNote(target);
+  else if (target.matches("[data-redraw]")) redraw(true);
   else if (target.matches("[data-flag-word]"))
     toggleFlag(target.dataset.flagWord);
   else if (target === dom.flag && state.current) toggleFlag(state.current.word);
@@ -1280,6 +1510,7 @@ function onKey(event) {
   } else if (event.key === "r" && state.revealed) playAudio();
   else if (event.key === "u") undo();
   else if (event.key === "z" && pad && !state.revealed) pad.undo();
+  else if (event.key === "n" && pad && !state.revealed) pad.advance();
 }
 
 export function mount(root) {
@@ -1291,8 +1522,11 @@ export function mount(root) {
     actions: root.querySelector("[data-actions]"),
     alert: root.querySelector(".study-alert"),
     reviews: root.querySelector("[data-reviews]"),
-    reviewsLabel: root.querySelector("[data-reviews-label]"),
     fresh: root.querySelector("[data-new]"),
+    left: root.querySelector("[data-left]"),
+    done: root.querySelector("[data-done]"),
+    total: root.querySelector("[data-total]"),
+    progress: root.querySelector("[data-progress]"),
     undo: root.querySelector("[data-undo]"),
     flag: root.querySelector("[data-flag-card]"),
     audio: root.querySelector("[data-audio-toggle]"),
@@ -1303,6 +1537,9 @@ export function mount(root) {
   const batch = JSON.parse(root.querySelector("#study-data").textContent);
   state.count = batch.count;
   state.fresh = batch.counts.new;
+  state.today = batch.today;
+  state.next = batch.next ?? null;
+  state.pending = batch.pending ?? 0;
   state.lastReview = batch.lastReview;
   state.learnedAt = batch.learnedAt;
   state.ratedSinceFetch = 0;

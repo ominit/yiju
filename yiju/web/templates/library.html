@@ -9,6 +9,9 @@
       {% if kind == 'words' and state == 'flagged' and counts.flagged %}
         <a class="button" href="{{ url_for('flags.export_flags') }}" download>{{ icon('download', 18) }}Export flags</a>
       {% endif %}
+      {% if waiting_count %}
+        <a class="button" href="{{ url_for('pages.pending_page') }}"><span class="badge">{{ waiting_count }}</span>Check</a>
+      {% endif %}
       <a class="button" href="{{ url_for('pages.import_page') }}">{{ icon('plus', 18) }}Add</a>
     </div>
   </header>
@@ -21,7 +24,7 @@
       <input type="search"
              name="q"
              value="{{ q }}"
-             placeholder="{{ 'Characters, pinyin or meaning' if kind == 'words' else 'Chinese or translation' }}"
+             placeholder="{{ 'Search words' if kind == 'words' else 'Search sentences' }}"
              autocomplete="off"
              spellcheck="false">
     </label>
@@ -37,7 +40,7 @@
   </form>
   <div data-results>
     <nav class="chips" aria-label="Filter">
-      {% for key, label in filters %}
+      {% for key, label in filters if counts[key] or key == state or key == 'all' %}
         <a href="{{ url_for(endpoint, filter=key, q=q or none, sort=sort if sort != 'status' else none) }}"
            {% if state == key %}aria-current="page"{% endif %}>{{ label }}<span>{{ counts[key] }}</span></a>
       {% endfor %}

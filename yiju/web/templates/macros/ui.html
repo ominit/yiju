@@ -168,6 +168,37 @@
   </div>
   <p class="muted small">Learned at {{ parameters.learned_stability }} days of strength and {{ parameters.learned_days }} successful days. A learned word drops back below {{ parameters.unlearned_stability }} days.</p>
 {% endmacro %}
+{% macro strength_line(state, strength, parameters) %}
+  {%- set learned = state == 'learned' -%}
+  {%- set label = {'learned': 'Learned', 'familiar': 'Familiar'}.get(state, 'Learning') -%}
+  {%- set fill = (([strength.stability / parameters.learned_stability, 1] | min) * 100) if parameters.learned_stability else 0 -%}
+  <div class="strength-block">
+    <span class="strength {{ state if state in ['learned', 'familiar'] else '' }}">
+      <span class="strength-label">{{ label }}</span>
+      <svg class="strength-bar"
+           viewBox="0 0 100 6"
+           preserveAspectRatio="none"
+           role="meter"
+           aria-label="Memory strength toward learned"
+           aria-valuemin="0"
+           aria-valuemax="{{ parameters.learned_stability }}"
+           aria-valuenow="{{ [strength.stability, parameters.learned_stability] | min }}">
+        <rect class="strength-track" width="100" height="6" rx="3" />
+        {%- if fill > 0 %}<rect class="strength-fill" width="{{ [fill, 6] | max }}" height="6" rx="3" />{% endif %}
+      </svg>
+      <span class="strength-value">{{ strength.stability }}{% if not learned %}/{{ parameters.learned_stability }}{% endif %}d</span>
+      <span class="strength-days"
+            title="{{ strength.days }} of {{ parameters.learned_days }} successful days">
+        {%- for index in range(parameters.learned_days) %}<i class="{{ 'on' if index < strength.days else '' }}"></i>
+{% endfor -%}
+</span>
+</span>
+<p class="muted small">
+  {% if strength.recall is not none %}Recall now {{ strength.recall }}%.{% endif %}
+  Learned at {{ parameters.learned_stability }} days of strength and {{ parameters.learned_days }} successful days.
+</p>
+</div>
+{% endmacro %}
 {% macro card_table(cards) %}
   <div class="card-table">
     {% for card in cards %}

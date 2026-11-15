@@ -122,6 +122,15 @@ def counts(queue: list[sqlite3.Row]) -> dict[str, int]:
     return {"reviews": len(queue) - new, "new": new}
 
 
+def reviewed_today(connection: sqlite3.Connection, now: datetime) -> int:
+    return int(
+        connection.execute(
+            "SELECT count(*) FROM reviews WHERE undone = 0 AND created >= ?",
+            (day_bounds(now)[0],),
+        ).fetchone()[0]
+    )
+
+
 def overview(connection: sqlite3.Connection, now: datetime) -> dict[str, int]:
     queue = study_queue(connection, now)
     words = dict(
@@ -153,9 +162,6 @@ def overview(connection: sqlite3.Connection, now: datetime) -> dict[str, int]:
         "sentences_locked": sentences["locked"],
         "due": counts(queue)["reviews"],
         "new": counts(queue)["new"],
-        "today": connection.execute(
-            "SELECT count(*) FROM reviews WHERE undone = 0 AND created >= ?",
-            (day_bounds(now)[0],),
-        ).fetchone()[0],
+        "today": reviewed_today(connection, now),
         "pending": waiting(connection),
     }

@@ -45,7 +45,7 @@ JSON = {"Accept": "application/json"}
         ("/sentences", "Sentences · Library · Yiju", "library"),
         ("/settings", "Settings · Yiju", "settings"),
         ("/import", "Add · Yiju", "library"),
-        ("/pending", "Check before adding · Yiju", "library"),
+        ("/pending", "Waiting for your check · Yiju", "library"),
         ("/about", "About · Yiju", "settings"),
     ],
 )
@@ -84,7 +84,7 @@ def test_one_sentence_goes_through_the_check_screen_before_it_is_added(
     assert response.status_code == 303
     assert response.headers["Location"] == "/pending"
     html = client.get("/pending").get_data(as_text=True)
-    assert "Check before adding" in html
+    assert "Waiting for your check" in html
     assert "wǒ hěn xǐhuan pútao." in html
     assert "grape" in html
     assert "Reading of" not in html
@@ -99,8 +99,10 @@ def test_everything_added_waits_on_one_check_screen(
     start_import(client, "我去。 | I am going.\n")
     with database(app) as db:
         stage(db, "我学习中文。 | I study Chinese.\n苹果\n")
-    assert "3 items waiting for your check" in client.get("/").get_data(as_text=True)
-    assert "3 items waiting" in client.get("/import").get_data(as_text=True)
+    for page in ("/", "/import"):
+        html = client.get(page).get_data(as_text=True)
+        assert '<span class="badge">3</span>' in html
+        assert "items waiting for your check" in html
     waiting = page_context(client, "/pending")["pending"]
     assert [sentence.chinese for sentence in waiting.sentences] == [
         "我去。",
@@ -194,7 +196,7 @@ def test_problems_block_approval_and_stale_forms_are_rejected(
 ) -> None:
     start_import(client, "嗯嗯嗯 好 | Mm, good.\n")
     page = client.get("/pending").get_data(as_text=True)
-    assert "Fix these before approving" in page
+    assert "before approving" in page
     assert "CC-CEDICT has no entry" in page
     form = check_form(client)
     client.post("/pending", data={**form, "step": "approve"})
@@ -370,7 +372,7 @@ def test_library_changes_wait_on_the_check_screen(
     assert "Deletes its cards" not in html
     assert ">Sentence 2<" not in html
     assert '<span class="word-row-han" lang="zh-Hans">去</span>' in html
-    assert html.count('<span class="status status-adding">Adding</span>') == 2
+    assert html.count(">Adding</span>") == 2
     form = check_form(client)
     form["c1-translation"] = "I like tea."
     response = client.post("/pending", data={**form, "approve-change": "1"})

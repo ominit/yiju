@@ -1,5 +1,8 @@
 import os
+import re
 import secrets
+import sqlite3
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -10,12 +13,11 @@ from yiju.core import dictionary
 from yiju.core.names import SLOT, label, reading
 from yiju.core.pronunciation import pronunciation
 from yiju.storage.database import connect, initialize
+from yiju.storage.pending import waiting
 
 from .security import register_handlers
 
 if TYPE_CHECKING:
-    import sqlite3
-
     from flask.json.provider import DefaultJSONProvider
 
 
@@ -57,10 +59,41 @@ def slot_markup(text: str) -> Markup:
     return Markup("").join(parts)
 
 
+WORDS = re.compile(r"\s+|\S+")
+
+
+def word_diff(before: str, after: str, side: str) -> Markup:
+    old, new = WORDS.findall(before), WORDS.findall(after)
+    wrap = Markup("<del>{}</del>") if side == "before" else Markup("<ins>{}</ins>")
+    parts = []
+    matcher = SequenceMatcher(None, old, new, autojunk=False)
+    for op, start, end, first, last in matcher.get_opcodes():
+        chunk = "".join(old[start:end] if side == "before" else new[first:last])
+        core = chunk.strip()
+        if op == "equal" or not core:
+            parts.append(slot_markup(chunk))
+            continue
+        lead = chunk[: len(chunk) - len(chunk.lstrip())]
+        trail = chunk[len(chunk.rstrip()) :]
+        parts += [
+            escape(lead),
+            wrap.format(slot_markup(core)),
+            escape(trail),
+        ]
+    return Markup("").join(parts)
+
+
 def _close_database(_error: BaseException | None) -> None:
     connection = g.pop("database", None)
     if connection is not None:
         connection.close()
+
+
+def _waiting_context() -> dict[str, int]:
+    try:
+        return {"waiting_count": waiting(database())}
+    except sqlite3.Error:
+        return {"waiting_count": 0}
 
 
 def refresh_caches() -> None:
@@ -73,6 +106,7 @@ def create_app(database_path: Path | None = None, *, prefill: bool = False) -> F
     app.jinja_env.filters["pronunciation"] = pronunciation
     app.jinja_env.filters["reading"] = reading
     app.jinja_env.filters["slots"] = slot_markup
+    app.jinja_env.filters["diff"] = word_diff
     app.add_template_global(_asset, "asset")
     path = (
         database_path or Path(os.environ.get("YIJU_DATA_DIR", "data")) / "yiju.sqlite3"
@@ -86,6 +120,7 @@ def create_app(database_path: Path | None = None, *, prefill: bool = False) -> F
         SESSION_COOKIE_SAMESITE="Lax",
     )
     register_handlers(app)
+    app.context_processor(_waiting_context)
     app.teardown_appcontext(_close_database)
     from .actions import actions
     from .agents import agents

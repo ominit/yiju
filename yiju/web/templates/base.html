@@ -23,6 +23,7 @@
           crossorigin="use-credentials">
     <link rel="apple-touch-icon"
           href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
+    <link rel="stylesheet" href="{{ asset('vendor/fonts/fonts.css') }}">
     <link rel="stylesheet" href="{{ asset('app.css') }}">
     <script src="{{ asset('app.js') }}" type="module"></script>
     {% block head %}{% endblock %}
@@ -40,8 +41,12 @@
         <nav class="tabs" aria-label="Main">
           {% for key, endpoint, label in [('home', 'pages.home', 'Today'), ('study', 'study.page', 'Study'), ('library', 'pages.library', 'Library'), ('settings', 'pages.preferences', 'Settings')] %}
             <a href="{{ url_for(endpoint) }}"
+               class="tab-{{ key }}"
                {% if section == key %}aria-current="page"{% endif %}>
               {{ icon(key, 22) }}<span>{{ label }}</span>
+              {%- if key == 'library' and waiting_count %}
+                <span class="badge" title="{{ waiting_count }} waiting for your check">{{ waiting_count }}</span>
+              {%- endif %}
             </a>
           {% endfor %}
         </nav>

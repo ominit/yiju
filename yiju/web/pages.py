@@ -144,7 +144,11 @@ def sentence_detail(sentence_id: str) -> str | Response:
 
 @pages.get("/settings")
 def preferences() -> str:
-    return render_template("settings.html", config=settings(database()))
+    return render_template(
+        "settings.html",
+        config=settings(database()),
+        autoplay=request.cookies.get("yiju-audio") != "off",
+    )
 
 
 @pages.get("/about")

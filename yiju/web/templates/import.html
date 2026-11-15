@@ -22,42 +22,26 @@
     </section>
   {% endif %}
   {% if waiting %}
-    <a class="notice" href="{{ url_for('pages.pending_page') }}">
-      {{ waiting }} item{{ '' if waiting == 1 else 's' }} waiting for your check {{ icon('next', 18) }}
+    <a class="check-row" href="{{ url_for('pages.pending_page') }}">
+      <span class="badge">{{ waiting }}</span>
+      {{ 'item' if waiting == 1 else 'items' }} waiting for your check {{ icon('next', 18) }}
     </a>
   {% endif %}
-  <form class="panel import"
+  {% set tab = 'names' if names or request.args.get('tab') == 'names' else 'sentences' %}
+  <nav class="segmented import-tabs" aria-label="What to add">
+    <a href="{{ url_for('pages.import_page') }}"
+       data-tab="sentences"
+       {% if tab == 'sentences' %}aria-current="page"{% endif %}>Sentences</a>
+    <a href="{{ url_for('pages.import_page', tab='names') }}"
+       data-tab="names"
+       {% if tab == 'names' %}aria-current="page"{% endif %}>Names</a>
+  </nav>
+  <form class="import"
         method="post"
         action="{{ url_for('actions.start_import') }}"
-        data-busy="Checking…">
-    <h2>One sentence</h2>
-    <input type="hidden" name="csrf" value="{{ csrf }}">
-    <label>
-      Chinese
-      <input name="chinese"
-             lang="zh-Hans"
-             maxlength="300"
-             autocomplete="off"
-             value="{{ chinese or '' }}"
-             required>
-    </label>
-    <label>
-      Translation
-      <input name="translation"
-             maxlength="2000"
-             autocomplete="off"
-             value="{{ translation or '' }}"
-             required>
-    </label>
-    <div class="form-actions">
-      <button class="button primary" type="submit">Check</button>
-    </div>
-  </form>
-  <form class="panel import"
-        method="post"
-        action="{{ url_for('actions.start_import') }}"
-        data-busy="Checking…">
-    <h2>Paste many</h2>
+        data-tab-panel="sentences"
+        data-busy="Checking…"
+        {% if tab != 'sentences' %}hidden{% endif %}>
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <label>
       <span class="sr-only">Sentences and words</span>
@@ -68,33 +52,35 @@
                 placeholder="我很喜欢葡萄。 | I really like grapes."
                 required>{{ text or '' }}</textarea>
     </label>
+    <p class="muted small">One sentence per line: the Chinese, a vertical bar, then the English. A line of words with no translation adds just those words.</p>
     <details class="format">
-      <summary>Format</summary>
+      <summary>Full format</summary>
       <pre>{{ format }}</pre>
     </details>
     <div class="form-actions">
       <button class="button primary" type="submit">Check</button>
     </div>
   </form>
-  <form class="panel import"
+  <form class="import"
         id="names"
         method="post"
         action="{{ url_for('actions.start_name_import') }}"
-        data-busy="Checking…">
-    <h2>Names</h2>
-    <p class="muted small">Study fills the people in your sentences with these.</p>
+        data-tab-panel="names"
+        data-busy="Checking…"
+        {% if tab != 'names' %}hidden{% endif %}>
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <label>
       <span class="sr-only">Names</span>
       <textarea name="names"
                 lang="zh-Hans"
-                rows="4"
+                rows="6"
                 spellcheck="false"
                 placeholder="王芳 female"
                 required>{{ names or '' }}</textarea>
     </label>
+    <p class="muted small">Study fills the people in your sentences with these. One name per line, then male or female.</p>
     <details class="format">
-      <summary>Format</summary>
+      <summary>Full format</summary>
       <pre>{{ name_format }}</pre>
     </details>
     <div class="form-actions">

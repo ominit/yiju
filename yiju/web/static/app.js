@@ -287,7 +287,7 @@ function routable(url) {
 async function toggleItem(item) {
   const row = item.querySelector(".row");
   const list = item.closest(".list");
-  const top = row.getBoundingClientRect().top;
+  const top = item.getBoundingClientRect().top;
   const opening = !item.classList.contains("open");
   for (const other of list.querySelectorAll(".item.open")) {
     if (other === item) continue;
@@ -311,7 +311,7 @@ async function toggleItem(item) {
   }
   current.classList.toggle("open", opening);
   current.querySelector(".row").setAttribute("aria-expanded", String(opening));
-  const shift = current.querySelector(".row").getBoundingClientRect().top - top;
+  const shift = current.getBoundingClientRect().top - top;
   if (shift) scrollBy(0, shift);
   const url = new URL(location.href);
   if (opening) url.searchParams.set("open", current.dataset.item);
@@ -482,9 +482,9 @@ document.addEventListener("click", (event) => {
     say(speak.dataset.say);
     return;
   }
-  const row = event.target.closest(".item > .row");
+  const row = event.target.closest(".item > .row, .item [data-collapse]");
   if (row) {
-    toggleItem(row.parentElement);
+    toggleItem(row.closest(".item"));
     return;
   }
   if (event.target.closest("[data-back]")) {
@@ -632,6 +632,11 @@ document.addEventListener("change", (event) => {
 document.addEventListener("change", (event) => {
   if (event.target.matches("[data-auto-submit]"))
     event.target.form.requestSubmit();
+});
+
+document.addEventListener("change", (event) => {
+  if (!event.target.matches("[data-autoplay]")) return;
+  document.cookie = `yiju-audio=${event.target.checked ? "on" : "off"}; path=/; max-age=31536000; samesite=lax`;
 });
 
 document.addEventListener("click", async (event) => {

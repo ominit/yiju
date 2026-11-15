@@ -13,7 +13,7 @@ It is built for one person on their own server. There are no accounts and no
 login, so keep it on a private network or put it behind something that checks
 who you are.
 
-![A writing card after reveal, with a hand-drawn 吃 on the scratchpad next to the answer](.github/screenshots/writing.png)
+![A writing card for 请给我一杯水 after reveal, with 请 drawn on the scratchpad and each word of the sentence listed with its meaning and strength](.github/screenshots/writing.png)
 
 ## How it works
 
@@ -39,22 +39,30 @@ Each day, reviews come first. New cards follow, up to a daily limit you set.
 A card whose other direction you have already studied comes before a card you
 have never seen.
 
-![The Today page with the day's counts, word and sentence progress, upcoming reviews and the last 30 days](.github/screenshots/today.png)
+![The Today page with the day's counts, word and sentence progress, reviews due over the next week and a month of past reviews by rating](.github/screenshots/today.png)
+
+When you reveal a sentence, every word in it is listed with its meaning and
+how strong it is. Tap the cross next to a word you missed. That word counts as
+a miss, and the rest of the sentence is not failed with it. Writing cards have
+a scratchpad and stroke order animations. Every card has audio.
+
+The layout works on a phone too.
+
+![Three phone screens: a sentence after reveal with its word list, a writing card with 请 drawn on the scratchpad, and 喝 with both of its readings](.github/screenshots/phone.png)
 
 Definitions come from CC-CEDICT and are copied into your library when a word is
-added, so you can edit them. Writing cards have a scratchpad and stroke order
-animations. Every card has audio.
+added, so you can edit them.
 
-![The library's word list with readings, meanings, status filters and search](.github/screenshots/library.png)
+![The library's word list with pinyin, meanings and each word's status, plus status filters and search](.github/screenshots/library.png)
 
 ## Adding sentences
 
-Paste sentences on the Library page, or use the CLI. Nothing goes straight into
+Paste sentences on the Add page, or use the CLI. Nothing goes straight into
 your library. Imports wait on a check screen where you fix the word split,
 pinyin, readings and translations, then approve sentences one at a time or all
 at once.
 
-![The check screen, where a 吧 with several readings waits for the right one to be picked](.github/screenshots/check.png)
+![The check screen with 我们明天一起去喝茶吧 waiting, the words it adds marked Adding, and 吧 waiting for one of its three readings to be picked](.github/screenshots/check.png)
 
 The format is one item per line:
 

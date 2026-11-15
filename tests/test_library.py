@@ -51,11 +51,10 @@ def test_sentences_are_filtered_by_state(client: FlaskClient, app: Flask) -> Non
     assert keys(client, "/sentences?filter=eligible") == ["1"]
     assert keys(client, "/sentences?filter=locked") == ["2"]
     detail = page_context(client, "/sentences/2")
-    assert detail["details"]["tokens"] == [
-        {"text": "我", "status": "unlocked"},
-        {"text": "学习", "status": "locked"},
-        {"text": "中文", "status": "locked"},
-    ]
+    assert [
+        (token["text"], token["status"]) for token in detail["details"]["tokens"]
+    ] == [("我", "unlocked"), ("学习", "locked"), ("中文", "locked")]
+    assert detail["details"]["tokens"][1]["pinyin"] == "xuéxí"
     assert "3 words not familiar yet" in detail["details"]["reason"]
 
 
