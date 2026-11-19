@@ -1,10 +1,15 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time, timedelta
 
 from fsrs import Card, Rating, Scheduler
 
 
 def now_utc() -> datetime:
     return datetime.now(UTC)
+
+
+def local_day(now: datetime, offset: int = 0) -> datetime:
+    start = datetime.combine(now.date() + timedelta(days=offset), time(), now.tzinfo)
+    return start.astimezone(UTC)
 
 
 def scheduler(retention: float = 0.9) -> Scheduler:

@@ -429,3 +429,20 @@ def test_saving_the_check_screen_keeps_a_new_order(
         assert not db.execute("SELECT 1 FROM pending_changes").fetchone()
     assert rows["行"]["source"] == rows["去"]["source"] == "cedict"
     assert rows["行"]["readings"].index("xíng") < rows["行"]["readings"].index("háng")
+
+
+@pytest.mark.parametrize(
+    ("cookie", "zone"),
+    [
+        ("Asia/Shanghai", "Asia/Shanghai"),
+        ("../etc/passwd", "UTC"),
+        ("Not/AZone", "UTC"),
+        ("", "UTC"),
+    ],
+)
+def test_pages_use_the_browser_timezone(
+    client: FlaskClient, cookie: str, zone: str
+) -> None:
+    client.set_cookie("tz", cookie)
+    html = client.get("/").get_data(as_text=True)
+    assert f'data-zone="{zone}"' in html

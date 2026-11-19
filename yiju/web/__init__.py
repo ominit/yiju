@@ -1,3 +1,4 @@
+import hashlib
 import os
 import re
 import secrets
@@ -5,19 +6,23 @@ import sqlite3
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
+from zoneinfo import ZoneInfo
 
-from flask import Flask, current_app, g, url_for
+from flask import Flask, current_app, g, request, url_for
 from markupsafe import Markup, escape
 
 from yiju.core import dictionary
 from yiju.core.names import SLOT, label, reading
 from yiju.core.pronunciation import pronunciation
+from yiju.core.scheduling import now_utc
 from yiju.storage.database import connect, initialize
 from yiju.storage.pending import waiting
 
 from .security import register_handlers
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from flask.json.provider import DefaultJSONProvider
 
 
@@ -25,6 +30,17 @@ def database() -> sqlite3.Connection:
     if "database" not in g:
         g.database = connect(Path(current_app.config["DATABASE"]))
     return cast("sqlite3.Connection", g.database)
+
+
+def zone() -> ZoneInfo:
+    try:
+        return ZoneInfo(request.cookies.get("tz", "UTC"))
+    except KeyError, OSError, ValueError:
+        return ZoneInfo("UTC")
+
+
+def local_now() -> datetime:
+    return now_utc().astimezone(zone())
 
 
 def _secret(path: Path) -> bytes:
@@ -38,9 +54,16 @@ def _secret(path: Path) -> bytes:
         return value
 
 
+VERSIONS: dict[tuple[str, int, int], str] = {}
+
+
 def _asset(filename: str) -> str:
     path = Path(current_app.static_folder or "") / filename
-    return url_for("static", filename=filename, v=int(path.stat().st_mtime))
+    stat = path.stat()
+    key = (filename, stat.st_mtime_ns, stat.st_size)
+    if key not in VERSIONS:
+        VERSIONS[key] = hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+    return url_for("static", filename=filename, v=VERSIONS[key])
 
 
 def slot_markup(text: str) -> Markup:
@@ -96,6 +119,10 @@ def _waiting_context() -> dict[str, int]:
         return {"waiting_count": 0}
 
 
+def _zone_context() -> dict[str, str]:
+    return {"zone": zone().key}
+
+
 def refresh_caches() -> None:
     current_app.extensions["yiju.prefill"].notify()
 
@@ -121,6 +148,7 @@ def create_app(database_path: Path | None = None, *, prefill: bool = False) -> F
     )
     register_handlers(app)
     app.context_processor(_waiting_context)
+    app.context_processor(_zone_context)
     app.teardown_appcontext(_close_database)
     from .actions import actions
     from .agents import agents

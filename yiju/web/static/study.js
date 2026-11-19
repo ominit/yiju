@@ -307,19 +307,17 @@ function isFlagged(word) {
   return state.flags.get(word) ?? false;
 }
 
-function sayButton({ label = true } = {}) {
+function sayButton() {
   return h(
     "button",
     {
       type: "button",
-      class: `say${label ? "" : " bare"}`,
-      title: "Replay pronunciation (R)",
+      class: "say bare",
+      title: "Replay (R)",
       dataset: { play: "" },
     },
     icon("audio"),
-    label
-      ? h("span", {}, "Replay", h("kbd", {}, "R"))
-      : h("span", { class: "sr-only" }, "Replay pronunciation"),
+    h("span", { class: "sr-only" }, "Replay"),
   );
 }
 
@@ -456,34 +454,16 @@ function renderCard(card) {
   const writing = card.direction === "production";
   const face = h("div", { class: "face" });
   const glyphs = hanzi(card.reading);
-  const beside = sentence || !writing;
-  if (beside) {
-    const tail = [...card.text.match(/[\p{P}\s]*$/u)[0]].length;
-    glyphs.append(
-      h(
-        "span",
-        { class: "say-anchor", style: `--tail: ${tail}` },
-        sayButton({ label: false }),
-      ),
-    );
-  }
+  const tail = [...card.text.match(/[\p{P}\s]*$/u)[0]].length;
+  glyphs.append(
+    h("span", { class: "say-anchor", style: `--tail: ${tail}` }, sayButton()),
+  );
   const headword = h(
     "div",
     {
       class: `headword${sentence ? " sentence" : ""}${sentence && card.text.length > 16 ? " long" : ""}`,
     },
     glyphs,
-    writing && !sentence
-      ? h(
-          "p",
-          { class: "headword-pinyin" },
-          card.reading
-            .map(([, syllable]) => syllable)
-            .filter(Boolean)
-            .join(""),
-        )
-      : null,
-    beside ? null : sayButton(),
   );
   headword.style.setProperty(
     "--length",
@@ -680,86 +660,10 @@ function show(card, { revealed = false } = {}) {
   prefetch();
 }
 
-const snapshotSize = 160;
-
-function renderCompare(card) {
-  const drawn = pad.drawn();
-  const characters =
-    card.kind === "sentence"
-      ? []
-      : [...card.text].filter((c) => /\p{Script=Han}/u.test(c));
-  const count = Math.max(characters.length, drawn.length, 1);
-  const mine = (index) =>
-    h(
-      "span",
-      { class: "versus-mine" },
-      drawn[index] === undefined
-        ? null
-        : pad.snapshot(drawn[index], snapshotSize),
-    );
-  const pairs = characters.length
-    ? Array.from({ length: count }, (_, index) =>
-        h(
-          "div",
-          { class: "versus-pair" },
-          mine(index),
-          h(
-            "span",
-            { class: "versus-model hanzi", lang: "zh-Hans" },
-            characters[index] ? strokes.glyphs(characters[index]) : null,
-          ),
-        ),
-      )
-    : drawn.map((_, index) => h("div", { class: "versus-pair" }, mine(index)));
-  const compare = h(
-    "div",
-    {
-      class: `versus${characters.length === 1 ? " single" : ""}${characters.length ? "" : " drawings"}`,
-      style: `--count: ${Math.min(count, 4)}`,
-    },
-    characters.length
-      ? h(
-          "p",
-          { class: "versus-head" },
-          h(
-            "span",
-            { class: "versus-pinyin" },
-            card.readings?.[0]?.pinyin ?? "",
-          ),
-          sayButton({ label: false }),
-        )
-      : null,
-    h("div", { class: "versus-pairs" }, pairs),
-    h(
-      "button",
-      {
-        type: "button",
-        class: "icon-button small versus-redraw",
-        title: "Draw again",
-        "aria-label": "Draw again",
-        dataset: { redraw: "" },
-      },
-      icon("edit"),
-    ),
-  );
-  const article = dom.stage.querySelector(".card");
-  article.querySelector(".versus")?.remove();
-  article.querySelector(".answer").prepend(compare);
-  strokes.render(compare);
-}
-
-function redraw(open) {
-  const article = dom.stage.querySelector(".card");
-  if (!article || !pad) return;
-  article.classList.toggle("redraw", open);
-  if (!open) renderCompare(state.current);
-}
-
 function reveal({ silent = false } = {}) {
   if (!state.current || state.revealed) return;
   state.revealed = true;
   const article = dom.stage.querySelector(".card");
-  if (pad) renderCompare(state.current);
   article?.classList.add("revealed");
   article?.removeAttribute("data-strokes-locked");
   dom.stage.querySelector(".face")?.scrollTo({ top: 0 });
@@ -1207,20 +1111,7 @@ class Pad {
         h("div", { class: "pad-corner end" }, this.nextButton),
         this.overview,
       ),
-      h(
-        "div",
-        { class: "pad-row" },
-        this.thumbs,
-        h(
-          "button",
-          {
-            type: "button",
-            class: "button small pad-compare",
-            onclick: () => redraw(false),
-          },
-          "Compare",
-        ),
-      ),
+      h("div", { class: "pad-row" }, this.thumbs),
     );
     this.width = 0;
     this.observer = new ResizeObserver(() => {
@@ -1440,30 +1331,6 @@ class Pad {
       ?.setAttribute("aria-expanded", "false");
   }
 
-  snapshot(index, size) {
-    const ratio = window.devicePixelRatio || 1;
-    const canvas = h("canvas", {
-      width: Math.round(size * ratio),
-      height: Math.round(size * ratio),
-    });
-    const context = canvas.getContext("2d");
-    context.scale(ratio, ratio);
-    drawStrokes(
-      context,
-      this.drawings[index] || [],
-      size,
-      Math.max(2.5, size / 48),
-      getComputedStyle(this.canvas).color,
-    );
-    return canvas;
-  }
-
-  drawn() {
-    return this.drawings
-      .map((_, index) => index)
-      .filter((index) => this.drawings[index].length);
-  }
-
   destroy() {
     this.observer.disconnect();
   }
@@ -1483,7 +1350,6 @@ function onClick(event) {
     show(state.current, { revealed: true });
   else if (target.matches("[data-miss-word]")) toggleMissed(target);
   else if (target.matches("[data-expand]")) toggleNote(target);
-  else if (target.matches("[data-redraw]")) redraw(true);
   else if (target.matches("[data-flag-word]"))
     toggleFlag(target.dataset.flagWord);
   else if (target === dom.flag && state.current) toggleFlag(state.current.word);

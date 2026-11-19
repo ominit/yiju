@@ -19,6 +19,11 @@ let visiting = 0;
 let installPrompt = null;
 let speaker = null;
 let clock = null;
+let hovering = null;
+const pages = new Map();
+const items = new Map();
+const turns = new WeakMap();
+const prefetchLife = 15000;
 
 function csrf() {
   return document.querySelector('meta[name="csrf"]')?.content || "";
@@ -46,6 +51,27 @@ function counted(count, word) {
   return `${count} ${word}${count === 1 ? "" : "s"}`;
 }
 
+function drawForecast(today) {
+  const bars = [...document.querySelectorAll(".forecast > li")];
+  const total = document.querySelector("[data-rest]");
+  if (!bars.length || !total) return;
+  bars[0].dataset.count = today;
+  const counts = bars.map((bar) => Number(bar.dataset.count));
+  const max = Math.max(1, ...counts);
+  bars.forEach((bar, index) => {
+    const count = counts[index];
+    const svg = bar.querySelector(".forecast-bar");
+    svg.setAttribute(
+      "height",
+      `${count ? Math.max((count / max) * 100, 6) : 2}%`,
+    );
+    svg.classList.toggle("none", !count);
+  });
+  bars[0].querySelector(".forecast-value").textContent = today || "";
+  bars[0].title = `${bars[0].title.split(":")[0]}: ${today} due`;
+  total.textContent = Number(total.dataset.rest) + today;
+}
+
 function updateGreeting() {
   clearTimeout(clock);
   const greeting = document.querySelector("[data-schedule]");
@@ -66,7 +92,7 @@ function updateGreeting() {
       fresh && counted(fresh, "new card"),
     ]
       .filter(Boolean)
-      .join(" and ")} today.`;
+      .join(" and ")} due.`;
     line.textContent = today ? `${today} done so far.` : "Nothing done yet.";
   } else {
     heading.textContent = "All caught up.";
@@ -79,9 +105,11 @@ function updateGreeting() {
     if (today) line.append(` ${today} done today.`);
   }
   const copy = greeting.querySelector(".greeting-copy");
-  copy.replaceChildren(heading, line);
+  copy.querySelector("h1").replaceWith(heading);
+  copy.querySelector("p").replaceWith(line);
   formatTimes(copy);
   greeting.querySelector(".button").hidden = !(reviews || fresh);
+  if (!rolled) drawForecast(reviews);
   const next = Math.min(
     later.length ? Date.parse(later[0]) : Infinity,
     rolled ? Infinity : dayEnd,
@@ -153,6 +181,18 @@ const progress = {
     this.bar.classList.remove("active");
   },
 };
+
+function syncZone() {
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if (!zone) return false;
+  document.cookie = `tz=${zone}; path=/; max-age=31536000; samesite=lax`;
+  if (document.documentElement.dataset.zone === zone) return false;
+  document.documentElement.dataset.zone = zone;
+  pages.clear();
+  if (!document.querySelector("[data-schedule]")) return false;
+  visit(location.href, { push: false, scroll: scrollY });
+  return true;
+}
 
 async function mountPage() {
   formatTimes();
@@ -231,6 +271,78 @@ async function refreshCounts() {
   } catch {}
 }
 
+async function read(response) {
+  return {
+    url: response.url,
+    html: (response.headers.get("Content-Type") || "").includes("text/html"),
+    text: await response.text(),
+  };
+}
+
+const fontFamilies = ['"LXGW WenKai"', '"Source Sans 3"', "Nunito"];
+
+function loadFonts(text) {
+  const characters = [...new Set(text)].join("");
+  if (!characters || !document.fonts?.load) return Promise.resolve();
+  return Promise.all(
+    fontFamilies.map((family) =>
+      document.fonts.load(`16px ${family}`, characters).catch(() => {}),
+    ),
+  );
+}
+
+function settle(promise, limit) {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(resolve, limit)),
+  ]);
+}
+
+function cached(store, key) {
+  const entry = store.get(key);
+  if (entry && Date.now() - entry.time < prefetchLife) return entry.promise;
+  store.delete(key);
+  return null;
+}
+
+function remembered(store, key, start) {
+  const promise = start();
+  store.set(key, { time: Date.now(), promise });
+  promise.catch(() => store.delete(key));
+  return promise;
+}
+
+function prefetchPage(url) {
+  if (page || cached(pages, url)) return;
+  remembered(pages, url, () =>
+    fetch(url, { headers: { "X-Prefetch": "1" } })
+      .then(read)
+      .then((loaded) => {
+        loadFonts(loaded.text);
+        return loaded;
+      }),
+  );
+}
+
+async function loadPage(url, method, body) {
+  if (method === "GET" && !page) {
+    const ready = cached(pages, url);
+    pages.delete(url);
+    if (ready) {
+      try {
+        return await ready;
+      } catch {}
+    }
+  }
+  return read(
+    await fetch(url, {
+      method,
+      body,
+      headers: method === "GET" ? {} : { "X-CSRF-Token": csrf() },
+    }),
+  );
+}
+
 async function visit(
   url,
   { method = "GET", body = null, push = true, scroll = 0 } = {},
@@ -240,33 +352,30 @@ async function visit(
   navigating = true;
   progress.start();
   try {
+    const target = new URL(url, location.href).href;
     await page?.leave();
-    const response = await fetch(url, {
-      method,
-      body,
-      headers: method === "GET" ? {} : { "X-CSRF-Token": csrf() },
-    });
+    const loaded = await loadPage(target, method, body);
+    pages.clear();
     if (ticket !== visiting) return;
-    if (!(response.headers.get("Content-Type") || "").includes("text/html")) {
-      location.assign(response.url);
+    if (!loaded.html) {
+      location.assign(loaded.url);
       return;
     }
-    const doc = new DOMParser().parseFromString(
-      await response.text(),
-      "text/html",
-    );
+    await settle(loadFonts(loaded.text), 800);
     if (ticket !== visiting) return;
-    const destination = new URL(response.url);
+    const doc = new DOMParser().parseFromString(loaded.text, "text/html");
+    if (ticket !== visiting) return;
+    const destination = new URL(loaded.url);
     if (push) {
       if (destination.href === location.href)
         history.replaceState(history.state || newEntry(), "", destination);
       else history.pushState(newEntry(), "", destination);
     }
     render(doc);
-    const target =
+    const anchor =
       destination.hash &&
       document.getElementById(decodeURIComponent(destination.hash.slice(1)));
-    if (target) target.scrollIntoView();
+    if (anchor) anchor.scrollIntoView();
     else scrollTo(0, scroll);
     document.querySelector("#main")?.focus({ preventScroll: true });
   } catch {
@@ -284,39 +393,137 @@ function routable(url) {
   return url.origin === location.origin && !native.test(url.pathname);
 }
 
-async function toggleItem(item) {
-  const row = item.querySelector(".row");
-  const list = item.closest(".list");
-  const top = item.getBoundingClientRect().top;
-  const opening = !item.classList.contains("open");
-  for (const other of list.querySelectorAll(".item.open")) {
-    if (other === item) continue;
-    other.classList.remove("open");
-    other.querySelector(".row").setAttribute("aria-expanded", "false");
-  }
-  let current = item;
-  if (opening && !item.querySelector(".details")) {
-    item.classList.add("loading");
-    prefetch(row.querySelector(".row-hanzi, .row-sentence")?.textContent || "");
-    try {
-      current = await fragment(item.dataset.url);
-      item.replaceWith(current);
-      formatTimes(current);
-      enhance(current);
-    } catch (error) {
-      item.classList.remove("loading");
-      toast(error.message);
-      return;
-    }
-  }
-  current.classList.toggle("open", opening);
-  current.querySelector(".row").setAttribute("aria-expanded", String(opening));
-  const shift = current.getBoundingClientRect().top - top;
-  if (shift) scrollBy(0, shift);
+function moving() {
+  return !matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function prefetchItem(item) {
+  if (item.querySelector(".details") || cached(items, item.dataset.url)) return;
+  prefetch(item.querySelector(".row-hanzi, .row-sentence")?.textContent || "");
+  remembered(items, item.dataset.url, () =>
+    fragment(item.dataset.url).then((next) => {
+      loadFonts(next.textContent);
+      return next;
+    }),
+  );
+}
+
+function slide(details, from, to) {
+  details.classList.add("sliding");
+  const style = getComputedStyle(details);
+  const shut = {
+    height: "0px",
+    paddingTop: "0px",
+    paddingBottom: "0px",
+    marginBottom: `calc(${style.marginBottom} - ${getComputedStyle(details.parentElement).paddingBottom})`,
+  };
+  const frame = (height) =>
+    height
+      ? {
+          height: `${height}px`,
+          paddingTop: style.paddingTop,
+          paddingBottom: style.paddingBottom,
+          marginBottom: style.marginBottom,
+        }
+      : shut;
+  return details
+    .animate([frame(from), frame(to)], {
+      duration: Math.min(380, 180 + Math.abs(to - from) * 0.35),
+      easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+    })
+    .finished.catch(() => {})
+    .then(() => details.classList.remove("sliding"));
+}
+
+function grow(details, from = 0) {
+  if (moving()) slide(details, from, details.offsetHeight);
+}
+
+async function shrink(item) {
+  const turn = turns.get(item) + 1 || 1;
+  turns.set(item, turn);
+  const details = item.querySelector(".details");
+  item.querySelector(".row").setAttribute("aria-expanded", "false");
+  item.classList.add("closing");
+  if (details && moving()) await slide(details, details.offsetHeight, 0);
+  if (turns.get(item) === turn) item.classList.remove("open", "closing");
+}
+
+function setOpen(item) {
   const url = new URL(location.href);
-  if (opening) url.searchParams.set("open", current.dataset.item);
+  if (item) url.searchParams.set("open", item.dataset.item);
   else url.searchParams.delete("open");
   history.replaceState(history.state, "", url);
+}
+
+async function openItem(item) {
+  turns.set(item, (turns.get(item) || 0) + 1);
+  const row = item.querySelector(".row");
+  for (const other of item.closest(".list").querySelectorAll(".item.open")) {
+    if (other === item) continue;
+    const top = row.getBoundingClientRect().top;
+    other.classList.remove("open", "closing");
+    other.querySelector(".row").setAttribute("aria-expanded", "false");
+    const shift = row.getBoundingClientRect().top - top;
+    if (shift) scrollBy(0, shift);
+  }
+  row.setAttribute("aria-expanded", "true");
+  item.classList.remove("closing");
+  item.classList.add("open");
+  setOpen(item);
+  const existing = item.querySelector(".details");
+  if (existing) {
+    grow(existing);
+    return;
+  }
+  const placeholder = document.createElement("div");
+  placeholder.className = "details placeholder";
+  placeholder.setAttribute("aria-busy", "true");
+  item.setAttribute("aria-busy", "true");
+  prefetchItem(item);
+  const request = cached(items, item.dataset.url);
+  items.delete(item.dataset.url);
+  let settled = false;
+  request.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    },
+  );
+  await Promise.resolve();
+  if (!settled) {
+    item.append(placeholder);
+    grow(placeholder);
+  }
+  try {
+    const next = await request;
+    await settle(loadFonts(next.textContent), 400);
+    const details = next.querySelector(".details");
+    item.removeAttribute("aria-busy");
+    if (!item.isConnected) return;
+    const from = placeholder.isConnected ? placeholder.offsetHeight : 0;
+    placeholder.remove();
+    item.append(details);
+    formatTimes(details);
+    enhance(details);
+    if (item.classList.contains("open")) grow(details, from);
+  } catch (error) {
+    item.removeAttribute("aria-busy");
+    placeholder.remove();
+    item.classList.remove("open");
+    row.setAttribute("aria-expanded", "false");
+    setOpen(null);
+    toast(error.message);
+  }
+}
+
+function toggleItem(item) {
+  if (item.classList.contains("open")) {
+    setOpen(null);
+    shrink(item);
+  } else openItem(item);
 }
 
 async function submitItem(form, submitter) {
@@ -482,7 +689,7 @@ document.addEventListener("click", (event) => {
     say(speak.dataset.say);
     return;
   }
-  const row = event.target.closest(".item > .row, .item [data-collapse]");
+  const row = event.target.closest(".item > .row");
   if (row) {
     toggleItem(row.closest(".item"));
     return;
@@ -513,6 +720,41 @@ document.addEventListener("click", (event) => {
     return;
   event.preventDefault();
   visit(url.href);
+});
+
+function prefetchable(link) {
+  if (
+    !link ||
+    link.target ||
+    link.hasAttribute("download") ||
+    link.closest("[data-tab]")
+  )
+    return null;
+  const url = new URL(link.href);
+  if (!routable(url) || url.href.split("#")[0] === location.href.split("#")[0])
+    return null;
+  return url.href.split("#")[0];
+}
+
+function intend(target, delay) {
+  clearTimeout(hovering);
+  const row = target.closest?.(".item > .row");
+  if (row) {
+    hovering = setTimeout(() => prefetchItem(row.closest(".item")), delay);
+    return;
+  }
+  const url = prefetchable(target.closest?.("a[href]"));
+  if (url) hovering = setTimeout(() => prefetchPage(url), delay);
+}
+
+document.addEventListener("pointerover", (event) => {
+  if (event.pointerType === "mouse") intend(event.target, 60);
+});
+
+document.addEventListener("pointerdown", (event) => intend(event.target, 0));
+
+document.addEventListener("pointerout", (event) => {
+  if (event.pointerType === "mouse") clearTimeout(hovering);
 });
 
 document.addEventListener("submit", (event) => {
@@ -669,13 +911,15 @@ window.addEventListener("popstate", (event) => {
 });
 
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) updateGreeting();
+  if (document.hidden) return;
+  if (!syncZone()) updateGreeting();
 });
 
 window.addEventListener("scroll", remember, { passive: true });
 window.addEventListener("pagehide", persistPositions);
 
 history.scrollRestoration = "manual";
+syncZone();
 restorePositions();
 if (!entry()) history.replaceState({ ...history.state, ...newEntry() }, "");
 const initial = positions.get(entry());

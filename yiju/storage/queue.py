@@ -1,9 +1,10 @@
 from collections import Counter
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from random import SystemRandom
 from typing import TYPE_CHECKING
 
 from yiju.core.definitions import prompt_senses
+from yiju.core.scheduling import local_day
 
 from .database import settings
 from .names import counts as name_counts
@@ -38,8 +39,7 @@ def card_family(card: sqlite3.Row) -> str:
 
 
 def day_bounds(now: datetime) -> tuple[str, str]:
-    today = now.astimezone(UTC).date()
-    return today.isoformat(), (today + timedelta(days=1)).isoformat()
+    return local_day(now).isoformat(), local_day(now, 1).isoformat()
 
 
 def introduced_today(connection: sqlite3.Connection, now: datetime) -> int:
@@ -81,11 +81,11 @@ def _studyable(
 def study_queue(
     connection: sqlite3.Connection, now: datetime, *, card_id: int | None = None
 ) -> list[sqlite3.Row]:
-    now = now.astimezone(UTC)
+    moment = now.astimezone(UTC).isoformat()
     rows = _studyable(
         connection,
         "AND c.due <= ? " + ("AND c.id = ? " if card_id is not None else ""),
-        (now.isoformat(), card_id) if card_id is not None else (now.isoformat(),),
+        (moment, card_id) if card_id is not None else (moment,),
     )
     random = SystemRandom()
     reviews = [row for row in rows if row["reviews"]]
@@ -100,16 +100,17 @@ def study_queue(
 
 
 def upcoming(connection: sqlite3.Connection, now: datetime) -> dict[str, object]:
-    now = now.astimezone(UTC)
     end = day_bounds(now)[1]
     return {
         "times": [
             row["due"]
             for row in _studyable(
-                connection, "AND c.reviews > 0 AND c.due > ? ", (now.isoformat(),)
+                connection,
+                "AND c.reviews > 0 AND c.due > ? ",
+                (now.astimezone(UTC).isoformat(),),
             )
         ],
-        "day_end": f"{end}T00:00:00+00:00",
+        "day_end": end,
         "new_next_day": min(
             int(settings(connection)["new_per_day"]),
             len(_studyable(connection, "AND c.reviews = 0 AND c.due < ? ", (end,))),

@@ -24,7 +24,7 @@ from yiju.storage.queue import (
 from yiju.storage.sentences import set_hidden, update_sentence
 from yiju.storage.words import status, strength
 
-from . import database, refresh_caches
+from . import database, local_now, refresh_caches
 
 if TYPE_CHECKING:
     import sqlite3
@@ -192,7 +192,8 @@ def card_payload(
 def study_batch() -> dict[str, object]:
     connection = database()
     now = now_utc()
-    queue = study_queue(connection, now)
+    local = local_now()
+    queue = study_queue(connection, local)
     context = _context(connection, now)
     last = connection.execute(
         "SELECT id FROM reviews WHERE undone = 0 ORDER BY id DESC LIMIT 1"
@@ -200,14 +201,14 @@ def study_batch() -> dict[str, object]:
     return {
         "count": len(queue),
         "counts": counts(queue),
-        "today": reviewed_today(connection, now),
+        "today": reviewed_today(connection, local),
         "lastReview": last["id"] if last else None,
         "learnedAt": {
             "stability": context.config["learned_stability"],
             "days": context.config["learned_days"],
         },
         "cards": [card_payload(connection, row, context) for row in queue[:BATCH_SIZE]],
-    } | ({} if queue else _finished(connection, now))
+    } | ({} if queue else _finished(connection, local))
 
 
 def _finished(connection: sqlite3.Connection, now: datetime) -> dict[str, object]:
@@ -259,7 +260,7 @@ def rate() -> dict[str, object]:
     saved = _saved_rating(connection, card_id, version, rating)
     if saved is not None:
         return {"review": saved}
-    if not study_queue(connection, now_utc(), card_id=card_id):
+    if not study_queue(connection, local_now(), card_id=card_id):
         message = "This card is no longer due."
         raise ConflictError(message)
     try:
@@ -318,7 +319,7 @@ def edit_sentence(sentence_id: int) -> dict[str, object]:
     except ValueError as error:
         abort(400, str(error))
     now = now_utc()
-    rows = study_queue(connection, now, card_id=card_id)
+    rows = study_queue(connection, local_now(), card_id=card_id)
     return {
         "card": card_payload(connection, rows[0], _context(connection, now))
         if rows

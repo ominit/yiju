@@ -123,7 +123,7 @@ def test_seen_words_show_their_strength_and_can_be_paused(
     html = client.get("/library/words/去", headers={"X-Fragment": "1"}).get_data(
         as_text=True
     )
-    assert "Learned at 7.0 days of strength" in html
+    assert "Learned at 7 days of strength" in html
     response = client.post(
         "/words/去/pause",
         data={

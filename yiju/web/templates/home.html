@@ -60,7 +60,7 @@
           <h1>
             {%- if stats.due %}{{ stats.due }} review{{ '' if stats.due == 1 else 's' }}{% endif -%}
             {%- if stats.due and stats.new %} and {% endif -%}
-            {%- if stats.new %}{{ stats.new }} new card{{ '' if stats.new == 1 else 's' }}{% endif %} today.
+            {%- if stats.new %}{{ stats.new }} new card{{ '' if stats.new == 1 else 's' }}{% endif %} due.
           </h1>
           <p>{{ stats.today ~ ' done so far.' if stats.today else 'Nothing done yet.' }}</p>
         {% elif waiting %}
@@ -74,14 +74,13 @@
           </p>
         {% endif %}
       </div>
-      <div class="greeting-actions">
-        {% if not waiting %}
-          <a class="button primary large"
+      {% if not waiting %}
+        <div class="greeting-actions">
+          <a class="button primary large study-button"
              href="{{ url_for('study.page') }}"
-             {% if not total %} hidden{% endif %}>Study</a>
-        {% endif %}
-        {{ check }}
-      </div>
+             {% if not total %} hidden{% endif %}>Study{{ icon('next', 22) }}</a>
+        </div>
+      {% endif %}
     </header>
     <div class="dashboard">
       <div class="overview">
@@ -90,22 +89,17 @@
         <section class="column">
           <header class="column-head">
             <h2>Next 7 days</h2>
-            <p><strong>{{ forecast | sum(attribute='count') }}</strong> reviews due</p>
+            <p><strong data-rest="{{ forecast[1:] | sum(attribute='count') }}">{{ forecast | sum(attribute='count') }}</strong> reviews due</p>
           </header>
           <ol class="forecast" aria-label="Reviews due over the next seven days">
             {% for day in forecast %}
-              <li title="{{ day.date.strftime('%A') }}: {{ day.count }} due">
-                <span class="forecast-value">{{ day.count if day.count else '' }}</span>
-                <svg class="forecast-bar"
-                     viewBox="0 0 10 100"
-                     preserveAspectRatio="none"
+              <li title="{{ day.date.strftime('%A') }}: {{ day.count }} due"
+                  data-count="{{ day.count }}">
+                <svg class="forecast-bar{{ ' today' if loop.first }}{{ ' none' if not day.count }}"
+                     height="{{ ([day.count / forecast_max * 100, 6] | max | round(2) ) if day.count else 2 }}%"
                      aria-hidden="true">
-                  {% if day.count %}
-                    {% set height = [day.count / forecast_max * 100, 6] | max %}<rect class="{{ 'today' if loop.first else '' }}" y="{{ 100 - height }}" width="10" height="{{ height }}" />
-                  {% else %}
-                    <rect class="none" y="98" width="10" height="2" />
-                  {% endif %}
                 </svg>
+                <span class="forecast-value">{{ day.count if day.count else '' }}</span>
                 <span class="forecast-day">{{ 'Today' if loop.first else day.date.strftime("%a") }}</span>
               </li>
             {% endfor %}

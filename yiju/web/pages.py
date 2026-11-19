@@ -1,11 +1,12 @@
-from datetime import timedelta
+from collections import Counter
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from flask import Blueprint, redirect, render_template, request
 from werkzeug.wrappers import Response
 
 from yiju.core.dictionary import published
-from yiju.core.scheduling import now_utc
+from yiju.core.scheduling import local_day, now_utc
 from yiju.storage.database import settings
 from yiju.storage.pending import (
     FORMAT,
@@ -17,7 +18,7 @@ from yiju.storage.pending import (
 from yiju.storage.queue import overview, upcoming
 from yiju.storage.stats import activity
 
-from . import database
+from . import database, local_now
 from .library import item_location, item_response, library_counts, library_response
 
 pages = Blueprint("pages", __name__)
@@ -34,24 +35,23 @@ CHECK_TABS = {
 @pages.get("/")
 def home() -> str:
     connection = database()
-    now = now_utc()
+    now = local_now()
     stats = overview(connection, now)
-    due_by_day = dict(
-        connection.execute(
-            "SELECT substr(due, 1, 10) AS day, count(*) FROM cards "
-            "WHERE reviews > 0 AND suspended = 0 AND due > ? AND due < ? "
-            "GROUP BY day",
+    due_by_day = Counter(
+        datetime.fromisoformat(row[0]).astimezone(now.tzinfo).date()
+        for row in connection.execute(
+            "SELECT due FROM cards "
+            "WHERE reviews > 0 AND suspended = 0 AND due > ? AND due < ?",
             (
-                now.isoformat(),
-                (now.date() + timedelta(days=FORECAST_DAYS)).isoformat(),
+                now.astimezone(UTC).isoformat(),
+                local_day(now, FORECAST_DAYS).isoformat(),
             ),
-        ).fetchall()
+        )
     )
     forecast = [
         {
             "date": day,
-            "count": due_by_day.get(day.isoformat(), 0)
-            + (stats["due"] if offset == 0 else 0),
+            "count": stats["due"] if offset == 0 else due_by_day[day],
         }
         for offset in range(FORECAST_DAYS)
         for day in [now.date() + timedelta(days=offset)]

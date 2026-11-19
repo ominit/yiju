@@ -73,6 +73,8 @@ def test_unknown_words_have_no_readings() -> None:
         ("Xi1 an1", "Xī'ān"),
         ("xi3 huan5", "xǐhuan"),
         ("yi1 dian3 r5", "yīdiǎnr"),
+        ("zhi1dao5", "zhīdao"),
+        ("ue-á-tshài", "ue-á-tshài"),
     ],
 )
 def test_numbered_pinyin_becomes_tone_marks(numbered: str, expected: str) -> None:

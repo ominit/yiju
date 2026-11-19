@@ -34,6 +34,7 @@ VARIANT = re.compile(
 )
 SEE = re.compile(r"^(?:see|see also|used in)\b")
 VOWEL = re.compile(r"^[aeoāáǎàēéěèōóǒò]", re.IGNORECASE)
+NUMBERED = re.compile(r"(?:[A-Za-z]|[uU]:)+[1-5]")
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,7 +79,16 @@ def join_syllables(syllables: list[str]) -> str:
 
 
 def pinyin(numbered: str) -> str:
-    return join_syllables([syllable(part) for part in numbered.split()])
+    parts = [
+        piece
+        for part in numbered.split()
+        for piece in (
+            NUMBERED.findall(part)
+            if re.fullmatch(rf"(?:{NUMBERED.pattern})+", part)
+            else [part]
+        )
+    ]
+    return join_syllables([syllable(part) for part in parts])
 
 
 def _references(text: str) -> str:
@@ -346,7 +356,7 @@ def decode(value: str) -> tuple[Reading, ...]:
             ),
             tuple(item["classifiers"]),
             tuple(item["traditional"]),
-            tuple(item.get("also_pronounced", ())),
+            tuple(pinyin(other) for other in item.get("also_pronounced", ())),
         )
         for item in json.loads(value)
     )

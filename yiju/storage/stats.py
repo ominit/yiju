@@ -3,28 +3,29 @@ from typing import TYPE_CHECKING
 
 from fsrs import Rating
 
+from yiju.core.scheduling import local_day
+
 if TYPE_CHECKING:
     import sqlite3
 
 
 def activity(connection: sqlite3.Connection, now: datetime) -> dict[str, object]:
     start = now.date() - timedelta(days=29)
-    end = now.date() + timedelta(days=1)
+    bounds = (local_day(now, -29).isoformat(), local_day(now, 1).isoformat())
     rows = connection.execute(
-        "SELECT substr(created, 1, 10) AS day, rating, "
-        "count(*) AS count, sum(json_extract(card_before, '$.reviews') > 0) AS "
-        "scheduled "
-        "FROM reviews WHERE undone = 0 AND created >= ? AND created < ? "
-        "GROUP BY day, rating",
-        (start.isoformat(), end.isoformat()),
+        "SELECT created, rating, json_extract(card_before, '$.reviews') > 0 "
+        "AS scheduled FROM reviews WHERE undone = 0 AND created >= ? AND created < ?",
+        bounds,
     ).fetchall()
     by_day: dict[str, dict[int, int]] = {}
     total = 0
     recalled = 0
     scheduled = 0
     for row in rows:
-        by_day.setdefault(row["day"], {})[row["rating"]] = row["count"]
-        total += row["count"]
+        day = datetime.fromisoformat(row["created"]).astimezone(now.tzinfo).date()
+        counts = by_day.setdefault(day.isoformat(), {})
+        counts[row["rating"]] = counts.get(row["rating"], 0) + 1
+        total += 1
         scheduled += row["scheduled"]
         if row["rating"] >= Rating.Hard:
             recalled += row["scheduled"]
@@ -33,7 +34,7 @@ def activity(connection: sqlite3.Connection, now: datetime) -> dict[str, object]
         "JOIN reviews r ON r.id = w.review_id WHERE r.undone = 0 "
         "AND w.role = 'card' AND w.state_before != 'seen' "
         "AND r.created >= ? AND r.created < ?",
-        (start.isoformat(), end.isoformat()),
+        bounds,
     ).fetchone()[0]
     bars = []
     maximum = max((sum(counts.values()) for counts in by_day.values()), default=1)
@@ -51,7 +52,7 @@ def activity(connection: sqlite3.Connection, now: datetime) -> dict[str, object]
         bars.append(
             {
                 "date": day.isoformat(),
-                "day": day.strftime("%b %d"),
+                "day": f"{day:%b} {day.day}",
                 "total": sum(counts.values()),
                 "segments": segments,
             }

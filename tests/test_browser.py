@@ -5,6 +5,7 @@ import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 import pytest
 from conftest import add, set_strength
@@ -151,7 +152,7 @@ def test_library_rows_expand_inline_and_refresh_counts(
     item.get_by_role("button", name="Pause").click()
     expect(item.locator(".row .status")).to_have_text("Paused")
     expect(paused).to_contain_text("1")
-    item.get_by_role("button", name="Close 学习").click()
+    item.locator(".row").click()
     expect(item.locator(".details")).to_be_hidden()
     assert "open=" not in page.url
 
@@ -291,6 +292,25 @@ def test_today_counts_a_review_once_it_comes_due(page: Page, server: Server) -> 
     expect(heading).to_have_text("All caught up.")
     expect(page.locator(".greeting time")).to_be_visible()
     expect(study).to_be_hidden()
-    expect(heading).to_have_text("1 review today.", timeout=10000)
+    expect(heading).to_have_text("1 review due.", timeout=10000)
     expect(study).to_be_visible()
     assert page.evaluate("window.marker") == 1
+
+
+@pytest.mark.parametrize("zone", ["Pacific/Kiritimati", "Pacific/Pago_Pago"])
+def test_today_follows_the_browser_timezone(
+    browser: Browser, server: Server, zone: str
+) -> None:
+    context = browser.new_context(timezone_id=zone)
+    page = context.new_page()
+    page.goto(server.url)
+    page.evaluate("window.marker = 1")
+    tomorrow = datetime.now(ZoneInfo(zone)) + timedelta(days=1)
+    expect(page.locator(".forecast-day").nth(1)).to_have_text(f"{tomorrow:%a}")
+    assert page.evaluate("window.marker") == 1
+    assert {cookie["name"]: cookie["value"] for cookie in context.cookies()}[
+        "tz"
+    ] == zone
+    page.reload()
+    expect(page.locator("html")).to_have_attribute("data-zone", zone)
+    context.close()

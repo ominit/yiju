@@ -9,6 +9,20 @@ from yiju.core.dictionary import DictionaryUnavailableError
 from yiju.storage.database import ConflictError
 
 MIN_COMPRESSION_SIZE = 1024
+COMPRESSIBLE = {
+    "text/html",
+    "text/css",
+    "text/javascript",
+    "application/json",
+    "image/svg+xml",
+}
+FOREVER = "public, max-age=31536000, immutable"
+MONTH = "public, max-age=2592000"
+CACHED: dict[tuple[str, str], bytes] = {}
+ENDPOINT_CACHE = {
+    "strokes.character_strokes": FOREVER,
+    "audio.pronunciation": "private, no-cache",
+}
 SECTIONS = {
     "pages.home": "home",
     "study.page": "study",
@@ -60,20 +74,41 @@ def response_headers(response: Response) -> Response:
     )
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "same-origin"
-    if request.endpoint != "static":
-        response.headers["Cache-Control"] = "no-store"
+    response.headers["Cache-Control"] = cache_control(response)
     response.vary.add("Accept-Encoding")
     if (
         request.accept_encodings["gzip"] > 0
         and response.status_code == HTTPStatus.OK
-        and not response.direct_passthrough
-        and response.mimetype in {"text/html", "application/json"}
+        and response.mimetype in COMPRESSIBLE
     ):
-        data = response.get_data()
-        if len(data) >= MIN_COMPRESSION_SIZE:
-            response.set_data(gzip.compress(data, compresslevel=1, mtime=0))
-            response.headers["Content-Encoding"] = "gzip"
+        compress(response)
     return response
+
+
+def cache_control(response: Response) -> str:
+    if response.status_code not in {HTTPStatus.OK, HTTPStatus.NOT_MODIFIED}:
+        return "no-store"
+    if request.endpoint == "static":
+        if request.args.get("v") is not None:
+            return FOREVER
+        return MONTH if request.path.startswith("/static/vendor/") else "no-cache"
+    return ENDPOINT_CACHE.get(request.endpoint or "", "no-store")
+
+
+def compress(response: Response) -> None:
+    etag = response.get_etag()[0] if response.direct_passthrough else None
+    response.direct_passthrough = False
+    data = response.get_data()
+    if etag is not None:
+        key = (request.path, etag)
+        if key not in CACHED:
+            CACHED[key] = gzip.compress(data, mtime=0)
+        response.set_data(CACHED[key])
+    elif len(data) < MIN_COMPRESSION_SIZE:
+        return
+    else:
+        response.set_data(gzip.compress(data, compresslevel=1, mtime=0))
+    response.headers["Content-Encoding"] = "gzip"
 
 
 def http_error(error: HTTPException) -> tuple[str | Response, int]:

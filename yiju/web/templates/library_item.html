@@ -43,7 +43,6 @@
                     type="button"
                     data-say="{{ details.audio }}"
                     title="Play pronunciation">{{ icon("audio") }}<span class="sr-only">Play pronunciation</span></button>
-            <button class="icon-button" type="button" data-collapse title="Close">{{ icon("up") }}<span class="sr-only">Close {{ item.text }}</span></button>
           </div>
         </header>
         <div class="details-grid">
@@ -168,8 +167,6 @@
         <header class="details-head">
           <div class="details-title">
             <p class="details-sentence">{{ hanzi(sentence.chinese, sentence.pinyin, strokes=true, rules=sentence.rules) }}</p>
-            <p class="details-translation">{{ sentence.translation | slots }}</p>
-            {% if sentence.rules %}<p class="muted small">Gender rules: {{ sentence.rules }}</p>{% endif %}
           </div>
           <div class="details-actions">
             {% if details.audio %}
@@ -178,7 +175,10 @@
                       data-say="{{ details.audio }}"
                       title="Play pronunciation">{{ icon("audio") }}<span class="sr-only">Play pronunciation</span></button>
             {% endif %}
-            <button class="icon-button" type="button" data-collapse title="Close">{{ icon("up") }}<span class="sr-only">Close this sentence</span></button>
+          </div>
+          <div class="details-subtitle">
+            <p class="details-translation">{{ sentence.translation | slots }}</p>
+            {% if sentence.rules %}<p class="muted small">Gender rules: {{ sentence.rules }}</p>{% endif %}
           </div>
         </header>
         <div class="details-grid">

@@ -1,11 +1,18 @@
 from datetime import UTC, datetime, timedelta
 from random import Random
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 from conftest import add, set_strength, states
 
 from yiju.storage.learning import review_card
-from yiju.storage.queue import counts, overview, study_queue, upcoming
+from yiju.storage.queue import (
+    counts,
+    overview,
+    reviewed_today,
+    study_queue,
+    upcoming,
+)
 
 if TYPE_CHECKING:
     import sqlite3
@@ -231,3 +238,19 @@ def test_upcoming_lists_reviews_to_come_and_the_next_day_new_cards(
     assert schedule["new_next_day"] == 2
     later = NOW + timedelta(days=400)
     assert upcoming(connection, later)["times"] == []
+
+
+def test_days_follow_the_given_timezone(connection: sqlite3.Connection) -> None:
+    add(connection, PHRASES, NOW)
+    limit(connection, 2)
+    zone = ZoneInfo("America/Los_Angeles")
+    evening = datetime(2026, 10, 1, 23, tzinfo=zone)
+    for row in study_queue(connection, evening):
+        rate(connection, row, evening.astimezone(UTC), 4)
+    assert reviewed_today(connection, evening) == 2
+    assert upcoming(connection, evening)["day_end"] == "2026-10-02T07:00:00+00:00"
+    morning = datetime(2026, 10, 2, 8, tzinfo=zone)
+    assert reviewed_today(connection, morning) == 0
+    assert counts(study_queue(connection, morning))["new"] == 2
+    assert reviewed_today(connection, morning.astimezone(UTC)) == 2
+    assert counts(study_queue(connection, morning.astimezone(UTC)))["new"] == 0
