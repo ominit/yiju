@@ -677,6 +677,7 @@ select {
 .greeting p {
   color: var(--muted);
   font-size: 17px;
+  text-wrap: pretty;
 }
 
 .greeting-actions {

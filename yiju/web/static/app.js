@@ -87,13 +87,18 @@ function updateGreeting() {
   const heading = document.createElement("h1");
   const line = document.createElement("p");
   if (reviews || fresh) {
-    heading.textContent = `${[
+    const parts = [
       reviews && counted(reviews, "review"),
       fresh && counted(fresh, "new card"),
+    ].filter(Boolean);
+    const both = parts.length > 1;
+    heading.textContent = `${both ? `${reviews + fresh} cards` : parts[0]} due.`;
+    line.textContent = [
+      both && `${parts.join(" and ")}.`,
+      today ? `${today} done so far.` : "Nothing done yet.",
     ]
       .filter(Boolean)
-      .join(" and ")} due.`;
-    line.textContent = today ? `${today} done so far.` : "Nothing done yet.";
+      .join(" ");
   } else {
     heading.textContent = "All caught up.";
     if (later.length) {

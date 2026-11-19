@@ -57,12 +57,14 @@
             {% if not waiting %} data-schedule='{{ schedule | tojson }}'{% endif %}>
       <div class="greeting-copy">
         {% if total %}
-          <h1>
-            {%- if stats.due %}{{ stats.due }} review{{ '' if stats.due == 1 else 's' }}{% endif -%}
-            {%- if stats.due and stats.new %} and {% endif -%}
-            {%- if stats.new %}{{ stats.new }} new card{{ '' if stats.new == 1 else 's' }}{% endif %} due.
-          </h1>
-          <p>{{ stats.today ~ ' done so far.' if stats.today else 'Nothing done yet.' }}</p>
+          {% set reviews = stats.due ~ (' review' if stats.due == 1 else ' reviews') %}
+          {% set fresh = stats.new ~ (' new card' if stats.new == 1 else ' new cards') %}
+          {% set both = stats.due and stats.new %}
+          <h1>{{ total ~ ' cards' if both else reviews if stats.due else fresh }} due.</h1>
+          <p>
+            {{ reviews ~ ' and ' ~ fresh ~ '.' if both }}
+            {{ stats.today ~ ' done so far.' if stats.today else 'Nothing done yet.' }}
+          </p>
         {% elif waiting %}
           <h1>Nothing is unlocked yet.</h1>
           <p>Every sentence has more than two words you have not learned. Unlock a few words by hand in the <a class="link" href="{{ url_for('pages.library', filter='locked') }}">library</a>, or add short phrases of one or two words.</p>

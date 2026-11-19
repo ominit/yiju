@@ -297,6 +297,24 @@ def test_today_counts_a_review_once_it_comes_due(page: Page, server: Server) -> 
     assert page.evaluate("window.marker") == 1
 
 
+def test_today_heading_totals_reviews_and_new_cards(page: Page, server: Server) -> None:
+    server.only("上", "recognition")
+    with server.database() as db:
+        db.execute(
+            "UPDATE cards SET reviews = 1, due = ? WHERE suspended = 0",
+            ((datetime.now(UTC) - timedelta(hours=1)).isoformat(),),
+        )
+        db.execute(
+            "UPDATE cards SET suspended = 0 "
+            "WHERE word = '上' AND card_type = 'production'"
+        )
+    page.goto(server.url)
+    expect(page.locator(".greeting h1")).to_have_text("2 cards due.")
+    expect(page.locator(".greeting p")).to_have_text(
+        "1 review and 1 new card. Nothing done yet."
+    )
+
+
 @pytest.mark.parametrize("zone", ["Pacific/Kiritimati", "Pacific/Pago_Pago"])
 def test_today_follows_the_browser_timezone(
     browser: Browser, server: Server, zone: str
