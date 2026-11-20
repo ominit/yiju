@@ -212,7 +212,7 @@ def study_batch() -> dict[str, object]:
 
 
 def _finished(connection: sqlite3.Connection, now: datetime) -> dict[str, object]:
-    times = cast("list[str]", upcoming(connection, now)["times"])
+    times = upcoming(connection, now)["times"]
     return {"next": min(times, default=None), "pending": waiting(connection)}
 
 

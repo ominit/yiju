@@ -48,10 +48,13 @@ def home() -> str:
             ),
         )
     )
+    schedule = upcoming(connection, now)
     forecast = [
         {
             "date": day,
-            "count": stats["due"] if offset == 0 else due_by_day[day],
+            "count": stats["due"] + schedule["later_today"]
+            if offset == 0
+            else due_by_day[day],
         }
         for offset in range(FORECAST_DAYS)
         for day in [now.date() + timedelta(days=offset)]
@@ -62,7 +65,7 @@ def home() -> str:
         activity=activity(connection, now),
         forecast=forecast,
         forecast_max=max(1, *(day["count"] for day in forecast)),
-        schedule=upcoming(connection, now)
+        schedule=schedule
         | {"reviews": stats["due"], "new": stats["new"], "today": stats["today"]},
     )
 

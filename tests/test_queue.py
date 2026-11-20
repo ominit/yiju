@@ -236,6 +236,12 @@ def test_upcoming_lists_reviews_to_come_and_the_next_day_new_cards(
     assert schedule["times"] == [row["due"] for row in reviewed]
     assert schedule["day_end"] == "2026-10-02T00:00:00+00:00"
     assert schedule["new_next_day"] == 2
+    assert schedule["later_today"] == 0
+    connection.execute(
+        "UPDATE cards SET due = ? WHERE id = ?",
+        ((NOW + timedelta(hours=2)).isoformat(), queue[0]["id"]),
+    )
+    assert upcoming(connection, NOW)["later_today"] == 1
     later = NOW + timedelta(days=400)
     assert upcoming(connection, later)["times"] == []
 

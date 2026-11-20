@@ -114,7 +114,10 @@ function updateGreeting() {
   copy.querySelector("p").replaceWith(line);
   formatTimes(copy);
   greeting.querySelector(".button").hidden = !(reviews || fresh);
-  if (!rolled) drawForecast(reviews);
+  if (!rolled)
+    drawForecast(
+      reviews + later.filter((time) => Date.parse(time) < dayEnd).length,
+    );
   const next = Math.min(
     later.length ? Date.parse(later[0]) : Infinity,
     rolled ? Infinity : dayEnd,

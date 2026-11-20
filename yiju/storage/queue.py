@@ -1,7 +1,7 @@
 from collections import Counter
 from datetime import UTC, datetime
 from random import SystemRandom
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 
 from yiju.core.definitions import prompt_senses
 from yiju.core.scheduling import local_day
@@ -99,17 +99,26 @@ def study_queue(
     return reviews + (started + fresh)[:remaining]
 
 
-def upcoming(connection: sqlite3.Connection, now: datetime) -> dict[str, object]:
+class Upcoming(TypedDict):
+    times: list[str]
+    later_today: int
+    day_end: str
+    new_next_day: int
+
+
+def upcoming(connection: sqlite3.Connection, now: datetime) -> Upcoming:
     end = day_bounds(now)[1]
+    times = [
+        row["due"]
+        for row in _studyable(
+            connection,
+            "AND c.reviews > 0 AND c.due > ? ",
+            (now.astimezone(UTC).isoformat(),),
+        )
+    ]
     return {
-        "times": [
-            row["due"]
-            for row in _studyable(
-                connection,
-                "AND c.reviews > 0 AND c.due > ? ",
-                (now.astimezone(UTC).isoformat(),),
-            )
-        ],
+        "times": times,
+        "later_today": sum(1 for time in times if time < end),
         "day_end": end,
         "new_next_day": min(
             int(settings(connection)["new_per_day"]),
