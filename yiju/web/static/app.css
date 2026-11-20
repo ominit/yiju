@@ -2652,6 +2652,7 @@ main.study {
   );
   animation: face-fade linear both;
   animation-timeline: scroll(self);
+  animation-range: calc(100% - 112px) 100%;
 }
 
 @property --fade {
@@ -2661,12 +2662,11 @@ main.study {
 }
 
 @keyframes face-fade {
-  0%,
-  90% {
+  from {
     --fade: 112px;
   }
 
-  100% {
+  to {
     --fade: 0px;
   }
 }
@@ -2794,9 +2794,10 @@ main.study {
 }
 
 .prompt-translation {
+  color: var(--ink-2);
   text-align: center;
-  font-size: 21px;
-  line-height: 1.5;
+  font-size: 20px;
+  line-height: 1.4;
 }
 
 .answer {
@@ -2846,8 +2847,23 @@ main.study {
   padding-inline: calc(56px + 0.6em);
 }
 
+.card.has-pad .headword.sentence {
+  grid-template-columns:
+    minmax(0, 1fr)
+    auto
+    minmax(
+      calc(58px + 0.6 * clamp(24px, (100% - 72px) / (var(--length) + 1), 80px)),
+      1fr
+    );
+}
+
+.card.has-pad .headword.sentence::before,
+.card.has-pad .headword.sentence::after {
+  content: "";
+}
+
 .card.has-pad .headword.sentence .hanzi:has(.say-anchor) {
-  padding-inline: 0 calc(58px + 0.6em);
+  padding-inline: 0;
 }
 
 .word-note-body .strength {
@@ -4633,7 +4649,8 @@ a.check-word:hover {
   .card.has-pad:not(.revealed) .face {
     justify-content: flex-start;
     gap: 22px;
-    padding: 0;
+    margin-right: -24px;
+    padding: 0 24px 0 0;
   }
 
   .card.has-pad:not(.revealed) .face {
@@ -4661,10 +4678,6 @@ a.check-word:hover {
   .card.has-pad .headword .hanzi {
     font-size: clamp(80px, 10vw, 128px);
     line-height: 1.4;
-  }
-
-  .card.has-pad.revealed .headword.sentence {
-    display: block;
   }
 
   .card.has-pad .headword.sentence .hanzi {
@@ -4879,7 +4892,8 @@ a.check-word:hover {
     gap: 24px;
   }
 
-  .translation {
+  .translation,
+  .prompt-translation {
     font-size: 26px;
   }
 
