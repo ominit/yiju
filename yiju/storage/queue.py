@@ -91,12 +91,14 @@ def study_queue(
     reviews = [row for row in rows if row["reviews"]]
     started = [row for row in rows if not row["reviews"] and row["started"]]
     fresh = [row for row in rows if not row["reviews"] and not row["started"]]
-    random.shuffle(started)
-    random.shuffle(fresh)
+    sentences = [row for row in fresh if row["sentence_id"] is not None]
+    words = [row for row in fresh if row["sentence_id"] is None]
+    for group in (started, sentences, words):
+        random.shuffle(group)
     remaining = max(
         0, int(settings(connection)["new_per_day"]) - introduced_today(connection, now)
     )
-    return reviews + (started + fresh)[:remaining]
+    return reviews + (started + sentences + words)[:remaining]
 
 
 class Upcoming(TypedDict):

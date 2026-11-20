@@ -104,6 +104,31 @@ def test_a_card_whose_other_direction_was_studied_comes_first(
     assert all(row["word"] != first["word"] for row in queue[1:])
 
 
+def test_started_cards_come_before_new_sentences_before_new_words(
+    connection: sqlite3.Connection,
+) -> None:
+    add(connection, PHRASES, NOW)
+    for value in ("酸", "苹果"):
+        set_strength(connection, value, now=NOW)
+    limit(connection, 100)
+    first = words(study_queue(connection, NOW))[0]
+    rate(connection, first, NOW, 4)
+    queue = study_queue(connection, NOW + timedelta(days=1))
+    fresh = [row for row in queue if not row["reviews"]]
+    groups = [
+        "started"
+        if row["started"]
+        else "sentence"
+        if row["sentence_id"] is not None
+        else "word"
+        for row in fresh
+    ]
+    assert groups == sorted(groups, key=["started", "sentence", "word"].index)
+    assert groups.count("started") == 1
+    assert groups.count("sentence") == 2
+    assert fresh[0]["word"] == first["word"]
+
+
 def test_new_words_are_drawn_in_random_order(
     connection: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
