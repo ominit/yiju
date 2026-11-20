@@ -198,8 +198,11 @@ def study_batch() -> dict[str, object]:
     last = connection.execute(
         "SELECT id FROM reviews WHERE undone = 0 ORDER BY id DESC LIMIT 1"
     ).fetchone()
+    schedule = upcoming(connection, local)
     return {
         "count": len(queue),
+        "next": min(schedule["times"], default=None),
+        "dayEnd": schedule["day_end"],
         "counts": counts(queue),
         "today": reviewed_today(connection, local),
         "lastReview": last["id"] if last else None,
@@ -208,12 +211,7 @@ def study_batch() -> dict[str, object]:
             "days": context.config["learned_days"],
         },
         "cards": [card_payload(connection, row, context) for row in queue[:BATCH_SIZE]],
-    } | ({} if queue else _finished(connection, local))
-
-
-def _finished(connection: sqlite3.Connection, now: datetime) -> dict[str, object]:
-    times = upcoming(connection, now)["times"]
-    return {"next": min(times, default=None), "pending": waiting(connection)}
+    } | ({} if queue else {"pending": waiting(connection)})
 
 
 def _json_field(data: dict[str, object], name: str) -> int:

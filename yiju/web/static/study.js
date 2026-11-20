@@ -15,6 +15,7 @@ const state = {
   fresh: 0,
   today: 0,
   next: null,
+  dayEnd: null,
   pending: 0,
   ratedSinceFetch: 0,
   current: null,
@@ -37,6 +38,8 @@ let dom = null;
 let listeners = null;
 let player = null;
 let pad = null;
+let clock = null;
+let refreshed = 0;
 
 try {
   state.outbox = JSON.parse(sessionStorage.getItem(outboxKey) || "[]");
@@ -684,7 +687,7 @@ function untilNext(time) {
   return relative.format(Math.round(hours / 24), "day");
 }
 
-function renderDone() {
+function doneSummary() {
   const done = state.today + state.ratedSinceFetch;
   const again = state.session.ratings[1];
   const lines = [];
@@ -697,6 +700,10 @@ function renderDone() {
       ? `Next card ${untilNext(state.next)}.`
       : "Nothing is scheduled.",
   );
+  return lines.join(" ");
+}
+
+function renderDone() {
   dom.stage.replaceChildren(
     h(
       "section",
@@ -711,7 +718,7 @@ function renderDone() {
         {},
         state.session.reviewed ? "Session complete" : "Nothing due right now",
       ),
-      h("p", { class: "muted" }, lines.join(" ")),
+      h("p", { class: "muted", dataset: { summary: "" } }, doneSummary()),
       h(
         "div",
         { class: "form-actions center" },
@@ -847,6 +854,7 @@ function fetchBatch() {
       state.fresh = batch.counts.new;
       state.today = batch.today;
       state.next = batch.next ?? null;
+      state.dayEnd = batch.dayEnd ?? null;
       state.pending = batch.pending ?? 0;
       state.ratedSinceFetch = 0;
       state.lastReview = batch.lastReview;
@@ -863,6 +871,7 @@ function fetchBatch() {
     } finally {
       if (state.fetching === request) state.fetching = null;
       updateChrome();
+      scheduleRefresh();
     }
   })();
   state.fetching = request;
@@ -874,6 +883,41 @@ async function refill() {
   dismiss();
   if (!(await flush()) || !(await fetchBatch())) return;
   if (generation === state.generation && !state.current) show(nextCard());
+}
+
+async function refresh() {
+  if (!dom || state.failure || state.fetching) return;
+  refreshed = Date.now();
+  const generation = state.generation;
+  if (!(await flush()) || !(await fetchBatch())) return;
+  if (generation === state.generation && !state.current) show(nextCard());
+}
+
+function scheduleRefresh() {
+  clearTimeout(clock);
+  if (!dom) return;
+  const now = Date.now();
+  const times = [state.next, state.dayEnd]
+    .filter(Boolean)
+    .map((time) => Date.parse(time) + 500);
+  if (!state.current) times.push(now + 30000);
+  if (!times.length) return;
+  const wait = Math.max(Math.min(...times) - now, refreshed + 5000 - now, 0);
+  clock = setTimeout(() => {
+    const due = [state.next, state.dayEnd].some(
+      (time) => time && Date.parse(time) <= Date.now(),
+    );
+    if (due) refresh();
+    else {
+      const summary = dom.stage.querySelector(".done [data-summary]");
+      if (summary) summary.textContent = doneSummary();
+      scheduleRefresh();
+    }
+  }, wait);
+}
+
+function onVisible() {
+  if (document.visibilityState === "visible") refresh();
 }
 
 function prefetch() {
@@ -1405,11 +1449,15 @@ export function mount(root) {
   listeners = new AbortController();
   document.addEventListener("click", onClick, { signal: listeners.signal });
   document.addEventListener("keydown", onKey, { signal: listeners.signal });
+  document.addEventListener("visibilitychange", onVisible, {
+    signal: listeners.signal,
+  });
   const batch = JSON.parse(root.querySelector("#study-data").textContent);
   state.count = batch.count;
   state.fresh = batch.counts.new;
   state.today = batch.today;
   state.next = batch.next ?? null;
+  state.dayEnd = batch.dayEnd ?? null;
   state.pending = batch.pending ?? 0;
   state.lastReview = batch.lastReview;
   state.learnedAt = batch.learnedAt;
@@ -1421,6 +1469,7 @@ export function mount(root) {
   );
   state.queue = batch.cards;
   prefetchStrokes(state.queue);
+  scheduleRefresh();
   if (state.outbox.length) {
     renderLoading();
     refill();
@@ -1430,6 +1479,7 @@ export function mount(root) {
 }
 
 export function unmount() {
+  clearTimeout(clock);
   clearCard();
   listeners?.abort();
   listeners = null;

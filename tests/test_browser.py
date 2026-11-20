@@ -302,6 +302,23 @@ def test_missed_words_are_sent_with_a_sentence_rating(
         }
 
 
+def test_study_shows_a_review_once_it_comes_due(page: Page, server: Server) -> None:
+    server.only("上", "recognition")
+    due = datetime.now(UTC) + timedelta(seconds=3)
+    with server.database() as db:
+        db.execute(
+            "UPDATE cards SET reviews = 1, due = ? WHERE suspended = 0",
+            (due.isoformat(),),
+        )
+    page.goto(f"{server.url}/study")
+    page.evaluate("window.marker = 1")
+    expect(page.locator(".done h1")).to_have_text("Nothing due right now")
+    expect(page.locator("[data-reviews]")).to_have_text("0")
+    expect(page.get_by_role("button", name="Show answer")).to_be_visible(timeout=10000)
+    expect(page.locator("[data-reviews]")).to_have_text("1")
+    assert page.evaluate("window.marker") == 1
+
+
 def test_today_counts_a_review_once_it_comes_due(page: Page, server: Server) -> None:
     server.only("上", "recognition")
     due = datetime.now(UTC) + timedelta(seconds=3)
