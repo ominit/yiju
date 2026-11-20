@@ -13,6 +13,7 @@ from playwright.sync_api import Browser, Page, expect, sync_playwright
 from werkzeug.serving import make_server
 
 from yiju.core.definitions import prompt_senses
+from yiju.core.dictionary import decode
 from yiju.storage.database import connect
 from yiju.storage.graph import refresh
 from yiju.web import audio, create_app
@@ -183,6 +184,30 @@ def test_strokes_play_only_on_the_back_of_a_card(page: Page, server: Server) -> 
     page.get_by_role("button", name="Show answer").click()
     glyph.click()
     expect(page.locator(".stroke-overlay svg")).to_have_count(1)
+
+
+def test_opened_word_note_numbers_every_sense(page: Page, server: Server) -> None:
+    with server.database() as db:
+        set_strength(db, "我", stability=10, learned=False)
+        set_strength(db, "去", stability=10, learned=False)
+        db.execute(
+            "UPDATE cards SET suspended = NOT coalesce(sentence_id = 1 "
+            "AND card_type = 'recognition', 0)"
+        )
+        readings = db.execute("SELECT readings FROM words WHERE word = '去'").fetchone()
+    first = decode(readings[0])[0].senses
+    page.goto(f"{server.url}/study")
+    page.get_by_role("button", name="Show answer").click()
+    note = page.locator('.word-note[data-word="去"]')
+    note.locator(".word-note-body").click()
+    senses = note.locator(".word-note-all .senses").first.locator("> li")
+    expect(senses).to_have_count(len(first))
+    expect(senses.first).to_contain_text(first[0].text)
+    expect(note.locator(".word-note-summary")).to_be_hidden()
+    expect(note.get_by_role("link", name="Open in library")).to_be_visible()
+    senses.first.click()
+    expect(senses.first).to_be_hidden()
+    expect(note.locator(".word-note-summary")).to_be_visible()
 
 
 def test_prompt_shows_every_sense(page: Page, server: Server) -> None:

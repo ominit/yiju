@@ -255,25 +255,22 @@ function senseItems(senses) {
   );
 }
 
-function readingList(readings, { skip = 0 } = {}) {
+function readingList(readings) {
   if (!readings.length) return [h("p", { class: "muted" }, "No definition")];
-  return readings.map((reading, index) => {
-    const offset = index ? 0 : skip;
-    const senses = reading.senses.slice(offset);
-    return h(
+  return readings.map((reading, index) =>
+    h(
       "section",
       { class: `reading-group${index ? " other" : ""}` },
-      readings.length > 1 && !offset
+      readings.length > 1
         ? h("h4", { class: "reading-pinyin" }, reading.pinyin)
         : null,
-      senses.length
+      reading.senses.length
         ? h(
             "ol",
             {
               class: `senses${reading.senses.length === 1 ? " single" : ""}`,
-              style: offset ? `counter-reset: sense ${offset}` : null,
             },
-            senseItems(senses),
+            senseItems(reading.senses),
           )
         : null,
       reading.classifiers.length
@@ -291,8 +288,8 @@ function readingList(readings, { skip = 0 } = {}) {
             `Also pronounced ${reading.also_pronounced.join(", ")}`,
           )
         : null,
-    );
-  });
+    ),
+  );
 }
 
 function promptList(prompts) {
@@ -373,42 +370,44 @@ function wordNote(word) {
     missToggle(word.word),
     h(
       "div",
-      { class: "word-note-all", hidden: true },
-      readingList(word.readings, { skip: summarySenses }),
+      { class: "word-note-all", hidden: true, dataset: { collapse: "" } },
+      readingList(word.readings),
+    ),
+    h(
+      "p",
+      { class: "word-note-tools", hidden: true },
       h(
-        "p",
-        { class: "word-note-tools" },
-        h(
-          "button",
-          {
-            type: "button",
-            class: "link muted",
-            "aria-pressed": String(isFlagged(word.word)),
-            dataset: { flagWord: word.word },
-          },
-          h("span", { class: "when-off" }, "Flag for correction"),
-          h("span", { class: "when-on" }, "Flagged"),
-        ),
-        h(
-          "a",
-          {
-            class: "link muted",
-            href: `/library/words/${encodeURIComponent(word.word)}`,
-          },
-          "Open in library",
-        ),
+        "button",
+        {
+          type: "button",
+          class: "link muted",
+          "aria-pressed": String(isFlagged(word.word)),
+          dataset: { flagWord: word.word },
+        },
+        h("span", { class: "when-off" }, "Flag for correction"),
+        h("span", { class: "when-on" }, "Flagged"),
+      ),
+      h(
+        "a",
+        {
+          class: "link muted",
+          href: `/library/words/${encodeURIComponent(word.word)}`,
+        },
+        "Open in library",
       ),
     ),
   );
   return row;
 }
 
-function toggleNote(button) {
-  const row = button.closest(".word-note");
+function toggleNote(row) {
   const open = !row.classList.contains("open");
   row.classList.toggle("open", open);
-  button.setAttribute("aria-expanded", String(open));
+  row
+    .querySelector("[data-expand]")
+    .setAttribute("aria-expanded", String(open));
   row.querySelector(".word-note-all").hidden = !open;
+  row.querySelector(".word-note-tools").hidden = !open;
   if (open) strokes.render(row);
 }
 
@@ -1339,6 +1338,11 @@ class Pad {
 function onClick(event) {
   if (pad && !event.target.closest(".pad-overview, .pad-more"))
     pad.closeOverview();
+  const list = event.target.closest("[data-collapse]");
+  if (list && dom?.root.contains(list) && !getSelection().toString()) {
+    toggleNote(list.closest(".word-note"));
+    return;
+  }
   const target = event.target.closest("button");
   if (!dom || !target || !dom.root.contains(target)) return;
   if (target.matches("[data-reveal]")) reveal();
@@ -1349,7 +1353,8 @@ function onClick(event) {
   else if (target.matches("[data-edit-cancel]"))
     show(state.current, { revealed: true });
   else if (target.matches("[data-miss-word]")) toggleMissed(target);
-  else if (target.matches("[data-expand]")) toggleNote(target);
+  else if (target.matches("[data-expand]"))
+    toggleNote(target.closest(".word-note"));
   else if (target.matches("[data-flag-word]"))
     toggleFlag(target.dataset.flagWord);
   else if (target === dom.flag && state.current) toggleFlag(state.current.word);
