@@ -1,35 +1,40 @@
 import re
+import time
 from collections import Counter
 from contextlib import closing
+from datetime import timedelta
 from threading import Event, Thread
 from typing import TYPE_CHECKING
 
 from yiju.core import dictionary
+from yiju.core.names import NAME_SLOT
+from yiju.core.scheduling import now_utc
 from yiju.core.text import HAN
 from yiju.storage.database import connect
+from yiju.storage.queue import due_before
 
 from . import audio, strokes
 
 if TYPE_CHECKING:
     import logging
+    import sqlite3
     from pathlib import Path
 
 RETRY_SECONDS = 600
+REFRESH_SECONDS = 3600
 MAX_ATTEMPTS = 3
-AUDIO_TEXTS = (
-    "SELECT COALESCE(s.chinese, c.word) AS text FROM cards c "
-    "LEFT JOIN sentences s ON s.id = c.sentence_id "
-    "WHERE s.id IS NULL OR s.hidden = 0 "
-    "GROUP BY text ORDER BY MIN(c.due), text"
-)
+AHEAD = timedelta(days=1)
 STROKE_TEXTS = "SELECT word FROM words UNION SELECT chinese FROM sentences"
 
 
 class Prefill:
-    def __init__(self, database: Path, logger: logging.Logger) -> None:
+    def __init__(
+        self, database: Path, logger: logging.Logger, speaker: audio.Speaker
+    ) -> None:
         self.database = database
         self.directory = database.resolve().parent
         self.logger = logger
+        self.speaker = speaker
         self.wake = Event()
         self.attempts: Counter[str] = Counter()
 
@@ -50,11 +55,11 @@ class Prefill:
             except Exception:
                 self.logger.exception("Could not prefill caches")
                 complete = False
-            timeout = None if complete else RETRY_SECONDS
+            timeout = REFRESH_SECONDS if complete else RETRY_SECONDS
 
     def fill(self) -> bool:
         with closing(connect(self.database)) as connection:
-            texts = [row[0] for row in connection.execute(AUDIO_TEXTS)]
+            cards = due_before(connection, now_utc() + AHEAD)
             characters = sorted(
                 {
                     character
@@ -64,7 +69,7 @@ class Prefill:
             )
         filled_dictionary = self._fill_dictionary()
         filled_strokes = self._fill_strokes(characters)
-        filled_audio = self._fill_audio(texts)
+        filled_audio = self._fill_audio(cards)
         return filled_dictionary and filled_strokes and filled_audio
 
     def _fill_dictionary(self) -> bool:
@@ -94,18 +99,16 @@ class Prefill:
                 return False
         return True
 
-    def _fill_audio(self, texts: list[str]) -> bool:
-        directory = self.directory / "audio"
-        for text in texts:
-            key = f"audio:{text}"
-            if not self._pending(key, audio.audio_path(text, directory)):
+    def _fill_audio(self, cards: list[sqlite3.Row]) -> bool:
+        keep: set[Path] = set()
+        for card in cards:
+            if card["sentence_id"] is not None and NAME_SLOT.search(card["chinese"]):
                 continue
-            if not audio.available(text, directory):
-                return False
             try:
-                audio.generate(text, directory)
-            except audio.ERRORS:
-                self.attempts[key] += 1
-                self.logger.warning("Could not prefill pronunciation", exc_info=True)
-                return False
+                said = audio.card_speech(card, None)
+            except ValueError:
+                continue
+            keep.add(self.speaker.path(said))
+            self.speaker.want(said)
+        self.speaker.sweep(keep, time.time())
         return True

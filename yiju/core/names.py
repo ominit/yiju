@@ -367,6 +367,13 @@ def chinese_text(chinese: str, names: Mapping[str, Name]) -> str:
     return "".join(piece for piece, _kind in pieces)
 
 
+def spoken(
+    chinese: str, pinyin: str, rules: str, names: Mapping[str, Name] | None
+) -> tuple[str, str]:
+    pieces, reading = _pieces(chinese, pinyin, names, rules)
+    return "".join(piece for piece, _kind in pieces), reading
+
+
 def _english(match: re.Match[str], names: Mapping[str, Name]) -> str:
     slot = ENGLISH_SLOT.fullmatch(match.group(1))
     if slot is None or slot.group(1) not in names:

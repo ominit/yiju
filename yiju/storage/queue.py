@@ -101,6 +101,12 @@ def study_queue(
     return reviews + (started + sentences + words)[:remaining]
 
 
+def due_before(connection: sqlite3.Connection, moment: datetime) -> list[sqlite3.Row]:
+    return _studyable(
+        connection, "AND c.due < ? ", (moment.astimezone(UTC).isoformat(),)
+    )
+
+
 class Upcoming(TypedDict):
     times: list[str]
     later_today: int

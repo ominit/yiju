@@ -1,11 +1,19 @@
-import asyncio
 from collections import Counter
 from datetime import UTC, datetime
 from random import Random
 from typing import TYPE_CHECKING
 
 import pytest
-from conftest import add, check_form, csrf, database, set_strength, study_cards
+from conftest import (
+    FakeVoice,
+    add,
+    check_form,
+    csrf,
+    database,
+    set_strength,
+    settle,
+    study_cards,
+)
 
 from yiju.core.names import (
     Name,
@@ -19,6 +27,7 @@ from yiju.core.names import (
     reading,
     slot_error,
 )
+from yiju.core.speech import phonemes
 from yiju.core.tokenizer import segment, segmentation_error, sentence_pinyin
 from yiju.storage.database import ConflictError
 from yiju.storage.pending import (
@@ -34,11 +43,9 @@ from yiju.storage.pending import (
     waiting,
 )
 from yiju.storage.queue import study_queue
-from yiju.web import audio
 
 if TYPE_CHECKING:
     import sqlite3
-    from pathlib import Path
 
     from flask import Flask
     from flask.testing import FlaskClient
@@ -252,15 +259,8 @@ def stage_people(app: Flask) -> None:
 
 
 def test_study_cards_show_random_names_with_matching_audio(
-    client: FlaskClient, app: Flask, monkeypatch: pytest.MonkeyPatch
+    client: FlaskClient, app: Flask, voice: FakeVoice
 ) -> None:
-    spoken: list[str] = []
-
-    async def fake_speech(text: str, path: Path) -> None:
-        spoken.append(text)
-        await asyncio.to_thread(path.write_bytes, b"ID3")
-
-    monkeypatch.setattr(audio, "synthesize", fake_speech)
     stage_people(app)
     card = next(card for card in study_cards(client) if card["kind"] == "sentence")
     assert card["text"] in {"王芳喜欢李伟。", "李伟喜欢王芳。"}
@@ -272,11 +272,35 @@ def test_study_cards_show_random_names_with_matching_audio(
     assert card["sentence"]["translation"] == "{A} likes {B}."
     assert card["reading"][0][2] == "name:A"
     assert "?names=" in card["audio"]
+    said = phonemes(
+        card["text"],
+        f"{card['names']['A']['pinyin']} xǐhuan {card['names']['B']['pinyin']}.",
+    )
+    settle(app)
+    assert said in voice.said
+    made = len(voice.said)
     assert client.get(card["audio"]).status_code == 200
-    assert spoken == [card["text"]]
+    assert len(voice.said) == made
     bare = card["audio"].split("?")[0]
     assert client.get(bare, headers={"Accept": "application/json"}).status_code == 404
     assert client.get(f"{bare}?names=1,1").status_code == 404
+
+
+def test_pronouns_share_one_clip_for_either_gender(
+    client: FlaskClient, app: Flask, voice: FakeVoice
+) -> None:
+    with database(app) as db:
+        add(db, "{A.他}喜欢我。 | {A.They} likes me.", NOW)
+        set_strength(db, "喜欢", now=NOW)
+        set_strength(db, "我", now=NOW)
+        stage_names(db, NAMES)
+        approve_all(db)
+        card = db.execute(
+            "SELECT id FROM cards WHERE sentence_id IS NOT NULL LIMIT 1"
+        ).fetchone()[0]
+    for name in (FANG, WEI):
+        assert client.get(f"/audio/cards/{card}?names={name.id}").status_code == 200
+    assert voice.said == [phonemes("他喜欢我。", "tā xǐhuan wǒ.")]
 
 
 def test_check_screen_edits_and_approves_names(client: FlaskClient, app: Flask) -> None:

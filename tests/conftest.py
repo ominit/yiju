@@ -1,6 +1,7 @@
 import gzip
 import json
 import re
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -14,7 +15,7 @@ from yiju.core import dictionary
 from yiju.storage.database import connect, initialize
 from yiju.storage.graph import refresh
 from yiju.storage.pending import approve, preview, stage
-from yiju.web import create_app
+from yiju.web import audio, create_app
 
 if TYPE_CHECKING:
     import sqlite3
@@ -74,6 +75,37 @@ def states(connection: sqlite3.Connection, table: str = "words") -> dict[str, st
         row[0]: row[1]
         for row in connection.execute(f"SELECT {key}, state FROM {table}")  # noqa: S608
     }
+
+
+class FakeVoice:
+    def __init__(self) -> None:
+        self.said: list[str] = []
+        self.failing: set[str] = set()
+
+    def __call__(self, _directory: Path) -> FakeVoice:
+        return self
+
+    def speak(self, said: str) -> bytes:
+        self.said.append(said)
+        if said in self.failing:
+            message = "The voice failed."
+            raise ValueError(message)
+        return b"RIFF" + said.encode()
+
+
+@pytest.fixture(autouse=True)
+def voice(monkeypatch: pytest.MonkeyPatch) -> FakeVoice:
+    fake = FakeVoice()
+    monkeypatch.setattr(audio, "Voice", fake)
+    return fake
+
+
+def settle(app: Flask) -> None:
+    speaker = app.extensions["yiju.speech"]
+    deadline = time.monotonic() + 10
+    while speaker.waiting:
+        assert time.monotonic() < deadline
+        time.sleep(0.01)
 
 
 @pytest.fixture(autouse=True)

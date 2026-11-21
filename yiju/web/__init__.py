@@ -152,7 +152,7 @@ def create_app(database_path: Path | None = None, *, prefill: bool = False) -> F
     app.teardown_appcontext(_close_database)
     from .actions import actions
     from .agents import agents
-    from .audio import audio
+    from .audio import Speaker, audio
     from .flags import flags
     from .install import install
     from .pages import pages
@@ -160,7 +160,9 @@ def create_app(database_path: Path | None = None, *, prefill: bool = False) -> F
     from .strokes import strokes
     from .study import study
 
-    app.extensions["yiju.prefill"] = Prefill(path, app.logger)
+    speaker = Speaker(path.resolve().parent, app.logger)
+    app.extensions["yiju.speech"] = speaker
+    app.extensions["yiju.prefill"] = Prefill(path, app.logger, speaker)
     if prefill:
         app.extensions["yiju.prefill"].start()
 
