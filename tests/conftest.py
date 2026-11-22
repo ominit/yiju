@@ -1,3 +1,4 @@
+import asyncio
 import gzip
 import json
 import re
@@ -82,21 +83,18 @@ class FakeVoice:
         self.said: list[str] = []
         self.failing: set[str] = set()
 
-    def __call__(self, _directory: Path) -> FakeVoice:
-        return self
-
-    def speak(self, said: str) -> bytes:
-        self.said.append(said)
-        if said in self.failing:
+    async def synthesize(self, text: str, destination: Path) -> None:
+        self.said.append(text)
+        if text in self.failing:
             message = "The voice failed."
             raise ValueError(message)
-        return b"RIFF" + said.encode()
+        await asyncio.to_thread(destination.write_bytes, b"ID3" + text.encode())
 
 
 @pytest.fixture(autouse=True)
 def voice(monkeypatch: pytest.MonkeyPatch) -> FakeVoice:
     fake = FakeVoice()
-    monkeypatch.setattr(audio, "Voice", fake)
+    monkeypatch.setattr(audio, "synthesize", fake.synthesize)
     return fake
 
 

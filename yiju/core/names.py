@@ -367,11 +367,19 @@ def chinese_text(chinese: str, names: Mapping[str, Name]) -> str:
     return "".join(piece for piece, _kind in pieces)
 
 
-def spoken(
-    chinese: str, pinyin: str, rules: str, names: Mapping[str, Name] | None
-) -> tuple[str, str]:
-    pieces, reading = _pieces(chinese, pinyin, names, rules)
-    return "".join(piece for piece, _kind in pieces), reading
+def pronoun_texts(chinese: str, rules: str) -> list[str]:
+    return list(
+        dict.fromkeys(
+            chinese_text(
+                chinese,
+                {
+                    letter: Name(0, "", "", "", gender)
+                    for letter, gender in genders.items()
+                },
+            )
+            for genders in genderings(letters(chinese), _safe_rules(rules))
+        )
+    )
 
 
 def _english(match: re.Match[str], names: Mapping[str, Name]) -> str:

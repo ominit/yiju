@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 import pytest
 from conftest import SAMPLE, FakeVoice, add, database, import_text, settle
 
-from yiju.core.speech import phonemes
 from yiju.storage.database import connect
 from yiju.storage.pending import approve, preview, stage_names
 from yiju.storage.queue import due_before
@@ -18,11 +17,8 @@ if TYPE_CHECKING:
     from flask import Flask
     from flask.testing import FlaskClient
 
-UNLOCKED = {phonemes("我", "wǒ"), phonemes("去", "qù")}
-SENTENCES = {
-    phonemes("我去。", "wǒ qù."),
-    phonemes("我学习中文。", "wǒ xuéxí Zhōngwén."),
-}
+UNLOCKED = {"我", "去"}
+SENTENCES = {"我去。", "我学习中文。"}
 
 
 class Fakes:
@@ -104,12 +100,29 @@ def test_skipped_and_name_sentences_are_not_voiced_ahead(
 
 
 @pytest.mark.usefixtures("prefill", "fakes")
+def test_pronoun_sentences_are_voiced_for_each_gender(
+    app: Flask, voice: FakeVoice
+) -> None:
+    with connect(Path(app.config["DATABASE"])) as db:
+        db.execute(
+            "UPDATE sentences SET state = 'unlocked', "
+            "chinese = '{A.他}去。', pinyin = 'tā qù.' WHERE chinese = '我去。'"
+        )
+        db.execute("UPDATE sentences SET hidden = 1 WHERE chinese = '我学习中文。'")
+        db.commit()
+        stage_names(db, "王芳 female\n李伟 male\n")
+        approve(db, preview(db).version, datetime.now(UTC))
+    assert fill(app)
+    assert set(voice.said) == UNLOCKED | {"他去。", "她去。"}
+
+
+@pytest.mark.usefixtures("prefill", "fakes")
 def test_fill_sweeps_clips_unused_for_a_week(app: Flask) -> None:
     assert fill(app)
     speaker = app.extensions["yiju.speech"]
     old = time.time() - audio.UNUSED_SECONDS - 60
-    stale = speaker.path("ㄋㄧ3")
-    stale.write_bytes(b"RIFF")
+    stale = speaker.path("你")
+    stale.write_bytes(b"ID3")
     for path in speaker.clips.iterdir():
         os.utime(path, (old, old))
     assert fill(app)

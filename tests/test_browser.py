@@ -83,9 +83,9 @@ def server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[Server]
     for character in "我去学习中文上":
         path = strokes / f"{DATA_VERSION}-{ord(character):x}.json"
         path.write_text(json.dumps(STROKES))
-    recording = tmp_path / "recording.wav"
-    recording.write_bytes(b"RIFF")
-    monkeypatch.setattr(audio.Speaker, "clip", lambda _self, _said: recording)
+    recording = tmp_path / "recording.mp3"
+    recording.write_bytes(b"ID3")
+    monkeypatch.setattr(audio.Speaker, "clip", lambda _self, _text: recording)
     with connect(Path(app.config["DATABASE"])) as db:
         add(db, CONTENT)
         db.execute("UPDATE words SET manual = 1 WHERE word IN ('上', '学习')")

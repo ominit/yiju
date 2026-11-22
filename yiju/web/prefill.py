@@ -7,7 +7,6 @@ from threading import Event, Thread
 from typing import TYPE_CHECKING
 
 from yiju.core import dictionary
-from yiju.core.names import NAME_SLOT
 from yiju.core.scheduling import now_utc
 from yiju.core.text import HAN
 from yiju.storage.database import connect
@@ -102,13 +101,8 @@ class Prefill:
     def _fill_audio(self, cards: list[sqlite3.Row]) -> bool:
         keep: set[Path] = set()
         for card in cards:
-            if card["sentence_id"] is not None and NAME_SLOT.search(card["chinese"]):
-                continue
-            try:
-                said = audio.card_speech(card, None)
-            except ValueError:
-                continue
-            keep.add(self.speaker.path(said))
-            self.speaker.want(said)
+            for text in audio.card_texts(card):
+                keep.add(self.speaker.path(text))
+                self.speaker.want(text)
         self.speaker.sweep(keep, time.time())
         return True

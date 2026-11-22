@@ -1,4 +1,3 @@
-from contextlib import suppress
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
@@ -7,7 +6,7 @@ from fsrs import Card
 
 from yiju.core.definitions import prompt_senses, readings_payload
 from yiju.core.dictionary import decode, readings_pinyin
-from yiju.core.names import NAME_SLOT, Name, chinese_text, english, letters, reading
+from yiju.core.names import Name, chinese_text, english, letters, reading
 from yiju.core.pronunciation import pronunciation
 from yiju.core.scheduling import intervals, now_utc
 from yiju.core.strength import MEMORY
@@ -26,7 +25,7 @@ from yiju.storage.sentences import set_hidden, update_sentence
 from yiju.storage.words import status, strength
 
 from . import database, local_now, refresh_caches
-from .audio import card_speech, speaker
+from .audio import card_text, speaker
 
 if TYPE_CHECKING:
     import sqlite3
@@ -101,9 +100,7 @@ def _people(
     picks = choose(card["chinese"], card["rules"], context.names)
     if picks is None or not picks:
         return None, {}
-    if NAME_SLOT.search(card["chinese"]):
-        with suppress(ValueError):
-            speaker().want(card_speech(card, picks), urgent=True)
+    speaker().want(card_text(card, picks), urgent=True)
     return picks, {
         "names": {
             letter: {

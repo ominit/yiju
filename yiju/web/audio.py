@@ -1,26 +1,22 @@
 import asyncio
 import hashlib
 import heapq
-import io
 import itertools
-import json
 import os
 import tempfile
 import time
-import wave
 from contextlib import suppress
 from pathlib import Path
 from threading import Event, Lock, Thread
-from typing import TYPE_CHECKING, BinaryIO, cast
+from typing import TYPE_CHECKING, cast
 
-import numpy as np
-import onnxruntime
-from aiohttp import ClientError, ClientSession, ClientTimeout
+import edge_tts
+from aiohttp import ClientError
+from edge_tts import communicate
+from edge_tts.constants import TRUSTED_CLIENT_TOKEN
 from flask import Blueprint, Response, abort, current_app, request, send_file
 
-from yiju.core.dictionary import decode
-from yiju.core.names import letters, spoken
-from yiju.core.speech import phonemes
+from yiju.core.names import NAME_SLOT, chinese_text, letters, pronoun_texts
 from yiju.storage.names import chosen
 from yiju.storage.queue import CARD_QUERY
 
@@ -33,125 +29,38 @@ if TYPE_CHECKING:
 
     from yiju.core.names import Name
 
+vars(communicate)["WSS_URL"] = (
+    "wss://api.msedgeservices.com/tts/cognitiveservices/websocket/v1"
+    f"?Ocp-Apim-Subscription-Key={TRUSTED_CLIENT_TOKEN}"
+)
 audio = Blueprint("audio", __name__)
-VOICE = "zf_027"
-CACHE_VERSION = "2"
-RELEASE = (
-    "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/"
-)
-MODEL = (
-    "kokoro-v1.1-zh.onnx",
-    "859f9ded9f53be16c24857cdab3254a45da53c3afd5ba6ef134c7de3f822e326",
-)
-VOICES = (
-    "voices-v1.1-zh.bin",
-    "14cb6186c99e4f6016871405f62046c5df863ae27465cbdc4ee08be7dd703acd",
-)
-SAMPLE_RATE = 24000
-MAX_TOKENS = 510
-SILENCE = 10 ** (-60 / 20)
-FRAME = 512
+VOICE = "zh-CN-XiaoxiaoNeural"
+CACHE_VERSION = "1"
 WAIT_SECONDS = 30
-RETRY_SECONDS = 300
+OUTAGE_THRESHOLD = 3
+OUTAGE_SECONDS = 120
 UNUSED_SECONDS = 7 * 24 * 60 * 60
 URGENT, LATER = 0, 1
-ERRORS = (OSError, TimeoutError, ClientError, ValueError, RuntimeError, KeyError)
+ERRORS = (
+    OSError,
+    TimeoutError,
+    ClientError,
+    edge_tts.exceptions.EdgeTTSException,
+    ValueError,
+)
 
 
 class SpeechUnavailableError(Exception):
     pass
 
 
-async def fetch(url: str, stream: BinaryIO) -> str:
-    hasher = hashlib.sha256()
-    timeout = ClientTimeout(total=None, connect=15, sock_read=60)
-    async with (
-        ClientSession(timeout=timeout) as session,
-        session.get(url) as response,
-    ):
-        response.raise_for_status()
-        async for chunk in response.content.iter_chunked(1 << 20):
-            hasher.update(chunk)
-            stream.write(chunk)
-    return hasher.hexdigest()
-
-
-def model_file(directory: Path, name: str, digest: str) -> Path:
-    path = directory / name
-    if path.is_file():
-        return path
-    directory.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary = tempfile.mkstemp(suffix=".part", dir=directory)
-    staging = Path(temporary)
-    try:
-        with os.fdopen(descriptor, "wb") as stream:
-            fetched = asyncio.run(fetch(RELEASE + name, stream))
-        if fetched != digest:
-            message = f"{name} did not match its checksum."
-            raise ValueError(message)
-        staging.replace(path)
-    finally:
-        staging.unlink(missing_ok=True)
-    return path
-
-
-def trim(samples: np.ndarray) -> np.ndarray:
-    frames = len(samples) // FRAME
-    if not frames:
-        return samples
-    loudness = np.sqrt(
-        np.mean(np.square(samples[: frames * FRAME].reshape(frames, FRAME)), axis=1)
-    )
-    loud = np.flatnonzero(loudness > loudness.max() * SILENCE)
-    if not len(loud):
-        return samples
-    return samples[loud[0] * FRAME : (loud[-1] + 1) * FRAME]
-
-
-def wav(samples: np.ndarray) -> bytes:
-    buffer = io.BytesIO()
-    with wave.open(buffer, "wb") as stream:
-        stream.setnchannels(1)
-        stream.setsampwidth(2)
-        stream.setframerate(SAMPLE_RATE)
-        stream.writeframes((np.clip(samples, -1, 1) * 32767).astype("<i2").tobytes())
-    return buffer.getvalue()
-
-
-class Voice:
-    def __init__(self, directory: Path) -> None:
-        model, voices = (model_file(directory, *spec) for spec in (MODEL, VOICES))
-        self.session = onnxruntime.InferenceSession(
-            str(model), providers=["CPUExecutionProvider"]
-        )
-        config = json.loads(
-            self.session.get_modelmeta().custom_metadata_map["kokoro_config"]
-        )
-        self.vocabulary = cast("dict[str, int]", config["vocab"])
-        with np.load(voices) as archive:
-            self.styles = np.asarray(archive[VOICE], dtype=np.float32)
-
-    def speak(self, said: str) -> bytes:
-        tokens = [
-            self.vocabulary[symbol] for symbol in said if symbol in self.vocabulary
-        ]
-        if not tokens or len(tokens) > MAX_TOKENS:
-            message = "The sentence is too long to say in one go."
-            raise ValueError(message)
-        outputs = self.session.run(
-            None,
-            {
-                "input_ids": np.array([[0, *tokens, 0]], dtype=np.int64),
-                "style": self.styles[len(tokens) - 1],
-                "speed": np.ones(1, dtype=np.float32),
-            },
-        )
-        return wav(trim(np.asarray(outputs[0], dtype=np.float32).ravel()))
+async def synthesize(text: str, destination: Path) -> None:
+    speech = edge_tts.Communicate(text, VOICE, connect_timeout=5, receive_timeout=10)
+    await asyncio.wait_for(speech.save(str(destination)), timeout=20)
 
 
 class Speaker:
     def __init__(self, directory: Path, logger: logging.Logger) -> None:
-        self.directory = directory
         self.clips = directory / "audio"
         self.logger = logger
         self.lock = Lock()
@@ -160,37 +69,37 @@ class Speaker:
         self.waiting: dict[str, Event] = {}
         self.order = itertools.count()
         self.thread: Thread | None = None
-        self.voice: Voice | None = None
+        self.failures = 0
         self.retry_at = 0.0
 
-    def path(self, said: str) -> Path:
-        key = hashlib.sha256(f"{CACHE_VERSION}:{VOICE}:{said}".encode()).hexdigest()
-        return self.clips / f"{key}.wav"
+    def path(self, text: str) -> Path:
+        key = hashlib.sha256(f"{CACHE_VERSION}:{VOICE}:{text}".encode()).hexdigest()
+        return self.clips / f"{key}.mp3"
 
     def unavailable(self) -> bool:
-        return self.voice is None and time.monotonic() < self.retry_at
+        return time.monotonic() < self.retry_at
 
-    def want(self, said: str, *, urgent: bool = False) -> Event | None:
-        if self.path(said).is_file() or self.unavailable():
+    def want(self, text: str, *, urgent: bool = False) -> Event | None:
+        if self.path(text).is_file() or self.unavailable():
             return None
         with self.lock:
-            event = self.waiting.get(said)
+            event = self.waiting.get(text)
             if event is None or urgent:
                 heapq.heappush(
-                    self.queue, (URGENT if urgent else LATER, next(self.order), said)
+                    self.queue, (URGENT if urgent else LATER, next(self.order), text)
                 )
             if event is None:
-                event = self.waiting[said] = Event()
+                event = self.waiting[text] = Event()
             if self.thread is None:
                 self.thread = Thread(target=self._run, name="yiju-speech", daemon=True)
                 self.thread.start()
             self.work.set()
         return event
 
-    def clip(self, said: str) -> Path:
-        path = self.path(said)
+    def clip(self, text: str) -> Path:
+        path = self.path(text)
         if not path.is_file():
-            event = self.want(said, urgent=True)
+            event = self.want(text, urgent=True)
             if event is None and not path.is_file():
                 message = "Pronunciation is unavailable. Try again in a few minutes."
                 raise SpeechUnavailableError(message)
@@ -217,10 +126,10 @@ class Speaker:
     def _next(self) -> tuple[str, Event] | None:
         with self.lock:
             while self.queue:
-                _priority, _order, said = heapq.heappop(self.queue)
-                event = self.waiting.get(said)
+                _priority, _order, text = heapq.heappop(self.queue)
+                event = self.waiting.get(text)
                 if event is not None:
-                    return said, event
+                    return text, event
             self.work.clear()
             return None
 
@@ -230,20 +139,27 @@ class Speaker:
             job = self._next()
             if job is None:
                 continue
-            said, event = job
+            text, event = job
             try:
-                self._make(said)
-            except SpeechUnavailableError:
-                self.logger.warning("Could not load the voice", exc_info=True)
-                self._abandon()
+                self._make(text)
+            except ERRORS:
+                self.logger.warning("Could not make pronunciation audio", exc_info=True)
+                self._failed()
             except Exception:
                 self.logger.exception("Could not make pronunciation audio")
+            else:
+                self.failures = 0
             finally:
                 with self.lock:
-                    self.waiting.pop(said, None)
+                    self.waiting.pop(text, None)
                 event.set()
 
-    def _abandon(self) -> None:
+    def _failed(self) -> None:
+        self.failures += 1
+        if self.failures < OUTAGE_THRESHOLD:
+            return
+        self.failures = 0
+        self.retry_at = time.monotonic() + OUTAGE_SECONDS
         with self.lock:
             events = list(self.waiting.values())
             self.waiting.clear()
@@ -251,29 +167,19 @@ class Speaker:
         for event in events:
             event.set()
 
-    def _load(self) -> Voice:
-        if self.voice is None:
-            if time.monotonic() < self.retry_at:
-                message = "The voice failed to load recently."
-                raise SpeechUnavailableError(message)
-            try:
-                self.voice = Voice(self.directory / "voice")
-            except ERRORS as error:
-                self.retry_at = time.monotonic() + RETRY_SECONDS
-                raise SpeechUnavailableError(str(error)) from error
-        return self.voice
-
-    def _make(self, said: str) -> None:
-        destination = self.path(said)
+    def _make(self, text: str) -> None:
+        destination = self.path(text)
         if destination.is_file():
             return
-        data = self._load().speak(said)
         self.clips.mkdir(parents=True, exist_ok=True)
         descriptor, temporary = tempfile.mkstemp(suffix=".part", dir=self.clips)
+        os.close(descriptor)
         staging = Path(temporary)
         try:
-            with os.fdopen(descriptor, "wb") as stream:
-                stream.write(data)
+            asyncio.run(synthesize(text, staging))
+            if not staging.stat().st_size:
+                message = "The voice returned an empty recording."
+                raise ValueError(message)
             staging.replace(destination)
         finally:
             staging.unlink(missing_ok=True)
@@ -283,14 +189,22 @@ def speaker() -> Speaker:
     return cast("Speaker", current_app.extensions["yiju.speech"])
 
 
-def card_speech(card: sqlite3.Row, names: Mapping[str, Name] | None) -> str:
+def card_text(card: sqlite3.Row, names: Mapping[str, Name] | None) -> str:
     if card["sentence_id"] is None:
-        readings = decode(card["readings"]) if card["readings"] else ()
-        return phonemes(card["word"], readings[0].pinyin if readings else "")
-    text, pinyin = spoken(
-        card["chinese"], card["sentence_pinyin"], card["rules"], names
-    )
-    return phonemes(text, pinyin)
+        return str(card["word"])
+    if names is None:
+        return str(card["chinese"])
+    return chinese_text(card["chinese"], names)
+
+
+def card_texts(card: sqlite3.Row) -> list[str]:
+    if card["sentence_id"] is None:
+        return [card["word"]]
+    if NAME_SLOT.search(card["chinese"]):
+        return []
+    if letters(card["chinese"]):
+        return pronoun_texts(card["chinese"], card["rules"])
+    return [card["chinese"]]
 
 
 @audio.get("/audio/cards/<int:card_id>")
@@ -305,11 +219,7 @@ def pronunciation(card_id: int) -> Response:
         if names is None:
             abort(404, "Pick names for every person in this sentence.")
     try:
-        said = card_speech(card, names)
-    except ValueError:
-        abort(404, "Yiju cannot pronounce this card.")
-    try:
-        path = speaker().clip(said)
+        path = speaker().clip(card_text(card, names))
     except SpeechUnavailableError as error:
         abort(503, str(error))
-    return send_file(path, mimetype="audio/wav", conditional=True)
+    return send_file(path, mimetype="audio/mpeg", conditional=True)

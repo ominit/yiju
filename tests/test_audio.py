@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 
 from conftest import SAMPLE, FakeVoice, add, database
 
-from yiju.core.speech import phonemes
 from yiju.storage.database import connect
 from yiju.web import audio
 
@@ -16,7 +15,7 @@ if TYPE_CHECKING:
     from flask.testing import FlaskClient
 
 JSON = {"Accept": "application/json"}
-GO = phonemes("去", "qù")
+GO = "去"
 
 
 def speaker(app: Flask) -> audio.Speaker:
@@ -41,17 +40,17 @@ def test_audio_cache_is_shared_across_directions_and_supports_ranges(
     for card in cards:
         response = client.get(f"/audio/cards/{card}")
         assert response.status_code == 200
-        assert response.mimetype == "audio/wav"
-        assert response.data == b"RIFF" + GO.encode()
+        assert response.mimetype == "audio/mpeg"
+        assert response.data == b"ID3" + GO.encode()
     assert voice.said == [GO]
     partial = client.get(f"/audio/cards/{cards[0]}", headers={"Range": "bytes=0-3"})
     assert partial.status_code == 206
-    assert partial.data == b"RIFF"
+    assert partial.data == b"ID3\xe5"
     assert client.get("/audio/cards/missing").status_code == 404
     assert voice.said == [GO]
 
 
-def test_sentence_audio_follows_the_sentence_pinyin(
+def test_sentence_audio_follows_the_sentence_text(
     client: FlaskClient, app: Flask, voice: FakeVoice
 ) -> None:
     with database(app) as db:
@@ -71,10 +70,7 @@ def test_sentence_audio_follows_the_sentence_pinyin(
             (card["sentence"],),
         )
     assert client.get(url).status_code == 200
-    assert voice.said == [
-        phonemes("我去。", "wǒ qù."),
-        phonemes("我去学校。", "wǒ qù xuéxiào."),
-    ]
+    assert voice.said == ["我去。", "我去学校。"]
 
 
 def test_concurrent_requests_only_generate_once(app: Flask, voice: FakeVoice) -> None:
@@ -94,44 +90,34 @@ def test_failed_audio_is_not_cached(
     assert response.status_code == 503
     assert response.json is not None
     assert "unavailable" in response.json["error"]
-    assert list(speaker(app).clips.glob("*.wav")) == []
+    assert list(speaker(app).clips.glob("*.mp3")) == []
     voice.failing.clear()
     assert client.get(f"/audio/cards/{card}").status_code == 200
     assert voice.said == [GO, GO]
 
 
-def test_a_voice_that_will_not_load_is_retried_later(
-    client: FlaskClient, app: Flask, monkeypatch: pytest.MonkeyPatch
+def test_repeated_failures_pause_speech_for_a_while(
+    client: FlaskClient, app: Flask, voice: FakeVoice, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     card = card_ids(app, "去")[0]
-    attempts = 0
-
-    def broken(_directory: Path) -> None:
-        nonlocal attempts
-        attempts += 1
-        message = "offline"
-        raise OSError(message)
-
-    monkeypatch.setattr(audio, "Voice", broken)
-    assert client.get(f"/audio/cards/{card}").status_code == 503
-    assert attempts == 1
+    voice.failing.add(GO)
+    for _ in range(audio.OUTAGE_THRESHOLD):
+        assert client.get(f"/audio/cards/{card}").status_code == 503
     response = client.get(f"/audio/cards/{card}", headers=JSON)
     assert response.status_code == 503
     assert response.json is not None
     assert "few minutes" in response.json["error"]
-    assert attempts == 1
-    later = time.monotonic() + audio.RETRY_SECONDS + 1
+    assert voice.said == [GO] * audio.OUTAGE_THRESHOLD
+    voice.failing.clear()
+    later = time.monotonic() + audio.OUTAGE_SECONDS + 1
     monkeypatch.setattr(audio.time, "monotonic", lambda: later)
-    assert client.get(f"/audio/cards/{card}").status_code == 503
-    assert attempts == 2
+    assert client.get(f"/audio/cards/{card}").status_code == 200
 
 
-def test_words_say_their_first_reading(
-    client: FlaskClient, app: Flask, voice: FakeVoice
-) -> None:
+def test_words_say_the_word(client: FlaskClient, app: Flask, voice: FakeVoice) -> None:
     card = card_ids(app, "苹果")[0]
     assert client.get(f"/audio/cards/{card}").status_code == 200
-    assert voice.said == [phonemes("苹果", "píngguǒ")]
+    assert voice.said == ["苹果"]
 
 
 def test_playing_a_clip_keeps_it_and_old_clips_are_swept(
@@ -142,12 +128,12 @@ def test_playing_a_clip_keeps_it_and_old_clips_are_swept(
     voices.clips.mkdir(parents=True)
     old = time.time() - audio.UNUSED_SECONDS - 60
     stale, wanted, legacy = (
-        voices.path("ㄋㄧ3"),
-        voices.path("ㄏㄠ3"),
-        voices.clips / "legacy.mp3",
+        voices.path("你"),
+        voices.path("好"),
+        voices.clips / "legacy.wav",
     )
     for path in (stale, wanted, legacy):
-        path.write_bytes(b"RIFF")
+        path.write_bytes(b"ID3")
         os.utime(path, (old, old))
     assert client.get(f"/audio/cards/{card}").status_code == 200
     played = voices.path(GO)

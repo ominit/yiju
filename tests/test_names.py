@@ -24,10 +24,10 @@ from yiju.core.names import (
     name_pinyin,
     parse_rules,
     pick,
+    pronoun_texts,
     reading,
     slot_error,
 )
-from yiju.core.speech import phonemes
 from yiju.core.tokenizer import segment, segmentation_error, sentence_pinyin
 from yiju.storage.database import ConflictError
 from yiju.storage.pending import (
@@ -272,12 +272,8 @@ def test_study_cards_show_random_names_with_matching_audio(
     assert card["sentence"]["translation"] == "{A} likes {B}."
     assert card["reading"][0][2] == "name:A"
     assert "?names=" in card["audio"]
-    said = phonemes(
-        card["text"],
-        f"{card['names']['A']['pinyin']} xǐhuan {card['names']['B']['pinyin']}.",
-    )
     settle(app)
-    assert said in voice.said
+    assert card["text"] in voice.said
     made = len(voice.said)
     assert client.get(card["audio"]).status_code == 200
     assert len(voice.said) == made
@@ -286,7 +282,7 @@ def test_study_cards_show_random_names_with_matching_audio(
     assert client.get(f"{bare}?names=1,1").status_code == 404
 
 
-def test_pronouns_share_one_clip_for_either_gender(
+def test_pronoun_sentences_say_the_picked_pronoun(
     client: FlaskClient, app: Flask, voice: FakeVoice
 ) -> None:
     with database(app) as db:
@@ -300,7 +296,7 @@ def test_pronouns_share_one_clip_for_either_gender(
         ).fetchone()[0]
     for name in (FANG, WEI):
         assert client.get(f"/audio/cards/{card}?names={name.id}").status_code == 200
-    assert voice.said == [phonemes("他喜欢我。", "tā xǐhuan wǒ.")]
+    assert voice.said == ["她喜欢我。", "他喜欢我。"]
 
 
 def test_check_screen_edits_and_approves_names(client: FlaskClient, app: Flask) -> None:
@@ -361,3 +357,9 @@ def test_names_can_be_edited_and_removed_in_the_library(
 
 def test_letters_come_from_names_and_pronouns() -> None:
     assert letters("{B}说{A.他}好") == ("A", "B")
+
+
+def test_pronoun_texts_follow_the_gender_rules() -> None:
+    assert pronoun_texts("{A.他}去。", "") == ["他去。", "她去。"]
+    assert pronoun_texts("{A.他}去。", "A=female") == ["她去。"]
+    assert pronoun_texts("{A.他}和{B.他}去。", "A=B") == ["他和他去。", "她和她去。"]
